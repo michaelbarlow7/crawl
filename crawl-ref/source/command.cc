@@ -95,15 +95,18 @@ static string _get_version_features()
     string result;
     if (crawl_state.need_save
 #ifdef DGAMELAUNCH
-        && you.wizard
+        && (you.wizard || crawl_state.type == GAME_TYPE_CUSTOM_SEED)
 #endif
        )
     {
-        if (you.game_is_seeded)
+        if (you.fully_seeded)
         {
-            result += make_stringf("Game seed: %" PRIu64, crawl_state.seed);
+            result += make_stringf(
+                "Game seed: %" PRIu64 ", levelgen mode: %s",
+                crawl_state.seed, you.deterministic_levelgen
+                                                ? "deterministic" : "classic");
             if (Version::history_size() > 1)
-                result += " (game has been upgraded, seed may be affected)";
+                result += " (seed may be affected by game upgrades)";
         }
         else
             result += "Game is not seeded.";
@@ -207,7 +210,7 @@ static void _print_version()
     auto vbox = make_shared<Box>(Widget::VERT);
 
 #ifdef USE_TILE_LOCAL
-    vbox->max_size()[0] = tiles.get_crt_font()->char_width()*80;
+    vbox->max_size().width = tiles.get_crt_font()->char_width()*80;
 #endif
 
     auto title_hbox = make_shared<Box>(Widget::HORZ);
@@ -218,30 +221,28 @@ static void _print_version()
 #endif
 
     auto title = make_shared<Text>(formatted_string::parse_string(info));
-    title->set_margin_for_crt({0, 0, 0, 0});
-    title->set_margin_for_sdl({0, 0, 0, 10});
+    title->set_margin_for_sdl(0, 0, 0, 10);
     title_hbox->add_child(move(title));
 
-    title_hbox->align_items = Widget::CENTER;
-    title_hbox->set_margin_for_crt({0, 0, 1, 0});
-    title_hbox->set_margin_for_sdl({0, 0, 20, 0});
+    title_hbox->align_cross = Widget::CENTER;
+    title_hbox->set_margin_for_crt(0, 0, 1, 0);
+    title_hbox->set_margin_for_sdl(0, 0, 20, 0);
     vbox->add_child(move(title_hbox));
 
     auto scroller = make_shared<Scroller>();
     auto content = formatted_string::parse_string(feats + "\n\n" + changes);
     auto text = make_shared<Text>(move(content));
-    text->wrap_text = true;
+    text->set_wrap_text(true);
     scroller->set_child(move(text));
     vbox->add_child(scroller);
 
     auto popup = make_shared<ui::Popup>(vbox);
 
     bool done = false;
-    popup->on(Widget::slots.event, [&done, &vbox](wm_event ev) {
-        if (ev.type != WME_KEYDOWN)
-            return false;
-        done = !vbox->on_event(ev);
-        return true;
+    popup->on(Widget::slots.event, [&done, &scroller](wm_event ev) {
+        if (scroller->on_event(ev))
+            return true;
+        return done = ev.type == WME_KEYDOWN;
     });
 
 #ifdef USE_TILE_WEB
@@ -465,33 +466,14 @@ static void _handle_FAQ()
     title->colour = YELLOW;
     FAQmenu.set_title(title);
 
-    const int width = get_number_of_cols();
-
     for (unsigned int i = 0, size = question_keys.size(); i < size; i++)
     {
         const char letter = index_to_letter(i);
-
         string question = getFAQ_Question(question_keys[i]);
-        // Wraparound if the question is longer than fits into a line.
-        linebreak_string(question, width - 4);
-        vector<formatted_string> fss;
-        formatted_string::parse_string_to_multiple(question, fss);
-
-        MenuEntry *me;
-        for (unsigned int j = 0; j < fss.size(); j++)
-        {
-            if (j == 0)
-            {
-                me = new MenuEntry(question, MEL_ITEM, 1, letter);
-                me->data = &question_keys[i];
-            }
-            else
-            {
-                question = "    " + fss[j].tostring();
-                me = new MenuEntry(question, MEL_ITEM, 1);
-            }
-            FAQmenu.add_entry(me);
-        }
+        trim_string_right(question);
+        MenuEntry *me = new MenuEntry(question, MEL_ITEM, 1, letter);
+        me->data = &question_keys[i];
+        FAQmenu.add_entry(me);
     }
 
     while (true)
@@ -519,44 +501,9 @@ static void _handle_FAQ()
     return;
 }
 
-///////////////////////////////////////////////////////////////////////////
-// Manual menu highlighter.
-
-class help_highlighter : public MenuHighlighter
-{
-public:
-    help_highlighter(string = "");
-    int entry_colour(const MenuEntry *entry) const override;
-private:
-    text_pattern pattern;
-    string get_species_key() const;
-};
-
-help_highlighter::help_highlighter(string highlight_string) :
-    pattern(highlight_string.empty() ? get_species_key() : highlight_string)
-{
-}
-
-int help_highlighter::entry_colour(const MenuEntry *entry) const
-{
-    return !pattern.empty() && pattern.matches(entry->text) ? WHITE : -1;
-}
-
-// To highlight species in aptitudes list. ('?%')
-string help_highlighter::get_species_key() const
-{
-    string result = species_name(you.species);
-    // The table doesn't repeat the word "Draconian".
-    if (you.species != SP_BASE_DRACONIAN && species_is_draconian(you.species))
-        strip_tag(result, "Draconian");
-
-    result += "  ";
-    return result;
-}
 ////////////////////////////////////////////////////////////////////////////
 
-int show_keyhelp_menu(const vector<formatted_string> &lines,
-                      int hotkey, string highlight_string)
+int show_keyhelp_menu(const vector<formatted_string> &lines)
 {
     int flags = FS_PREWRAPPED_TEXT | FS_EASY_EXIT;
     formatted_scroller cmd_help(flags);
@@ -564,7 +511,7 @@ int show_keyhelp_menu(const vector<formatted_string> &lines,
     cmd_help.set_more();
 
     for (unsigned i = 0; i < lines.size(); ++i)
-        cmd_help.add_formatted_string(lines[i], true);
+        cmd_help.add_formatted_string(lines[i], i < lines.size()-1);
 
     cmd_help.show();
 
@@ -573,7 +520,8 @@ int show_keyhelp_menu(const vector<formatted_string> &lines,
 
 void show_specific_help(const string &key)
 {
-    const string help = getHelpString(key);
+    string help = getHelpString(key);
+    trim_string_right(help);
     vector<formatted_string> formatted_lines;
     for (const string &line : split_string("\n", help, false, true))
         formatted_lines.push_back(formatted_string::parse_string(line));
@@ -604,6 +552,11 @@ void show_interlevel_travel_branch_help()
 void show_interlevel_travel_depth_help()
 {
     show_specific_help("interlevel-travel.depth.prompt");
+}
+
+void show_interlevel_travel_altar_help()
+{
+    show_specific_help("interlevel-travel.altar.prompt");
 }
 
 void show_stash_search_help()
@@ -914,9 +867,9 @@ static void _add_formatted_keyhelp(column_composer &cols)
             1,
             "<h>Dungeon Interaction and Information:\n");
 
-    _add_insert_commands(cols, 1, "<w>%</w>/<w>%</w> : Open/Close door",
+    _add_insert_commands(cols, 1, "<w>%</w>/<w>%</w>    : Open/Close door",
                          { CMD_OPEN_DOOR, CMD_CLOSE_DOOR });
-    _add_insert_commands(cols, 1, "<w>%</w>/<w>%</w> : use staircase",
+    _add_insert_commands(cols, 1, "<w>%</w>/<w>%</w>    : use staircase",
                          { CMD_GO_UPSTAIRS, CMD_GO_DOWNSTAIRS });
 
     _add_command(cols, 1, CMD_INSPECT_FLOOR, "examine occupied tile and");
@@ -939,6 +892,10 @@ static void _add_formatted_keyhelp(column_composer &cols)
     _add_command(cols, 1, CMD_TOGGLE_TRAVEL_SPEED, "set your travel speed to your");
     cols.add_formatted(1, "         slowest ally\n",
                            false);
+#ifdef USE_TILE_LOCAL
+    _add_insert_commands(cols, 1, "<w>%</w>/<w>%</w> : zoom out/in",
+                        { CMD_ZOOM_OUT, CMD_ZOOM_IN });
+#endif
 
     cols.add_formatted(
             1,
@@ -961,16 +918,8 @@ static void _add_formatted_keyhelp(column_composer &cols)
             "<h>Item Interaction:\n");
 
     _add_command(cols, 1, CMD_INSCRIBE_ITEM, "inscribe item", 2);
-    {
-        const bool vampire = you.species == SP_VAMPIRE;
-        string butcher = vampire ? "bottle blood from"
-                                 : "Chop up";
-        _add_command(cols, 1, CMD_BUTCHER, butcher + " a corpse on floor", 2);
-        string interact = (you.species == SP_VAMPIRE ? "drain corpses"
-                                                     : "Eat food");
-        interact += " (tries floor first)\n";
-        _add_command(cols, 1, CMD_EAT, interact, 2);
-    }
+    _add_command(cols, 1, CMD_BUTCHER, "Chop up a corpse on floor", 2);
+    _add_command(cols, 1, CMD_EAT, "Eat food (tries floor first) \n", 2);
     _add_command(cols, 1, CMD_FIRE, "Fire next appropriate item", 2);
     _add_command(cols, 1, CMD_THROW_ITEM_NO_QUIVER, "select an item and Fire it", 2);
     _add_command(cols, 1, CMD_QUIVER_ITEM, "select item slot to be Quivered", 2);
@@ -1207,7 +1156,7 @@ static int _get_help_section(int section, formatted_string &header_out, formatte
                 text += formatted_string(buf);
                 if (next_is_hotkey && (isaupper(buf[0]) || isadigit(buf[0])))
                 {
-                    int hotkey = tolower(buf[0]);
+                    int hotkey = tolower_safe(buf[0]);
                     hotkeys[hotkey] = count_occurrences(text.tostring(), "\n");
                 }
 

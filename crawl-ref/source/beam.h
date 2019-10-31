@@ -105,7 +105,7 @@ struct bolt
                                   // FROST etc so that we can change mulch rate
     // Do we draw animations?
     bool   animate = bool(Options.use_animations & UA_BEAM);
-    ac_type ac_rule = AC_NORMAL;   // How defender's AC affects damage.
+    ac_type ac_rule = ac_type::normal;   // How defender's AC affects damage.
 #ifdef DEBUG_DIAGNOSTICS
     bool   quiet_debug = false;    // Disable any debug spam.
 #endif
@@ -245,6 +245,7 @@ public:
 private:
     void affect_wall();
     void digging_wall_effect();
+    void growth_wall_effect();
     void burn_wall_effect();
     void affect_ground();
     void affect_place_clouds();

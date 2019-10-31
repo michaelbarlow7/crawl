@@ -832,25 +832,6 @@ bool cheibriados_thinks_mons_is_fast(const monster& mon)
     return cheibriados_monster_player_speed_delta(mon) > 0;
 }
 
-// Dithmenos also hates fire users, flaming weapons, and generally fiery beings.
-bool mons_is_fiery(const monster& mon)
-{
-    if (mons_genus(mon.type) == MONS_DRACONIAN
-        && draco_or_demonspawn_subspecies(mon) == MONS_RED_DRACONIAN)
-    {
-        return true;
-    }
-    if (mons_genus(mon.type) == MONS_DANCING_WEAPON
-        && mon.weapon() && mon.weapon()->brand == SPWPN_FLAMING)
-    {
-        return true;
-    }
-    return mon.has_attack_flavour(AF_FIRE)
-           || mon.has_attack_flavour(AF_PURE_FIRE)
-           || mon.has_attack_flavour(AF_STICKY_FLAME)
-           || mon.has_spell_of_type(spschool::fire);
-}
-
 bool mons_is_projectile(monster_type mc)
 {
     return mons_class_flag(mc, M_PROJECTILE);
@@ -1103,7 +1084,7 @@ static void _mimic_vanish(const coord_def& pos, const string& name)
 
     mprf("The %s mimic %svanishes%s!",
          name.c_str(), cackle.c_str(), smoke_str);
-    interrupt_activity(AI_MIMIC);
+    interrupt_activity(activity_interrupt::mimic);
 }
 
 /**
@@ -2023,14 +2004,19 @@ mon_attack_def mons_attack_spec(const monster& m, int attk_number,
             attk.damage = max(1, you.skill_rdiv(SK_UNARMED_COMBAT, 10, 20));
     }
 
-    if (attk.type == AT_RANDOM)
-        attk.type = random_choose(AT_HIT, AT_GORE);
+    if (!base_flavour)
+    {
+        // TODO: randomization here is not the greatest way of doing any of
+        // these...
+        if (attk.type == AT_RANDOM)
+            attk.type = random_choose(AT_HIT, AT_GORE);
 
-    if (attk.type == AT_CHERUB)
-        attk.type = random_choose(AT_HIT, AT_BITE, AT_PECK, AT_GORE);
+        if (attk.type == AT_CHERUB)
+            attk.type = random_choose(AT_HIT, AT_BITE, AT_PECK, AT_GORE);
 
-    if (attk.flavour == AF_DRAIN_STAT)
-        attk.flavour = random_choose(AF_DRAIN_STR, AF_DRAIN_INT,AF_DRAIN_DEX);
+        if (attk.flavour == AF_DRAIN_STAT)
+            attk.flavour = random_choose(AF_DRAIN_STR, AF_DRAIN_INT,AF_DRAIN_DEX);
+    }
 
     // Slime creature attacks are multiplied by the number merged.
     if (mon.type == MONS_SLIME_CREATURE && mon.blob_size > 1)
@@ -2088,12 +2074,12 @@ string mon_attack_name(attack_type attack, bool with_object)
 #if TAG_MAJOR_VERSION == 34
         "sting",
 #endif
-        "hit", // AT_CHERUB
+        "hit, bite, peck, or gore", // AT_CHERUB
 #if TAG_MAJOR_VERSION == 34
         "hit", // AT_SHOOT
 #endif
         "hit", // AT_WEAP_ONLY,
-        "hit", // AT_RANDOM
+        "hit or gore", // AT_RANDOM
     };
     COMPILE_CHECK(ARRAYSZ(attack_types) == NUM_ATTACK_TYPES - AT_FIRST_ATTACK);
 
@@ -3079,7 +3065,11 @@ void ugly_thing_apply_uniform_band_colour(mgen_data &mg,
 
 static const char *drac_colour_names[] =
 {
-    "black", "", "yellow", "green", "purple", "red", "white", "grey", "pale"
+    "black",
+#if TAG_MAJOR_VERSION == 34
+    "",
+#endif
+    "yellow", "green", "purple", "red", "white", "grey", "pale"
 };
 
 string draconian_colour_name(monster_type mon_type)
@@ -3110,7 +3100,11 @@ monster_type draconian_colour_by_name(const string &name)
 // TODO: Remove "putrid" when TAG_MAJOR_VERSION > 34
 static const char *demonspawn_base_names[] =
 {
-    "monstrous", "gelid", "infernal", "putrid", "torturous",
+    "monstrous", "gelid", "infernal",
+#if TAG_MAJOR_VERSION == 34
+    "putrid",
+#endif
+    "torturous",
 };
 
 string demonspawn_base_name(monster_type mon_type)
@@ -3884,7 +3878,7 @@ bool mons_has_incapacitating_ranged_attack(const monster& mon, const actor& foe)
 
     if (missile && missile->sub_type == MI_THROWING_NET)
         return true;
-    else if (missile && missile->sub_type == MI_NEEDLE)
+    else if (missile && missile->sub_type == MI_DART)
     {
         switch (get_ammo_brand(*missile))
         {
@@ -3895,13 +3889,11 @@ bool mons_has_incapacitating_ranged_attack(const monster& mon, const actor& foe)
                 return true;
             break;
 
-        case SPMSL_SLEEP:
-            if (foe.can_sleep())
-                return true;
-            break;
-
+        case SPMSL_BLINDING:
+#if TAG_MAJOR_VERSION == 34
         case SPMSL_CONFUSION:
         case SPMSL_PARALYSIS:
+#endif
             return true;
 
         default:
@@ -3930,15 +3922,17 @@ bool mons_can_attack(const monster& mon)
  * Used for pronoun selection.
  *
  * @param mc        The type of monster in question
- * @return          GENDER_NEUTER, _FEMALE, or _MALE.
+ * @return          GENDER_NEUTER, _NEUTRAL, _FEMALE, or _MALE.
  */
-static gender_type _mons_class_gender(monster_type mc)
+gender_type mons_class_gender(monster_type mc)
 {
     const bool female = mons_class_flag(mc, M_FEMALE);
     const bool male = mons_class_flag(mc, M_MALE);
-    ASSERT(!(male && female));
+    const bool neutral = mons_class_flag(mc, M_GENDER_NEUTRAL);
+    ASSERT(male + female + neutral <= 1);
     return male ? GENDER_MALE :
          female ? GENDER_FEMALE :
+        neutral ? GENDER_NEUTRAL :
                   GENDER_NEUTER;
 }
 
@@ -3951,7 +3945,7 @@ const char *mons_pronoun(monster_type mon_type, pronoun_type variant,
                          bool visible)
 {
     const gender_type gender = !visible ? GENDER_NEUTER
-                                        : _mons_class_gender(mon_type);
+                                        : mons_class_gender(mon_type);
     return decline_pronoun(gender, variant);
 }
 
@@ -4484,7 +4478,7 @@ string do_mon_str_replacements(const string &in_msg, const monster& mons,
     msg = replace_all(msg, "@a_something@", mons.name(DESC_A));
     msg = replace_all(msg, "@the_something@", mons.name(nocap));
 
-    something[0] = toupper(something[0]);
+    something[0] = toupper_safe(something[0]);
     msg = replace_all(msg, "@Something@",   something);
     msg = replace_all(msg, "@A_something@", mons.name(DESC_A));
     msg = replace_all(msg, "@The_something@", mons.name(cap));
@@ -4497,7 +4491,7 @@ string do_mon_str_replacements(const string &in_msg, const monster& mons,
     msg = replace_all(msg, "@a_monster@",   mons.name(DESC_A));
     msg = replace_all(msg, "@the_monster@", mons.name(nocap));
 
-    plain[0] = toupper(plain[0]);
+    plain[0] = toupper_safe(plain[0]);
     msg = replace_all(msg, "@Monster@",     plain);
     msg = replace_all(msg, "@A_monster@",   mons.name(DESC_A));
     msg = replace_all(msg, "@The_monster@", mons.name(cap));
@@ -4980,8 +4974,9 @@ void debug_mondata()
 
         const bool male = mons_class_flag(mc, M_MALE);
         const bool female = mons_class_flag(mc, M_FEMALE);
-        if (male && female)
-            fails += make_stringf("%s is both male and female\n", name);
+        const bool neutral = mons_class_flag(mc, M_GENDER_NEUTRAL);
+        if (male + female + neutral > 1)
+            fails += make_stringf("%s has too many genders\n", name);
 
         if (md->shape == MON_SHAPE_BUGGY)
             fails += make_stringf("%s has no defined shape\n", name);
@@ -5004,7 +4999,8 @@ void debug_mondata()
                 fails += make_stringf("%s has a corpse tile & no corpse\n",
                                       name);
             }
-        } else if (!has_corpse_tile)
+        }
+        else if (!has_corpse_tile)
             fails += make_stringf("%s has a corpse but no corpse tile\n", name);
     }
 

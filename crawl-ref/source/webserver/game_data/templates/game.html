@@ -165,30 +165,29 @@
             <div class="pane">
                 <table class="vamp-attrs pane">
                     <thead>
-                        <tr><td></td><th class=fg2>Full</th><th>Satiated</th><th class=fg14>Thirsty</th><th class=fg12>Bloodless</th></tr>
+                        <tr><td></td><th class=fg2>Alive</th><th class=fg12>Bloodless</th></tr>
                     </thead>
                     <tbody>
-                        <tr><th>Metabolism</th><td>fast</td><td>normal</td><td>slow</td><td>none</td></tr>
-                        <tr><td>Regeneration</td><td>fast</td><td>normal</td><td>slow</td><td>none</td></tr>
-                        <tr><td>Stealth boost</td><td>none</td><td>none</td><td>minor</td><td>major</td></tr>
-                        <tr><td>Hunger costs</td><td>full</td><td>full</td><td>halved</td><td>none</td></tr>
-                        <tr class=group><th>Resistances</th><td></td><td></td><td></td><td></td></tr>
-                        <tr><td>Poison resistance</td><td></td><td></td><td>+</td><td>immune</td></tr>
-                        <tr><td>Cold resistance</td><td></td><td></td><td>+</td><td>++</td></tr>
-                        <tr><td>Negative resistance</td><td></td><td>+</td><td>++</td><td>+++</td></tr>
-                        <tr><td>Rot resistance</td><td></td><td></td><td>+</td><td>+</td></tr>
-                        <tr><td>Torment resistance</td><td></td><td></td><td></td><td>+</td></tr>
-                        <tr class=group><th>Transformations</th><td></td><td></td><td></td><td></td></tr>
-                        <tr><td>Bat form</td><td>no</td><td>yes</td><td>yes</td><td>yes</td></tr>
-                        <tr><td>Other forms / berserk</td><td>yes</td><td>yes</td><td>no</td><td>no</td></tr>
+                        <tr><td>Regeneration</td><td>fast</td><td>none with monsters in sight</td></tr>
+                        <tr><td>Stealth boost</td><td>none</td><td>major</td></tr>
+                        <tr><td>HP modifier</td><td>none</td><td>-20%</td></tr>
+                        <tr class=group><th>Resistances</th><td></td><td></td></tr>
+                        <tr><td>Poison resistance</td><td></td><td>immune</td></tr>
+                        <tr><td>Cold resistance</td><td></td><td>++</td></tr>
+                        <tr><td>Negative resistance</td><td></td><td>+++</td></tr>
+                        <tr><td>Rot resistance</td><td></td><td>+</td></tr>
+                        <tr><td>Torment resistance</td><td></td><td>+</td></tr>
+                        <tr class=group><th>Transformations</th><td></td><td></td></tr>
+                        <tr><td>Bat form</td><td>no</td><td>yes</td></tr>
+                        <tr><td>Other forms / berserk</td><td>yes</td><td>no</td></tr>
                     </tbody>
                 </table>
                 <style></style>
             </div>
         </div>
         <div class="footer paneset">
-            <div class="pane">[!/^]: Mutations | Blood properties</div>
-            <div class=pane>[!/^]: Mutations | Blood properties</div>
+            <div class="pane">[!/^]: <b class=fg15>Mutations</b> | Blood properties</div>
+            <div class="pane">[!/^]: Mutations | <b class=fg15>Blood properties</b></div>
         </div>
     </div>
     <div id="describe-god-basic" class="describe-god fg7">
@@ -293,6 +292,33 @@
     <div class=msgwin-get-line>
         <div class=header></div>
         <div class="body fg7"></div>
+    </div>
+    <div class="newgame-choice">
+        <div class=header></div>
+        <div class="body fg7">
+            <div>
+                <div class="main-items grid">
+                </div>
+            </div>
+            <div class="descriptions paneset">
+            </div>
+            <div class="sub-items grid">
+            </div>
+        </div>
+    </div>
+    <div class="game-over">
+        <div class=header>
+            <canvas class="glyph-mode-hidden"></canvas>
+            <span></span>
+        </div>
+        <div class="body fg7"></div>
+    </div>
+    <div class="seed-selection">
+        <div class="header fg3"><span></span></div>
+        <div class="body fg7"><span></span></div>
+        <div class="seed-input fg7"></div>
+        <div class="footer fg7"><span></span></div>
+        </div>
     </div>
 </div>
 

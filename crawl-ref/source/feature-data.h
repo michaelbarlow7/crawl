@@ -257,7 +257,7 @@ static feature_def feat_defs[] =
 }
 
 TRAP(DNGN_TRAP_MECHANICAL, "mechanical trap", "trap_mechanical", LIGHTCYAN),
-TRAP(DNGN_TRAP_DISPERSAL, "disperal trap", "trap_dispersal", MAGENTA),
+TRAP(DNGN_TRAP_DISPERSAL, "dispersal trap", "trap_dispersal", MAGENTA),
 TRAP(DNGN_TRAP_TELEPORT, "teleport trap", "trap_teleport", LIGHTBLUE),
 #if TAG_MAJOR_VERSION == 34
 TRAP(DNGN_TRAP_SHADOW, "shadow trap", "trap_shadow", BLUE),
@@ -520,7 +520,7 @@ ALTAR(DNGN_ALTAR_XOM, "shimmering altar of Xom", "altar_xom", ETC_RANDOM),
 ALTAR(DNGN_ALTAR_VEHUMET, "radiant altar of Vehumet", "altar_vehumet", ETC_VEHUMET),
 ALTAR(DNGN_ALTAR_OKAWARU, "iron altar of Okawaru", "altar_okawaru", CYAN),
 ALTAR(DNGN_ALTAR_MAKHLEB, "burning altar of Makhleb", "altar_makhleb", ETC_FIRE),
-ALTAR(DNGN_ALTAR_SIF_MUNA, "deep blue altar of Sif Muna", "altar_sif_muna", BLUE),
+ALTAR(DNGN_ALTAR_SIF_MUNA, "shimmering blue altar of Sif Muna", "altar_sif_muna", ETC_SHIMMER_BLUE),
 ALTAR(DNGN_ALTAR_TROG, "bloodstained altar of Trog", "altar_trog", RED),
 ALTAR(DNGN_ALTAR_NEMELEX_XOBEH, "sparkling altar of Nemelex Xobeh", "altar_nemelex_xobeh", LIGHTMAGENTA),
 ALTAR(DNGN_ALTAR_ELYVILON, "white marble altar of Elyvilon", "altar_elyvilon", WHITE),
@@ -535,7 +535,9 @@ ALTAR(DNGN_ALTAR_GOZAG, "opulent altar of Gozag", "altar_gozag", ETC_GOLD), // f
 ALTAR(DNGN_ALTAR_QAZLAL, "stormy altar of Qazlal", "altar_qazlal", ETC_ELEMENTAL),
 ALTAR(DNGN_ALTAR_RU, "sacrificial altar of Ru", "altar_ru", BROWN),
 ALTAR(DNGN_ALTAR_ECUMENICAL, "faded altar of an unknown god", "altar_ecumenical", ETC_DARK),
+#if TAG_MAJOR_VERSION == 34
 ALTAR(DNGN_ALTAR_PAKELLAS, "oddly glowing altar of Pakellas", "altar_pakellas", ETC_PAKELLAS),
+#endif
 ALTAR(DNGN_ALTAR_USKAYAW, "hide-covered altar of Uskayaw", "altar_uskayaw", ETC_INCARNADINE),
 ALTAR(DNGN_ALTAR_HEPLIAKLQANA, "hazy altar of Hepliaklqana", "altar_hepliaklqana", LIGHTGREEN),
 ALTAR(DNGN_ALTAR_WU_JIAN, "ornate altar of the Wu Jian Council", "altar_wu_jian", ETC_WU_JIAN),

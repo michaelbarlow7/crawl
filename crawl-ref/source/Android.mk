@@ -257,6 +257,7 @@ CRAWLSRC = ability.cc \
 	notes.cc \
 	orb.cc \
 	ouch.cc \
+	outer-menu.cc \
 	output.cc \
 	package.cc \
 	pattern.cc \

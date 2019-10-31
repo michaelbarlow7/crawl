@@ -122,7 +122,7 @@ The contents of this text are:
 4-b     Items and Kills.
                 kill_map, dump_kill_places, dump_kill_breakdowns,
                 dump_item_origins, dump_item_origin_price, dump_message_count,
-                dump_order, dump_book_spells
+                dump_order
 4-c     Notes.
                 user_note_prefix, note_items, note_monsters, note_hp_percent,
                 note_skill_levels, note_all_skill_levels, note_skill_max,
@@ -410,14 +410,17 @@ game_seed = none
         "-seed", which will override any rc file setting. This value is an
         unsigned 64 bit integer.
 
-pregen_dungeon = false
-        When set to true, the game will pregenerate the entire connected dungeon
-        when starting a new character. This leads to more deterministic dungeon
-        generation relative to a particular game seed. If this is false, levels
-        will be generated as you enter them, and the order in which you traverse
-        the dungeon will lead to different dungeons for the same game seed. With
-        this set to true, you still may encounter variation in portal vaults,
-        the abyss, pandemonium, and ziggurats.
+pregen_dungeon = incremental
+        When set to `true` or `full`, the game will pregenerate the entire
+        connected dungeon when starting a new character. This leads to
+        deterministic dungeon generation relative to a particular game seed, at
+        the cost of a slow game start. If set to `incremental`, the game will
+        generate levels as needed so that it always generates them in the same
+        order, also producing a deterministic dungeon. You still may encounter
+        variation in bazaars, the abyss, pandemonium, and ziggurats, and for
+        incremental pregeneration, artefacts. When set to `false` or `classic`,
+        the game will generate all levels on level entry, as was the rule before
+        0.23. Some servers may disallow full pregeneration.
 
 2-  File System.
 ================
@@ -491,10 +494,8 @@ autopickup = $?!+"/%
         !       Potions
         + or :  Books
         |       Staves
-        \       Rods
         0       Orbs
         }       Misc. items
-        X       Corpses
         $       Gold
         Note that _whether_ items are picked up automatically or not, is
         controlled by the in-game toggle Ctrl-A. Also note that picking
@@ -511,13 +512,13 @@ autopickup_exceptions ^= <pickup-regex, >don't-pickup-regex, ...
         be subject to autopickup.
 
         An example:
-             autopickup_exceptions += <curare-tipped needle
-        Forces autopickup to grab all curare-tipped needles, even if
+             autopickup_exceptions += <curare-tipped dart
+        Forces autopickup to grab all curare-tipped darts, even if
         missiles are not set in the "autopickup" option.
 
         Whitespace between <> and the match expression is significant,
         so the following won't work:
-             autopickup_exceptions += <   ebony casket
+             autopickup_exceptions += <   box of beasts
 
         autopickup_exceptions replace the older ban_pickup. Using
              autopickup_exceptions += >uselessness, >inaccuracy
@@ -529,8 +530,7 @@ autopickup_exceptions ^= <pickup-regex, >don't-pickup-regex, ...
              autopickup_exceptions += uselessness, inaccuracy
 
         You can use multiple autopickup_exceptions lines. Some examples:
-             autopickup_exceptions += inaccuracy, scrolls? of paper
-             autopickup_exceptions += immolation, curse (armour|weapon)
+             autopickup_exceptions += inaccuracy, immolation
              autopickup_exceptions += uselessness, noise, torment
 
         Unless you clear the list of exceptions, you won't need to set
@@ -1047,7 +1047,6 @@ easy_eat_chunks = false
         If this is set to true then when using the (e)at command, the
         game will automatically determine the oldest chunk that is safe
         to eat, and eat it without prompting.
-        You will always be prompted to eat harmful chunks.
 
 auto_eat_chunks = true
         Setting this option to true will allow you to automatically eat a chunk
@@ -1293,7 +1292,7 @@ autofight_hunger_stop_undead = false
 autofight_throw = false
         If your quiver contains a throwable item, autofight will throw it
         at enemies out of melee range. Without this option, only a wielded
-        launcher (a bow, crossbow, sling or blowgun) will be considered.
+        launcher (a bow, crossbow or sling) will be considered.
 
 autofight_throw_nomove = true
         This works same as above, except only for ===hit_closest_nomove rather
@@ -1454,12 +1453,13 @@ show_game_time = true
         By default, the counter in the stat area displays elapsed game time.
         Most actions take one unit of time, but some are quicker (putting on a
         ring, wielding a weapon, ...) and others are slower (swinging a weapon
-        with low skill, changing armour, ...). The duration of the last action
-        is displayed in parenthesis, after the time display.
+        with low skill, changing armour, ...).
         When set to false, the counter will display player turns instead, which
         is the number of actions taken regardless of their duration. It is this
         turn count which is used for scoring (and this turn count is always
         visible on the % overview screen).
+        The duration of the last action is displayed in parenthesis, after the
+        time/player turns display.
 
 equip_bar = false
         When set to true, this option replaces the noise bar with an
@@ -1737,8 +1737,8 @@ fire_items_start = a
         Sets the first inventory item to consider when selecting
         missiles to fire. The default is a.
 
-fire_order  = launcher, return
-fire_order += javelin / tomahawk / stone / rock / net
+fire_order  = launcher
+fire_order += javelin / boomerang / stone / rock / net / dart
 fire_order += inscribed
         (Ordered list option)
         Controls the order of items autoselected for firing. Items
@@ -1751,7 +1751,7 @@ fire_order += inscribed
         firing.
 
         'launcher' refers to firing the appropriate missile for the
-        wielded weapon (i.e. crossbow, bow, sling, blowgun). You'll almost
+        wielded weapon (i.e. crossbow, bow, sling). You'll almost
         certainly want it first, as it'll be ignored when you're not
         wielding a ranged weapon. 'return' refers to (identified)
         weapons of returning.
@@ -2037,12 +2037,21 @@ tile_map_pixels = 0
         downside is that travelling by clicking on the minimap becomes much
         harder. If set to zero, it will auto-size the minimap.
 
+tile_viewport_scale = 1.0
+        A scale factor to apply to the dungeon view. The minimum value is 0.2
+        and the maximum value is determined by resolution; zoom will be capped
+        so that at a minimum, your line of sight is always visible. This can
+        also be adjusted in-game in local tiles with ctrl-'-' and ctrl-'='.
+
+tile_map_scale = 0.6
+        A scale factor to apply to the dungeon view in map mode (X). This can
+        also be adjusted in map mode in tiles with '{' and '}', as well as in
+        local tiles with ctrl-'-' and ctrl-'='.
+
 tile_cell_pixels = 32
-        The width and height of tiles in the dungeon view. If you want
-        to see the tiles in all their glory and have a large
-        resolution, set this to 48 or even 64; but note that tiles
-        will be automatically scaled down to fit the visible area on
-        the screen.
+        The width and height of tiles in the dungeon view at 1.0 scale, in
+        (logical) pixels. This is a legacy option, and it is recommended that
+        you adjust scaling via tile_viewport_scale instead.
 
 tile_filter_scaling = false
         Used in conjunction with tile_cell_pixels. Setting it to true filters
@@ -2275,11 +2284,6 @@ dump_order += monlist,kills,notes,skill_gains,action_counts
         while in wizard mode). The "vaults" section is enabled by default
         in trunk builds of Crawl (not releases or pre-release betas),
         appearing between "notes" and "skill_gains".
-
-dump_book_spells = true
-        By default all randart spellbooks in inventory will have all their
-        spells listed in the dump. If this option is set to true, spells will
-        also be dumped for non-randart spellbooks.
 
 4-c     Notes.
 --------------

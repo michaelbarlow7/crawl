@@ -407,8 +407,8 @@ bool swap_check(monster* mons, coord_def &loc, bool quiet)
         // Might not be ideal, but it's better than insta-killing
         // the monster... maybe try for a short blink instead? - bwr
         simple_monster_message(*mons, " cannot make way for you.");
-        // FIXME: AI_HIT_MONSTER isn't ideal.
-        interrupt_activity(AI_HIT_MONSTER, mons);
+        // FIXME: activity_interrupt::hit_monster isn't ideal.
+        interrupt_activity(activity_interrupt::hit_monster, mons);
     }
 
     return swap;
@@ -549,7 +549,7 @@ bool is_feat_dangerous(dungeon_feature_type grid, bool permanently,
 
 bool is_map_persistent()
 {
-    return !(your_branch().branch_flags & BFLAG_NO_MAP)
+    return !testbits(your_branch().branch_flags, brflag::no_map)
            || env.properties.exists(FORCE_MAPPABLE_KEY);
 }
 
@@ -1090,12 +1090,9 @@ static int _player_bonus_regen()
 // Inhibited regeneration: stops regeneration when monsters are visible
 bool regeneration_is_inhibited()
 {
-    switch (you.get_mutation_level(MUT_INHIBITED_REGENERATION))
+    if (you.get_mutation_level(MUT_INHIBITED_REGENERATION) == 1
+        || (you.species == SP_VAMPIRE && !you.vampire_alive))
     {
-    case 0:
-      return false;
-    case 1:
-      {
         for (monster_near_iterator mi(you.pos(), LOS_NO_TRANS); mi; ++mi)
         {
             if (mons_is_threatening(**mi)
@@ -1106,12 +1103,9 @@ bool regeneration_is_inhibited()
                 return true;
             }
         }
-        return false;
-      }
-    default:
-      die("Unknown inhibited regeneration level.");
-      break;
     }
+
+    return false;
 }
 
 int player_regen()
@@ -1131,17 +1125,9 @@ int player_regen()
     // to heal.
     rr = max(1, rr);
 
-    // Healing depending on satiation.
-    // The better-fed you are, the faster you heal.
-    if (you.species == SP_VAMPIRE)
-    {
-        if (you.hunger_state <= HS_STARVING)
-            rr = 0;   // No regeneration for starving vampires.
-        else if (you.hunger_state < HS_SATIATED)
-            rr /= 2;  // Halved regeneration for hungry vampires.
-        else if (you.hunger_state >= HS_FULL)
-            rr += 20; // Bonus regeneration for full vampires.
-    }
+    // Bonus regeneration for alive vampires.
+    if (you.species == SP_VAMPIRE && you.vampire_alive)
+            rr += 20;
 
     if (you.duration[DUR_COLLAPSE])
         rr /= 4;
@@ -1239,33 +1225,8 @@ int player_hunger_rate(bool temp)
         hunger += 4;
     }
 
-    if (you.species == SP_VAMPIRE)
-    {
-        switch (you.hunger_state)
-        {
-        case HS_FAINTING:
-        case HS_STARVING:
-            hunger -= 3;
-            break;
-        case HS_NEAR_STARVING:
-        case HS_VERY_HUNGRY:
-        case HS_HUNGRY:
-            hunger--;
-            break;
-        case HS_SATIATED:
-            break;
-        case HS_FULL:
-        case HS_VERY_FULL:
-        case HS_ENGORGED:
-            hunger += 2;
-            break;
-        }
-    }
-    else
-    {
-        hunger += you.get_mutation_level(MUT_FAST_METABOLISM)
-                - you.get_mutation_level(MUT_SLOW_METABOLISM);
-    }
+    hunger += you.get_mutation_level(MUT_FAST_METABOLISM)
+            - you.get_mutation_level(MUT_SLOW_METABOLISM);
 
     // If Cheibriados has slowed your life processes, you will hunger less.
     if (have_passive(passive_t::slow_metabolism))
@@ -1442,13 +1403,8 @@ int player_res_cold(bool calc_unid, bool temp, bool items)
 
         rc += get_form()->res_cold();
 
-        if (you.species == SP_VAMPIRE)
-        {
-            if (you.hunger_state <= HS_STARVING)
+        if (you.species == SP_VAMPIRE && !you.vampire_alive)
                 rc += 2;
-            else if (you.hunger_state < HS_SATIATED)
-                rc++;
-        }
     }
 
     if (items)
@@ -1590,7 +1546,7 @@ bool player_res_torment(bool random)
     }
 
     return get_form()->res_neg() == 3
-           || you.species == SP_VAMPIRE && you.hunger_state <= HS_STARVING
+           || you.species == SP_VAMPIRE && !you.vampire_alive
            || you.petrified()
 #if TAG_MAJOR_VERSION == 34
            || player_equip_unrand(UNRAND_ETERNAL_TORMENT)
@@ -1617,7 +1573,7 @@ int player_res_poison(bool calc_unid, bool temp, bool items)
         case US_UNDEAD: // mummies & lichform
             return 3;
         case US_SEMI_UNDEAD: // vampire
-            if (you.hunger_state <= HS_STARVING) // XXX: && temp?
+            if (!you.vampire_alive) // XXX: && temp?
                 return 3;
             break;
     }
@@ -1659,11 +1615,6 @@ int player_res_poison(bool calc_unid, bool temp, bool items)
     // mutations:
     rp += you.get_mutation_level(MUT_POISON_RESISTANCE, temp);
     rp += you.get_mutation_level(MUT_SLIMY_GREEN_SCALES, temp) == 3 ? 1 : 0;
-
-    // Only thirsty vampires are naturally poison resistant.
-    // XXX: && temp?
-    if (you.species == SP_VAMPIRE && you.hunger_state < HS_SATIATED)
-        rp++;
 
     if (temp)
     {
@@ -1787,6 +1738,9 @@ int player_spec_conj()
     // Staves
     sc += you.wearing(EQ_STAFF, STAFF_CONJURATION);
 
+    if (player_equip_unrand(UNRAND_BATTLE))
+        sc++;
+
     return sc;
 }
 
@@ -1843,26 +1797,8 @@ int player_prot_life(bool calc_unid, bool temp, bool items)
     // Hunger is temporary, true, but that's something you can control,
     // especially as life protection only increases the hungrier you
     // get.
-    if (you.species == SP_VAMPIRE)
-    {
-        switch (you.hunger_state)
-        {
-        case HS_FAINTING:
-        case HS_STARVING:
+    if (you.species == SP_VAMPIRE && !you.vampire_alive)
             pl = 3;
-            break;
-        case HS_NEAR_STARVING:
-        case HS_VERY_HUNGRY:
-        case HS_HUNGRY:
-            pl = 2;
-            break;
-        case HS_SATIATED:
-            pl = 1;
-            break;
-        default:
-            break;
-        }
-    }
 
     // Same here. Your piety status, and, hence, TSO's protection, is
     // something you can more or less control.
@@ -2228,7 +2164,7 @@ static int _player_evasion(ev_ignore_type evit)
     // Size is all that matters when paralysed or at 0 dex.
     if ((you.cannot_move() || you.duration[DUR_CLUMSY]
             || you.form == transformation::tree)
-        && !(evit & EV_IGNORE_HELPLESS))
+        && !(evit & ev_ignore::helpless))
     {
         return max(1, 2 + size_factor / 2);
     }
@@ -2730,7 +2666,8 @@ void calc_hp(bool scale, bool set)
 
     you.hp_max = get_real_hp(true, true);
 
-    if (scale) {
+    if (scale)
+    {
         int hp = you.hp * 100 + you.hit_points_regeneration;
         int new_max = you.hp_max;
         hp = hp * new_max / old_max;
@@ -2877,9 +2814,9 @@ void level_change(bool skip_attribute_increase)
             case SP_VAMPIRE:
                 if (you.experience_level == 3)
                 {
-                    if (you.hunger_state > HS_SATIATED)
+                    if (you.vampire_alive)
                     {
-                        mprf(MSGCH_INTRINSIC_GAIN, "If you weren't so full, "
+                        mprf(MSGCH_INTRINSIC_GAIN, "If you were bloodless "
                              "you could now transform into a vampire bat.");
                     }
                     else
@@ -2912,7 +2849,7 @@ void level_change(bool skip_attribute_increase)
                     // do_level_up = false) but save the old values; then when
                     // we want the messages later, we restore the old skill
                     // levels and call check_skill_level_change() again, this
-                    // time passing do_update = true.
+                    // time passing do_level_up = true.
 
                     uint8_t saved_skills[NUM_SKILLS];
                     for (skill_type sk = SK_FIRST_SKILL; sk < NUM_SKILLS; ++sk)
@@ -2947,6 +2884,11 @@ void level_change(bool skip_attribute_increase)
                         you.skills[sk] = saved_skills[sk];
                         check_skill_level_change(sk);
                     }
+
+                    // It's possible we passed a training target due to
+                    // skills being rescaled to new aptitudes. Thus, we must
+                    // check the training targets.
+                    check_training_targets();
 
                     // Tell the player about their new species
                     for (auto &mut : fake_mutations(you.species, false))
@@ -3186,14 +3128,9 @@ int player_stealth()
     if (you.duration[DUR_SILENCE])
         stealth -= STEALTH_PIP;
 
-    // Thirsty vampires are stealthier.
-    if (you.species == SP_VAMPIRE)
-    {
-        if (you.hunger_state <= HS_STARVING || you.form == transformation::bat)
+    // Bloodless vampires are stealthier.
+    if (you.species == SP_VAMPIRE && !you.vampire_alive)
             stealth += STEALTH_PIP * 2;
-        else if (you.hunger_state <= HS_HUNGRY)
-            stealth += STEALTH_PIP;
-    }
 
     if (!you.airborne())
     {
@@ -3289,38 +3226,19 @@ static void _display_char_status(int value, const char *fmt, ...)
 
 static void _display_vampire_status()
 {
-    string msg = "At your current hunger state you ";
+    string msg = "At your current blood state you ";
     vector<const char *> attrib;
 
-    switch (you.hunger_state)
+    if (!you.vampire_alive)
     {
-        case HS_FAINTING:
-        case HS_STARVING:
-            attrib.push_back("are immune to poison");
-            attrib.push_back("significantly resist cold");
-            attrib.push_back("are immune to negative energy");
-            attrib.push_back("resist torment");
-            attrib.push_back("do not heal.");
-            break;
-        case HS_NEAR_STARVING:
-        case HS_VERY_HUNGRY:
-        case HS_HUNGRY:
-            attrib.push_back("resist poison");
-            attrib.push_back("resist cold");
-            attrib.push_back("significantly resist negative energy");
-            attrib.push_back("have a slow metabolism");
-            attrib.push_back("heal slowly.");
-            break;
-        case HS_SATIATED:
-            attrib.push_back("resist negative energy.");
-            break;
-        case HS_FULL:
-        case HS_VERY_FULL:
-        case HS_ENGORGED:
-            attrib.push_back("have a fast metabolism");
-            attrib.push_back("heal quickly.");
-            break;
+        attrib.push_back("are immune to poison");
+        attrib.push_back("significantly resist cold");
+        attrib.push_back("are immune to negative energy");
+        attrib.push_back("resist torment");
+        attrib.push_back("do not heal.");
     }
+    else
+        attrib.push_back("heal quickly.");
 
     if (!attrib.empty())
     {
@@ -3782,7 +3700,7 @@ void inc_mp(int mp_gain, bool silent)
     if (!silent)
     {
         if (_should_stop_resting(you.magic_points, you.max_magic_points))
-            interrupt_activity(AI_FULL_MP);
+            interrupt_activity(activity_interrupt::full_mp);
         you.redraw_magic_points = true;
     }
 }
@@ -3803,7 +3721,7 @@ void inc_hp(int hp_gain)
         you.hp = you.hp_max;
 
     if (_should_stop_resting(you.hp, you.hp_max))
-        interrupt_activity(AI_FULL_HP);
+        interrupt_activity(activity_interrupt::full_hp);
 
     you.redraw_hit_points = true;
 }
@@ -3929,7 +3847,7 @@ int get_real_hp(bool trans, bool rotted)
     hitp /= 10;
 
     const bool hep_frail = have_passive(passive_t::frail)
-                          || player_under_penance(GOD_HEPLIAKLQANA);
+                           || player_under_penance(GOD_HEPLIAKLQANA);
 
     // Mutations that increase HP by a percentage
     hitp *= 100 + (you.get_mutation_level(MUT_ROBUST) * 10)
@@ -3937,7 +3855,8 @@ int get_real_hp(bool trans, bool rotted)
                 + (you.get_mutation_level(MUT_RUGGED_BROWN_SCALES) ?
                    you.get_mutation_level(MUT_RUGGED_BROWN_SCALES) * 2 + 1 : 0)
                 - (you.get_mutation_level(MUT_FRAIL) * 10)
-                - (hep_frail ? 10 : 0);
+                - (hep_frail ? 10 : 0)
+                - (!you.vampire_alive ? 20 : 0);
 
     hitp /= 100;
 
@@ -3959,9 +3878,6 @@ int get_real_hp(bool trans, bool rotted)
     if (trans && player_equip_unrand(UNRAND_ETERNAL_TORMENT))
         hitp = hitp * 4 / 5;
 #endif
-
-    if (trans && you.duration[DUR_DEATHS_DOOR] > 0)
-        hitp = allowed_deaths_door_hp();
 
     return max(1, hitp);
 }
@@ -4015,8 +3931,6 @@ bool player_regenerates_hp()
 {
     if (you.has_mutation(MUT_NO_REGENERATION))
         return false;
-    if (you.species == SP_VAMPIRE && you.hunger_state <= HS_STARVING)
-        return false;
     return true;
 }
 
@@ -4026,9 +3940,11 @@ bool player_regenerates_mp()
     // damage shaving is enough. (due, dpeg)
     if (you.spirit_shield() && you.species == SP_DEEP_DWARF)
         return false;
+#if TAG_MAJOR_VERSION == 34
     // Pakellas blocks MP regeneration.
     if (have_passive(passive_t::no_mp_regen) || player_under_penance(GOD_PAKELLAS))
         return false;
+#endif
     return true;
 }
 
@@ -4328,13 +4244,8 @@ void handle_player_poison(int delay)
 
     // Transforming into a form with no metabolism merely suspends the poison
     // but doesn't let your body get rid of it.
-    // Hungry vampires are less affected by poison (not at all when bloodless).
-    if (you.is_nonliving() || you.undead_state()
-        && (you.undead_state() != US_SEMI_UNDEAD
-            || x_chance_in_y(4 - you.hunger_state, 4)))
-    {
+    if (you.is_nonliving() || (you.undead_state() && !you.vampire_alive))
         return;
-    }
 
     // Other sources of immunity (Zin, staff of Olgreb) let poison dissipate.
     bool do_dmg = (player_res_poison() >= 3 ? false : true);
@@ -4946,7 +4857,6 @@ bool land_player(bool quiet)
 static void _end_water_hold()
 {
     you.duration[DUR_WATER_HOLD] = 0;
-    you.duration[DUR_WATER_HOLD_IMMUNITY] = 1;
     you.props.erase("water_holder");
 }
 
@@ -4956,7 +4866,7 @@ bool player::clear_far_engulf()
         return false;
 
     monster * const mons = monster_by_mid(you.props["water_holder"].get_int());
-    if (!mons || !adjacent(mons->pos(), you.pos()))
+    if (!mons || !mons->alive() || !adjacent(mons->pos(), you.pos()))
     {
         if (you.res_water_drowning())
             mpr("The water engulfing you falls away.");
@@ -4971,40 +4881,22 @@ bool player::clear_far_engulf()
 
 void handle_player_drowning(int delay)
 {
-    if (you.duration[DUR_WATER_HOLD] == 1)
+    if (you.clear_far_engulf())
+        return;
+    if (you.res_water_drowning())
     {
-        if (!you.res_water_drowning())
-            mpr("You gasp with relief as air once again reaches your lungs.");
-        _end_water_hold();
+        // Reset so damage doesn't ramp up while able to breathe
+        you.duration[DUR_WATER_HOLD] = 10;
     }
     else
     {
-        monster* mons = monster_by_mid(you.props["water_holder"].get_int());
-        if (!mons || !adjacent(mons->pos(), you.pos()))
-        {
-            if (you.res_water_drowning())
-                mpr("The water engulfing you falls away.");
-            else
-                mpr("You gasp with relief as air once again reaches your lungs.");
-
-            _end_water_hold();
-
-        }
-        else if (you.res_water_drowning())
-        {
-            // Reset so damage doesn't ramp up while able to breathe
-            you.duration[DUR_WATER_HOLD] = 10;
-        }
-        else if (!you.res_water_drowning())
-        {
-            you.duration[DUR_WATER_HOLD] += delay;
-            int dam =
-                div_rand_round((28 + stepdown((float)you.duration[DUR_WATER_HOLD], 28.0))
-                                * delay,
-                                BASELINE_DELAY * 10);
-            ouch(dam, KILLED_BY_WATER, mons->mid);
-            mprf(MSGCH_WARN, "Your lungs strain for air!");
-        }
+        you.duration[DUR_WATER_HOLD] += delay;
+        int dam =
+            div_rand_round((28 + stepdown((float)you.duration[DUR_WATER_HOLD], 28.0))
+                            * delay,
+                            BASELINE_DELAY * 10);
+        ouch(dam, KILLED_BY_WATER, you.props["water_holder"].get_int());
+        mprf(MSGCH_WARN, "Your lungs strain for air!");
     }
 }
 
@@ -5088,6 +4980,7 @@ player::player()
     equip.init(-1);
     melded.reset();
     unrand_reacts.reset();
+    last_unequip = -1;
 
     symbol          = MONS_PLAYER;
     form            = transformation::none;
@@ -5106,6 +4999,7 @@ player::player()
     royal_jelly_dead = false;
     transform_uncancellable = false;
     fishtail = false;
+    vampire_alive = true;
 
     pet_target      = MHITNOT;
 
@@ -5189,6 +5083,8 @@ player::player()
     num_turns        = 0;
     exploration      = 0;
 
+    trapped          = false;
+
     last_view_update = 0;
 
     spell_letter_table.init(-1);
@@ -5196,6 +5092,8 @@ player::player()
 
     uniq_map_tags.clear();
     uniq_map_names.clear();
+    uniq_map_tags_abyss.clear();
+    uniq_map_names_abyss.clear();
     vault_list.clear();
 
     global_info = PlaceInfo();
@@ -5220,6 +5118,7 @@ player::player()
     // Non-saved UI state:
     prev_targ        = MHITNOT;
     prev_grd_targ.reset();
+    divine_exegesis  = false;
 
     travel_x         = 0;
     travel_y         = 0;
@@ -5264,7 +5163,8 @@ player::player()
 
     abyss_speed         = 0;
     game_seed           = 0;
-    game_is_seeded      = true;
+    fully_seeded        = true;
+    deterministic_levelgen = true;
 
     old_hunger          = hunger;
 
@@ -5297,7 +5197,7 @@ void player::init_skills()
     train.init(TRAINING_DISABLED);
     train_alt.init(TRAINING_DISABLED);
     training.init(0);
-    can_train.reset();
+    can_currently_train.reset();
     skill_points.init(0);
     ct_skill_points.init(0);
     skill_order.init(MAX_SKILL_ORDER);
@@ -5329,6 +5229,14 @@ bool player_save_info::operator<(const player_save_info& rhs) const
 {
     return experience_level > rhs.experience_level
            || (experience_level == rhs.experience_level && name < rhs.name);
+}
+
+string player_save_info::really_short_desc() const
+{
+    ostringstream desc;
+    desc << name << " the " << species_name << ' ' << class_name;
+
+    return desc.str();
 }
 
 string player_save_info::short_desc() const
@@ -5528,17 +5436,10 @@ void player::banish(actor* /*agent*/, const string &who, const int power,
     banished_power = power;
 }
 
-// For semi-undead species (Vampire!) reduce food cost for spells and abilities
-// to 50% (hungry, very hungry, near starving) or zero (starving).
+// Currently a no-op, previously was used for vampire hunger modifications.
+// Perhaps in the fullness of time this can be removed.
 int calc_hunger(int food_cost)
 {
-    if (you.undead_state() == US_SEMI_UNDEAD && you.hunger_state < HS_SATIATED)
-    {
-        if (you.hunger_state <= HS_STARVING)
-            return 0;
-
-        return food_cost/2;
-    }
     return food_cost;
 }
 
@@ -5563,7 +5464,7 @@ int player::get_noise_perception(bool adjusted) const
     const int level = los_noise_last_turn;
     static const int BAR_MAX = 1000; // TODO: export to output.cc & webtiles
     if (!adjusted)
-         return div_rand_round(level, BAR_MAX);
+         return (level + 500) / BAR_MAX;
 
     static const vector<int> NOISE_BREAKPOINTS = { 0, 6000, 13000, 29000 };
     const int BAR_FRAC = BAR_MAX / (NOISE_BREAKPOINTS.size() - 1);
@@ -5637,7 +5538,6 @@ bool player::shielded() const
            || duration[DUR_DIVINE_SHIELD]
            || get_mutation_level(MUT_LARGE_BONE_PLATES) > 0
            || qazlal_sh_boost() > 0
-           || attribute[ATTR_BONE_ARMOUR] > 0
            || you.wearing(EQ_AMULET_PLUS, AMU_REFLECTION) > 0
            || you.scan_artefacts(ARTP_SHIELDING);
 }
@@ -6066,8 +5966,8 @@ int player::evasion(ev_ignore_type evit, const actor* act) const
     const int constrict_penalty = is_constricted() ? 3 : 0;
 
     const bool attacker_invis = act && !act->visible_to(this);
-    const int invis_penalty = attacker_invis && !(evit & EV_IGNORE_HELPLESS) ?
-                              10 : 0;
+    const int invis_penalty
+        = attacker_invis && !testbits(evit, ev_ignore::helpless) ? 10 : 0;
 
     return base_evasion - constrict_penalty - invis_penalty;
 }
@@ -6092,7 +5992,8 @@ mon_holy_type player::holiness(bool temp) const
     mon_holy_type holi;
 
     // Lich form takes precedence over a species' base holiness
-    if (undead_state(temp))
+    // Alive Vampires are MH_NATURAL
+    if (is_lifeless_undead(temp))
         holi = MH_UNDEAD;
     else if (species == SP_GARGOYLE)
         holi = MH_NONLIVING;
@@ -6110,8 +6011,11 @@ mon_holy_type player::holiness(bool temp) const
     if (is_good_god(religion))
         holi |= MH_HOLY;
 
-    if (is_evil_god(religion) || species == SP_DEMONSPAWN)
+    if (is_evil_god(religion)
+        || species == SP_DEMONSPAWN || species == SP_VAMPIRE)
+    {
         holi |= MH_EVIL;
+    }
 
     // possible XXX: Monsters get evil/unholy bits set on spell selection
     //  should players?
@@ -6224,7 +6128,7 @@ int player::res_rotting(bool temp) const
         return 1; // rottable by Zin, not by necromancy
 
     case US_SEMI_UNDEAD:
-        if (temp && hunger_state < HS_SATIATED)
+        if (temp && !you.vampire_alive)
             return 1;
         return 0; // no permanent resistance
 
@@ -7106,7 +7010,7 @@ bool player::can_safely_mutate(bool temp) const
 bool player::is_lifeless_undead(bool temp) const
 {
     if (undead_state() == US_SEMI_UNDEAD)
-        return temp ? hunger_state < HS_SATIATED : false;
+        return temp ? !you.vampire_alive : false;
     else
         return undead_state(temp) != US_ALIVE;
 }
@@ -7318,6 +7222,10 @@ bool player::do_shaft()
     {
         return false;
     }
+
+    // Ensure altars, items, and shops discovered at the moment
+    // the player gets shafted are correctly registered.
+    maybe_update_stashes();
 
     duration[DUR_SHAFT_IMMUNITY] = 1;
     down_stairs(DNGN_TRAP_SHAFT);
@@ -7781,7 +7689,7 @@ void player_open_door(coord_def doorpos)
                         set_exclude(doorpos, 0);
                     }
                 }
-                interrupt_activity(AI_FORCE_INTERRUPT);
+                interrupt_activity(activity_interrupt::force);
                 return;
             }
             ignore_exclude = true;
@@ -7795,7 +7703,7 @@ void player_open_door(coord_def doorpos)
             if (!yesno(prompt.c_str(), true, 'n', true, false))
             {
                 canned_msg(MSG_OK);
-                interrupt_activity(AI_FORCE_INTERRUPT);
+                interrupt_activity(activity_interrupt::force);
                 return;
             }
         }

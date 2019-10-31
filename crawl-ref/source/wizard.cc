@@ -115,7 +115,7 @@ static void _do_wizard_command(int wiz_command)
 
     case 'l': wizard_set_xl(); break;
     case 'L': debug_place_map(false); break;
-    // case CONTROL('L'): break;
+    case CONTROL('L'): debug_show_builder_logs(); break;
 
     case 'M':
     case 'm': wizard_create_spec_monster_name(); break;
@@ -210,7 +210,8 @@ static void _do_wizard_command(int wiz_command)
         break;
 
     case '\\': debug_make_shop(); break;
-    case '|': wizard_create_all_artefacts(); break;
+    case '|': wizard_create_all_artefacts(true); break;
+    case CONTROL('\\'): wizard_create_all_artefacts(false); break;
 
     case ';': wizard_list_levels(); break;
     case ':': wizard_list_branches(); break;
@@ -316,7 +317,7 @@ void handle_wizard_command()
         cursor_control con(true);
         wiz_command = getchm();
         if (wiz_command == '*')
-            wiz_command = CONTROL(toupper(getchm()));
+            wiz_command = CONTROL(toupper_safe(getchm()));
     }
 
     if (crawl_state.cmd_repeat_start)
@@ -442,6 +443,12 @@ int list_wizard_commands(bool do_redraw_screen)
                        "<w>{</w>      magic mapping\n"
                        "<w>Ctrl-W</w> change Shoals' tide speed\n"
                        "<w>Ctrl-E</w> dump level builder information\n"
+#ifdef DEBUG
+                       // might be present in any save, but only generated
+                       // in debug builds; hide this for regular wizmode so as
+                       // to not confuse non-devs. The command will still work.
+                       "<w>Ctrl-L</w> show builder logs for level\n"
+#endif
                        "<w>Ctrl-R</w> regenerate current level\n"
                        "<w>P</w>      create a level based on a vault\n",
                        true);
@@ -480,6 +487,7 @@ int list_wizard_commands(bool do_redraw_screen)
                        "<w>Ctrl-V</w> show gold value of an item\n"
                        "<w>-</w>      get a god gift\n"
                        "<w>|</w>      create all unrand artefacts\n"
+                       "<w>Ctrl-\\</w> create all unrands / fallbacks\n"
                        "<w>+</w>      make randart from item\n"
                        "<w>'</w>      list items\n"
                        "<w>J</w>      Jiyva off-level sacrifice\n"

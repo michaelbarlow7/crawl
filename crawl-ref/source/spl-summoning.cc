@@ -92,6 +92,9 @@ static mgen_data _pal_data(monster_type pal, int dur, god_type god,
 
 spret cast_summon_butterflies(int pow, god_type god, bool fail)
 {
+    if (otr_stop_summoning_prompt())
+        return spret::abort;
+
     fail_check();
     bool success = false;
 
@@ -114,6 +117,9 @@ spret cast_summon_butterflies(int pow, god_type god, bool fail)
 
 spret cast_summon_small_mammal(int pow, god_type god, bool fail)
 {
+    if (otr_stop_summoning_prompt())
+        return spret::abort;
+
     fail_check();
 
     monster_type mon = MONS_PROGRAM_BUG;
@@ -157,6 +163,10 @@ spret cast_sticks_to_snakes(int pow, god_type god, bool fail)
         mpr("You don't have anything to turn into a snake.");
         return spret::abort;
     }
+
+    if (otr_stop_summoning_prompt("create snakes"))
+        return spret::abort;
+
     // Sort by the quantity if the player has no bow skill; this will
     // put arrows with the smallest quantity first in line
     // If the player has bow skill, we will already have plain arrows
@@ -227,6 +237,9 @@ spret cast_sticks_to_snakes(int pow, god_type god, bool fail)
 
 spret cast_call_canine_familiar(int pow, god_type god, bool fail)
 {
+    if (otr_stop_summoning_prompt())
+        return spret::abort;
+
     fail_check();
     monster_type mon = MONS_PROGRAM_BUG;
 
@@ -266,6 +279,9 @@ spret cast_summon_ice_beast(int pow, god_type god, bool fail)
 
 spret cast_monstrous_menagerie(actor* caster, int pow, god_type god, bool fail)
 {
+    if (caster->is_player() && otr_stop_summoning_prompt())
+        return spret::abort;
+
     fail_check();
     monster_type type = MONS_PROGRAM_BUG;
 
@@ -381,6 +397,9 @@ spret cast_dragon_call(int pow, bool fail)
         mpr("You cannot issue another dragon's call so soon.");
         return spret::abort;
     }
+
+    if (otr_stop_summoning_prompt("call dragons"))
+        return spret::abort;
 
     fail_check();
 
@@ -1148,6 +1167,10 @@ bool summon_demon_type(monster_type mon, int pow, god_type god,
 
 spret cast_summon_demon(int pow, god_type god, bool fail)
 {
+    // Chaos spawn, orange demons and sixfirhies are not rPois
+    if (otr_stop_summoning_prompt())
+        return spret::abort;
+
     fail_check();
     mpr("You open a gate to Pandemonium!");
 
@@ -1159,6 +1182,9 @@ spret cast_summon_demon(int pow, god_type god, bool fail)
 
 spret cast_summon_greater_demon(int pow, god_type god, bool fail)
 {
+    if (otr_stop_summoning_prompt())
+        return spret::abort;
+
     fail_check();
     mpr("You open a gate to Pandemonium!");
 
@@ -1171,6 +1197,9 @@ spret cast_summon_greater_demon(int pow, god_type god, bool fail)
 spret cast_shadow_creatures(int st, god_type god, level_id place,
                                  bool fail)
 {
+    if (otr_stop_summoning_prompt("summon"))
+        return spret::abort;
+
     fail_check();
     const bool scroll = (st == MON_SUMM_SCROLL);
     mpr("Wisps of shadow whirl around you...");
@@ -1409,6 +1438,9 @@ spret cast_summon_forest(actor* caster, int pow, god_type god, bool fail)
 
     if (success)
     {
+        if (otr_stop_summoning_prompt("summon a forest"))
+            return spret::abort;
+
         fail_check();
         // Replace some rock walls with trees, then scatter a smaller number
         // of trees on unoccupied floor (such that they do not break connectivity)
@@ -1701,7 +1733,9 @@ static bool _raise_remains(const coord_def &pos, int corps, beh_type beha,
         *motions_r |= DEAD_ARE_HOPPING;
     }
     else if (mons_genus(zombie_type)    == MONS_WORKER_ANT
+#if TAG_MAJOR_VERSION == 34
              || mons_genus(zombie_type) == MONS_BEETLE
+#endif
              || mons_base_char(zombie_type) == 's') // many genera
     {
         *motions_r |= DEAD_ARE_CRAWLING;
@@ -3438,4 +3472,225 @@ int count_summons(const actor *summoner, spell_type spell)
     }
 
     return count;
+}
+
+static bool _create_briar_patch(coord_def& target)
+{
+    mgen_data mgen = mgen_data(MONS_BRIAR_PATCH, BEH_FRIENDLY, target,
+            MHITNOT, MG_FORCE_PLACE, GOD_FEDHAS);
+    mgen.hd = mons_class_hit_dice(MONS_BRIAR_PATCH) +
+        you.skill_rdiv(SK_INVOCATIONS);
+    mgen.set_summoned(&you, 3 + you.skill_rdiv(SK_INVOCATIONS, 1, 6),
+            SPELL_NO_SPELL);
+
+    if (create_monster(mgen))
+    {
+        mpr("A briar patch grows up from the ground.");
+        return true;
+    }
+
+    return false;
+}
+
+bool fedhas_wall_of_briars()
+{
+    // How many adjacent open spaces are there?
+    vector<coord_def> adjacent;
+    for (adjacent_iterator adj_it(you.pos()); adj_it; ++adj_it)
+    {
+        if (monster_habitable_grid(MONS_BRIAR_PATCH, env.grid(*adj_it))
+            && !actor_at(*adj_it))
+        {
+            adjacent.push_back(*adj_it);
+        }
+    }
+
+    // Don't prompt if we can't do anything.
+    if (adjacent.empty())
+    {
+        mpr("No empty adjacent squares.");
+        return false;
+    }
+
+    int created_count = 0;
+    for (auto p : adjacent)
+    {
+        if (_create_briar_patch(p))
+            created_count++;
+    }
+
+    if (!created_count)
+        canned_msg(MSG_NOTHING_HAPPENS);
+
+    return created_count;
+}
+
+static void _overgrow_wall(const coord_def &pos)
+{
+    const dungeon_feature_type feat = grd(pos);
+    const string what = feature_description(feat, NUM_TRAPS, "", DESC_THE,
+            false);
+
+    if (monster_at(pos))
+    {
+        mprf("Something unseen blocks growth in %s.", what.c_str());
+        return;
+    }
+
+    destroy_wall(pos);
+
+    const monster_type mon = random_choose_weighted(4, MONS_OKLOB_SAPLING,
+                                                    4, MONS_BURNING_BUSH,
+                                                    4, MONS_WANDERING_MUSHROOM,
+                                                    1, MONS_BALLISTOMYCETE,
+                                                    1, MONS_OKLOB_PLANT);
+    mgen_data mgen(mon, BEH_FRIENDLY, pos, MHITYOU, MG_FORCE_PLACE);
+    mgen.hd = mons_class_hit_dice(mon) + you.skill_rdiv(SK_INVOCATIONS);
+    mgen.set_summoned(&you, 3 + you.skill_rdiv(SK_INVOCATIONS, 1, 5),
+            SPELL_NO_SPELL);
+    if (const monster* const plant = create_monster(mgen))
+    {
+        mprf("%s is torn apart as %s grows in its place.", what.c_str(),
+                plant->name(DESC_A).c_str());
+    }
+    // XXX: Maybe try to make this revert the terrain if a monster isn't placed.
+    else
+        mprf("%s falls apart, but nothing grows.", what.c_str());
+}
+
+bool fedhas_overgrow()
+{
+    targeter_overgrow tgt;
+    direction_chooser_args args;
+    args.hitfunc = &tgt;
+    args.restricts = DIR_TARGET;
+    args.mode = TARG_ANY;
+    args.range = LOS_RADIUS;
+    args.just_looking = false;
+    args.needs_path = false;
+    args.top_prompt = "Aiming: <white>Overgrow</white>";
+    dist sdirect;
+    direction(sdirect, args);
+    if (!sdirect.isValid)
+        return false;
+
+    for (auto site : tgt.affected_positions)
+        _overgrow_wall(site);
+
+    return true;
+}
+
+spret fedhas_grow_ballistomycete(bool fail)
+{
+    dist spd;
+    bolt beam;
+    beam.range = 2;
+    direction_chooser_args args;
+    args.restricts = DIR_TARGET;
+    args.mode = TARG_HOSTILE;
+    args.needs_path = false;
+    if (!spell_direction(spd, beam, &args))
+        return spret::abort;
+
+    if (grid_distance(beam.target, you.pos()) > 2 || !in_bounds(beam.target))
+    {
+        mpr("That's too far away.");
+        return spret::abort;
+    }
+
+    if (!monster_habitable_grid(MONS_BALLISTOMYCETE, grd(beam.target)))
+    {
+        mpr("You can't grow a ballistomycete there.");
+        return spret::abort;
+    }
+
+    monster* mons = monster_at(beam.target);
+    if (mons)
+    {
+        if (you.can_see(*mons))
+        {
+            mpr("That space is already occupied.");
+            return spret::abort;
+        }
+
+        fail_check();
+
+        // invisible monster
+        mpr("Something you can't see occupies that space!");
+        return spret::success;
+    }
+
+    fail_check();
+
+    mgen_data mgen(MONS_BALLISTOMYCETE, BEH_FRIENDLY, beam.target, MHITYOU,
+            MG_FORCE_BEH | MG_FORCE_PLACE | MG_AUTOFOE);
+    mgen.hd = mons_class_hit_dice(MONS_BALLISTOMYCETE) +
+        you.skill_rdiv(SK_INVOCATIONS);
+    mgen.set_summoned(&you, 3 + you.skill_rdiv(SK_INVOCATIONS, 1, 5),
+            SPELL_NO_SPELL);
+
+    if (create_monster(mgen))
+        mpr("A ballistomycete grows from the ground.");
+    else
+        canned_msg(MSG_NOTHING_HAPPENS);
+
+    return spret::success;
+}
+
+spret fedhas_grow_oklob(bool fail)
+{
+    dist spd;
+    bolt beam;
+    beam.range = 2;
+    direction_chooser_args args;
+    args.restricts = DIR_TARGET;
+    args.mode = TARG_HOSTILE;
+    args.needs_path = false;
+    if (!spell_direction(spd, beam, &args))
+        return spret::abort;
+
+    if (grid_distance(beam.target, you.pos()) > 2 || !in_bounds(beam.target))
+    {
+        mpr("That's too far away.");
+        return spret::abort;
+    }
+
+    if (!monster_habitable_grid(MONS_OKLOB_PLANT, grd(beam.target)))
+    {
+        mpr("You can't grow an oklob plant there.");
+        return spret::abort;
+    }
+
+    monster* mons = monster_at(beam.target);
+    if (mons)
+    {
+        if (you.can_see(*mons))
+        {
+            mpr("That space is already occupied.");
+            return spret::abort;
+        }
+
+        fail_check();
+
+        // invisible monster
+        mpr("Something you can't see is occupying that space!");
+        return spret::success;
+    }
+
+    fail_check();
+
+    mgen_data mgen(MONS_OKLOB_PLANT, BEH_FRIENDLY, beam.target, MHITYOU,
+            MG_FORCE_BEH | MG_FORCE_PLACE | MG_AUTOFOE);
+    mgen.hd = mons_class_hit_dice(MONS_OKLOB_PLANT) +
+        you.skill_rdiv(SK_INVOCATIONS);
+    mgen.set_summoned(&you, 3 + you.skill_rdiv(SK_INVOCATIONS, 1, 5),
+            SPELL_NO_SPELL);
+
+    if (create_monster(mgen))
+        mpr("An oklob plant grows from the ground.");
+    else
+        canned_msg(MSG_NOTHING_HAPPENS);
+
+    return spret::success;
+
 }

@@ -161,7 +161,7 @@ static void _monster_regenerate(monster* mons)
     if (mons_is_hepliaklqana_ancestor(mons->type))
     {
         if (mons->hit_points == mons->max_hit_points && you.can_see(*mons))
-            interrupt_activity(AI_ANCESTOR_HP);
+            interrupt_activity(activity_interrupt::ancestor_hp);
     }
 }
 
@@ -1039,55 +1039,8 @@ static bool _handle_scroll(monster& mons)
     return read;
 }
 
-static bolt& _generate_item_beem(bolt &beem, bolt& from, monster& mons)
-{
-    beem.name         = from.name;
-    beem.source_id    = mons.mid;
-    beem.source       = mons.pos();
-    beem.colour       = from.colour;
-    beem.range        = from.range;
-    beem.damage       = from.damage;
-    beem.ench_power   = from.ench_power;
-    beem.hit          = from.hit;
-    beem.glyph        = from.glyph;
-    beem.flavour      = from.flavour;
-    beem.thrower      = from.thrower;
-    beem.pierce       = from.pierce ;
-    beem.is_explosion = from.is_explosion;
-    beem.origin_spell = from.origin_spell;
-    return beem;
-}
-
-static bool _setup_wand_beam(bolt& beem, monster& mons, const item_def& wand)
-{
-    if (item_type_removed(wand.base_type, wand.sub_type))
-        return false;
-
-    //XXX: implement these for monsters... (:
-    if (wand.sub_type == WAND_ICEBLAST
-        || wand.sub_type == WAND_RANDOM_EFFECTS
-        || wand.sub_type == WAND_CLOUDS
-        || wand.sub_type == WAND_SCATTERSHOT)
-    {
-        return false;
-    }
-
-    const spell_type mzap =
-        spell_in_wand(static_cast<wand_type>(wand.sub_type));
-
-    // set up the beam
-    int power         = 30 + mons.get_hit_dice();
-    bolt theBeam      = mons_spell_beam(&mons, mzap, power);
-    beem = _generate_item_beem(beem, theBeam, mons);
-
-    beem.aux_source =
-        wand.name(DESC_QUALNAME, false, true, false, false);
-
-    return true;
-}
-
 static void _mons_fire_wand(monster& mons, item_def &wand, bolt &beem,
-                            bool was_visible, bool niceWand)
+                            bool was_visible)
 {
     if (!simple_monster_message(mons, " zaps a wand."))
     {
@@ -1097,8 +1050,10 @@ static void _mons_fire_wand(monster& mons, item_def &wand, bolt &beem,
 
     // charge expenditure {dlb}
     wand.charges--;
-    beem.is_tracer = false;
-    beem.fire();
+    const spell_type mzap =
+        spell_in_wand(static_cast<wand_type>(wand.sub_type));
+
+    mons_cast(&mons, beem, mzap, MON_SPELL_EVOKE, false);
 
     if (was_visible)
     {
@@ -1137,13 +1092,29 @@ static bool _handle_wand(monster& mons)
     if (wand->charges <= 0)
         return false;
 
-    bool niceWand    = false;
-    bool zap         = false;
-    bool was_visible = you.can_see(mons);
-    bolt beem = setup_targetting_beam(mons);
-
-    if (!_setup_wand_beam(beem, mons, *wand))
+    if (item_type_removed(wand->base_type, wand->sub_type))
         return false;
+
+    // XXX: Teach monsters to use random effects
+    // Digging is handled elsewhere so that sensible (wall) targets are
+    // chosen.
+    if (wand->sub_type == WAND_RANDOM_EFFECTS
+        || wand->sub_type == WAND_DIGGING)
+    {
+        return false;
+    }
+
+    bolt beem;
+
+    const spell_type mzap =
+        spell_in_wand(static_cast<wand_type>(wand->sub_type));
+
+    if (!setup_mons_cast(&mons, beem, mzap, true))
+        return false;
+
+    beem.source     = mons.pos();
+    beem.aux_source =
+        wand->name(DESC_QUALNAME, false, true, false, false);
 
     const wand_type kind = (wand_type)wand->sub_type;
     switch (kind)
@@ -1154,26 +1125,16 @@ static bool _handle_wand(monster& mons)
         beem.damage.size = beem.damage.size * 2 / 3;
         break;
 
-    case WAND_DIGGING:
-        // This is handled elsewhere.
-        return false;
-
     default:
         break;
     }
 
-    if (!niceWand)
-    {
-        // Fire tracer, if necessary.
-        fire_tracer(&mons, beem);
+    // Fire tracer, if necessary.
+    fire_tracer(&mons, beem);
 
-        // Good idea?
-        zap = mons_should_fire(beem);
-    }
-
-    if (niceWand || zap)
+    if (mons_should_fire(beem))
     {
-        _mons_fire_wand(mons, *wand, beem, was_visible, niceWand);
+        _mons_fire_wand(mons, *wand, beem, you.see_cell(mons.pos()));
         return true;
     }
 
@@ -1806,8 +1767,6 @@ void handle_monster_move(monster* mons)
             || mons->type == MONS_TEST_SPAWNER
             // Slime creatures can split when offscreen.
             || mons->type == MONS_SLIME_CREATURE
-            // Let monsters who have Dig use it off-screen.
-            || mons->has_spell(SPELL_DIG)
             // Let monsters who have Awaken Earth use it off-screen.
             || mons->has_spell(SPELL_AWAKEN_EARTH)
             )
@@ -2332,24 +2291,34 @@ void mons_set_just_seen(monster *mon)
     just_seen_queue.push_back(mon);
 }
 
+void mons_reset_just_seen()
+{
+    // this may be called when the pointers are not valid, so don't mess with
+    // seen_context.
+    just_seen_queue.clear();
+}
+
 static void _display_just_seen()
 {
     // these are monsters that were marked as SC_JUST_SEEN at some point since
     // last time this was called. We announce any that leave all at once so
     // as to handle monsters that may move multiple times per world_reacts.
-    for (auto m : just_seen_queue)
+    if (in_bounds(you.pos()))
     {
-        if (!m || invalid_monster(m) || !m->alive())
-            continue;
-        // can't use simple_monster_message here, because m is out of view.
-        // The monster should be visible to be in this queue.
-        if (in_bounds(m->pos()) && !you.see_cell(m->pos()))
+        for (auto m : just_seen_queue)
         {
-            mprf(MSGCH_PLAIN, "%s moves out of view.",
-                m->name(DESC_THE, true).c_str());
+            if (!m || invalid_monster(m) || !m->alive())
+                continue;
+            // can't use simple_monster_message here, because m is out of view.
+            // The monster should be visible to be in this queue.
+            if (in_bounds(m->pos()) && !you.see_cell(m->pos()))
+            {
+                mprf(MSGCH_PLAIN, "%s moves out of view.",
+                     m->name(DESC_THE, true).c_str());
+            }
         }
     }
-    just_seen_queue.clear();
+    mons_reset_just_seen();
 }
 
 /**
@@ -2670,7 +2639,7 @@ static void _mons_open_door(monster& mons, const coord_def &pos)
         if (!you.can_see(mons))
         {
             mprf("Something unseen %s", open_str.c_str());
-            interrupt_activity(AI_FORCE_INTERRUPT);
+            interrupt_activity(activity_interrupt::force);
         }
         else if (!you_are_delayed())
         {
@@ -3021,6 +2990,7 @@ static bool _may_cutdown(monster* mons, monster* targ)
     // (but don't try to attack briars unless their damage will be insignificant)
     return mons_is_firewood(*targ)
         && (targ->type != MONS_BRIAR_PATCH
+            || (targ->friendly() && !mons_aligned(mons, targ))
             || mons->type == MONS_THORN_HUNTER
             || mons->armour_class() * mons->hit_points >= 400);
 }
@@ -3123,60 +3093,6 @@ static void _jelly_grows(monster& mons)
         mons.max_hit_points = mons.hit_points;
 
     _jelly_divide(mons);
-}
-
-/**
- * Possibly place mold & ballistomycetes in ballistomycete spores' wake.
- *
- * @param mons      The ballistomycete spore in question.
- * @param position  Its last location. (Where to place the ballistomycete.)
- */
-static void _ballisto_on_move(monster& mons, const coord_def& position)
-{
-    if (mons.type != MONS_BALLISTOMYCETE_SPORE
-        || mons.is_summoned())
-    {
-        return;
-    }
-
-    // place mold under the spore's current tile, if there isn't any now.
-    const dungeon_feature_type current_ftype = env.grid(mons.pos());
-    if (current_ftype == DNGN_FLOOR)
-        env.pgrid(mons.pos()) |= FPROP_MOLD;
-
-    if (mons.spore_cooldown > 0)
-    {
-        mons.spore_cooldown--;
-        return;
-    }
-
-    if (!one_chance_in(4))
-        return;
-
-    // Try to make a ballistomycete.
-    beh_type attitude = attitude_creation_behavior(mons.attitude);
-    // Make Fedhas ballistos neutral, so as not to inflict extra piety loss.
-    if (mons_is_god_gift(mons, GOD_FEDHAS))
-        attitude = BEH_GOOD_NEUTRAL;
-
-    monster *plant = create_monster(mgen_data(MONS_BALLISTOMYCETE, attitude,
-                                              position, MHITNOT,
-                                              MG_FORCE_PLACE));
-
-    if (!plant)
-        return;
-
-    // Don't leave mold on squares we place ballistos on
-    remove_mold(position);
-
-    if (you.can_see(*plant))
-    {
-        mprf("%s grows in the wake of %s.",
-             plant->name(DESC_A).c_str(), mons.name(DESC_THE).c_str());
-    }
-
-    // reset the cooldown.
-    mons.spore_cooldown = 40;
 }
 
 bool monster_swaps_places(monster* mon, const coord_def& delta,
@@ -3283,7 +3199,7 @@ static bool _do_move_monster(monster& mons, const coord_def& delta)
                 if (!you.can_see(mons))
                 {
                     mpr("The door bursts into shrapnel!");
-                    interrupt_activity(AI_FORCE_INTERRUPT);
+                    interrupt_activity(activity_interrupt::force);
                 }
                 else
                     simple_monster_message(mons, " bursts through the door, destroying it!");
@@ -3308,7 +3224,7 @@ static bool _do_move_monster(monster& mons, const coord_def& delta)
                 if (!you.can_see(mons))
                 {
                     mpr("The door mysteriously vanishes.");
-                    interrupt_activity(AI_FORCE_INTERRUPT);
+                    interrupt_activity(activity_interrupt::force);
                 }
                 else
                     simple_monster_message(mons, " eats the door!");
@@ -3341,12 +3257,9 @@ static bool _do_move_monster(monster& mons, const coord_def& delta)
         mons.seen_context = SC_NONSWIMMER_SURFACES_FROM_DEEP;
     }
 
-    coord_def old_pos = mons.pos();
-
     mons.move_to_pos(f, false);
 
     mons.check_clinging(true);
-    _ballisto_on_move(mons, old_pos);
 
     // Let go of all constrictees; only stop *being* constricted if we are now
     // too far away (done in move_to_pos above).
@@ -3547,9 +3460,12 @@ static bool _monster_move(monster* mons)
             {
                 ASSERT(mons->mslot_item(MSLOT_WAND));
                 item_def &wand = *mons->mslot_item(MSLOT_WAND);
+                setup_mons_cast(mons, beem, SPELL_DIG, true);
                 beem.target = mons->pos() + mmov;
-                _setup_wand_beam(beem, *mons, wand);
-                _mons_fire_wand(*mons, wand, beem, you.can_see(*mons), false);
+                _mons_fire_wand(*mons, wand, beem, you.can_see(*mons));
+
+                //_setup_wand_beam(beem, *mons, wand);
+                //_mons_fire_wand(*mons, wand, beem, you.can_see(*mons), false);
             }
             else
                 simple_monster_message(*mons, " falters for a moment.");

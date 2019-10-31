@@ -78,8 +78,6 @@ static unsigned short _cell_feat_show_colour(const map_cell& cell,
     }
     else if (cell.flags & MAP_BLOODY && !norecolour)
         colour = RED;
-    else if (cell.flags & MAP_MOLDY && !norecolour)
-        colour = (cell.flags & MAP_GLOWING_MOLDY) ? LIGHTRED : LIGHTGREEN;
     else if (cell.flags & MAP_CORRODING && !norecolour
              && !feat_is_wall(feat) && !feat_is_lava(feat)
              && !feat_is_water(feat))
@@ -191,8 +189,10 @@ static int _get_mons_colour(const monster_info& mi)
     if (stype != mi.type && mi.type != MONS_SENSED)
         col = mons_class_colour(stype);
 
+#if TAG_MAJOR_VERSION == 34
     if (mi.is(MB_ROLLING))
         col = ETC_BONE;
+#endif
 
     if (mi.is(MB_BERSERK))
         col = RED;

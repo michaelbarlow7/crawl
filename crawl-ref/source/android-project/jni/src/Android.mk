@@ -194,6 +194,7 @@ LOCAL_SRC_FILES := $(SDL_PATH)/src/main/android/SDL_android_main.c \
     $(CRAWL_PATH)/orb.cc \
     $(CRAWL_PATH)/ouch.cc \
     $(CRAWL_PATH)/output.cc \
+		$(CRAWL_PATH)/outer-menu.cc \
     $(CRAWL_PATH)/package.cc \
     $(CRAWL_PATH)/pattern.cc \
     $(CRAWL_PATH)/pcg.cc \

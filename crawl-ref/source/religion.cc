@@ -179,17 +179,13 @@ const vector<god_power> god_powers[NUM_GODS] =
     },
 
     // Sif Muna
-    { { 1, ABIL_SIF_MUNA_DIVINE_ENERGY,
-           "request divine energy to cast spells with insufficient magic",
-           "request divine energy" },
-      { 2, "Sif Muna is now protecting you from the effects of miscast magic.",
-           "Sif Muna will no longer protect you from the effects of miscast magic.",
-           "Sif Muna protects you from the effects of miscast magic." },
-      { 3, ABIL_SIF_MUNA_CHANNEL_ENERGY,
+    { { 1, ABIL_SIF_MUNA_CHANNEL_ENERGY,
            "call upon Sif Muna for magical energy" },
-      { 4, ABIL_SIF_MUNA_FORGET_SPELL,
+      { 3, ABIL_SIF_MUNA_FORGET_SPELL,
            "freely open your mind to new spells",
            "forget spells at will" },
+      { 4, ABIL_SIF_MUNA_DIVINE_EXEGESIS,
+           "call upon Sif Muna to cast any spell from your library" },
       { 5, "Sif Muna will now gift you books as you gain piety.",
            "Sif Muna will no longer gift you books.",
            "Sif Muna will gift you books as you gain piety." },
@@ -267,12 +263,10 @@ const vector<god_power> god_powers[NUM_GODS] =
 
     // Fedhas
     {
-      { 0, ABIL_FEDHAS_FUNGAL_BLOOM, "turn corpses into toadstools" },
-      { 1, ABIL_FEDHAS_SUNLIGHT, "call sunshine" },
-      { 2, ABIL_FEDHAS_EVOLUTION, "induce evolution" },
-      { 3, ABIL_FEDHAS_PLANT_RING, "cause a ring of plants to grow" },
-      { 4, ABIL_FEDHAS_SPAWN_SPORES, "spawn explosive spores" },
-      { 5, ABIL_FEDHAS_RAIN, "control the weather" },
+      { 2, ABIL_FEDHAS_WALL_OF_BRIARS, "encircle yourself with summoned briar patches"},
+      { 3, ABIL_FEDHAS_GROW_BALLISTOMYCETE, "grow a ballistomycete" },
+      { 4, ABIL_FEDHAS_OVERGROW, "transform dungeon walls and trees into plant allies"},
+      { 5, ABIL_FEDHAS_GROW_OKLOB, "grow an oklob plant" },
     },
 
     // Cheibriados
@@ -353,12 +347,14 @@ const vector<god_power> god_powers[NUM_GODS] =
       { 5, ABIL_RU_APOCALYPSE, "wreak a terrible wrath on your foes" },
     },
 
+#if TAG_MAJOR_VERSION == 34
     // Pakellas
     {
       { 0, "gain magical power from killing" },
       { 3, ABIL_PAKELLAS_DEVICE_SURGE,
            "spend magic to empower your devices" },
     },
+#endif
 
     // Uskayaw
     {
@@ -472,9 +468,11 @@ static bool _is_disabled_god(god_type god)
 {
     switch (god)
     {
+#if TAG_MAJOR_VERSION == 34
     // Disabled, pending a rework.
     case GOD_PAKELLAS:
         return true;
+#endif
 
     default:
         return false;
@@ -555,7 +553,9 @@ bool active_penance(god_type god)
            && god != GOD_GOZAG
            && god != GOD_RU
            && god != GOD_HEPLIAKLQANA
+#if TAG_MAJOR_VERSION == 34
            && god != GOD_PAKELLAS
+#endif
            && god != GOD_ELYVILON
            && (god == you.religion && !is_good_god(god)
                || god_hates_your_god(god, you.religion));
@@ -569,7 +569,9 @@ bool xp_penance(god_type god)
            && (god == GOD_ASHENZARI
                || god == GOD_GOZAG
                || god == GOD_HEPLIAKLQANA
+#if TAG_MAJOR_VERSION == 34
                || god == GOD_PAKELLAS
+#endif
                || god == GOD_ELYVILON)
            && god_hates_your_god(god, you.religion);
 }
@@ -654,13 +656,16 @@ void dec_penance(god_type god, int val)
         }
         else
         {
+#if TAG_MAJOR_VERSION == 34
             if (god == GOD_PAKELLAS)
             {
                 // Penance just ended w/o worshipping Pakellas;
                 // notify the player that MP regeneration will start again.
                 mprf(MSGCH_GOD, god, "You begin regenerating magic.");
             }
-            else if (god == GOD_HEPLIAKLQANA)
+            else
+#endif
+            if (god == GOD_HEPLIAKLQANA)
             {
                 calc_hp(); // frailty ends
                 mprf(MSGCH_GOD, god, "Your full life essence returns.");
@@ -831,17 +836,21 @@ static void _inc_penance(god_type god, int val)
                 you.redraw_armour_class = true;
             }
         }
+#if TAG_MAJOR_VERSION == 34
         else if (god == GOD_PAKELLAS)
         {
             if (you.duration[DUR_DEVICE_SURGE])
                 you.duration[DUR_DEVICE_SURGE] = 0;
         }
+#endif
         else if (god == GOD_SIF_MUNA)
         {
             if (you.duration[DUR_CHANNEL_ENERGY])
                 you.duration[DUR_CHANNEL_ENERGY] = 0;
+#if TAG_MAJOR_VERSION == 34
             if (you.attribute[ATTR_DIVINE_ENERGY])
                 you.attribute[ATTR_DIVINE_ENERGY] = 0;
+#endif
         }
 
         if (you_worship(god))
@@ -1015,6 +1024,7 @@ static bool _give_nemelex_gift(bool forced = false)
     return false;
 }
 
+#if TAG_MAJOR_VERSION == 34
 /**
  * From the given list of items, return a random unseen item, if there are any.
  * Otherwise, just return any of them at random.
@@ -1039,6 +1049,7 @@ static int _preferably_unseen_item(const vector<int> &item_types,
         return unseen[random2(unseen.size())];
     return item_types[random2(item_types.size())];
 }
+#endif
 
 static void _delayed_gift_callback(const mgen_data &mg, monster *&mon,
                                    int placed)
@@ -1202,6 +1213,7 @@ static set<spell_type> _vehumet_get_spell_gifts()
     return offers;
 }
 
+#if TAG_MAJOR_VERSION == 34
 /// Has the player ID'd the given type of wand?
 static bool _seen_wand(int wand)
 {
@@ -1340,6 +1352,7 @@ static bool _give_pakellas_gift()
 
     return false;
 }
+#endif
 
 static bool _give_trog_oka_gift(bool forced)
 {
@@ -1490,8 +1503,8 @@ static bool _gift_sif_kiku_gift(bool forced)
             gift = BOOK_DEATH;
         }
     }
-    else if (forced || you.piety >= piety_breakpoint(4)
-                       && random2(you.piety) > 100)
+    else if (forced
+             || you.piety >= piety_breakpoint(4) && random2(you.piety) > 100)
     {
         // Sif Muna special: Keep quiet if acquirement fails
         // because the player already has seen all spells.
@@ -2016,9 +2029,11 @@ bool do_god_gift(bool forced)
             success = _give_nemelex_gift(forced);
             break;
 
+#if TAG_MAJOR_VERSION == 34
         case GOD_PAKELLAS:
             success = _give_pakellas_gift();
             break;
+#endif
 
         case GOD_OKAWARU:
         case GOD_TROG:
@@ -2107,7 +2122,9 @@ string god_name(god_type which_god, bool long_name)
     case GOD_GOZAG:         return "Gozag";
     case GOD_QAZLAL:        return "Qazlal";
     case GOD_RU:            return "Ru";
+#if TAG_MAJOR_VERSION == 34
     case GOD_PAKELLAS:      return "Pakellas";
+#endif
     case GOD_USKAYAW:       return "Uskayaw";
     case GOD_HEPLIAKLQANA:  return "Hepliaklqana";
     case GOD_WU_JIAN:     return "Wu Jian";
@@ -2548,9 +2565,11 @@ void lose_piety(int pgn)
                             end(you.ability_letter_table),
                             ABIL_YRED_ANIMATE_DEAD, ABIL_YRED_ANIMATE_REMAINS);
                 }
+#if TAG_MAJOR_VERSION == 34
                 // Deactivate the toggle
                 if (power.abil == ABIL_SIF_MUNA_DIVINE_ENERGY)
                     you.attribute[ATTR_DIVINE_ENERGY] = 0;
+#endif
             }
         }
 #ifdef USE_TILE_LOCAL
@@ -2671,7 +2690,9 @@ int initial_wrath_penance_for(god_type god)
         case GOD_CHEIBRIADOS:
         case GOD_DITHMENOS:
         case GOD_MAKHLEB:
+#if TAG_MAJOR_VERSION == 34
         case GOD_PAKELLAS:
+#endif
         case GOD_QAZLAL:
         case GOD_VEHUMET:
         case GOD_ZIN:
@@ -2817,8 +2838,10 @@ void excommunication(bool voluntary, god_type new_god)
     case GOD_SIF_MUNA:
         if (you.duration[DUR_CHANNEL_ENERGY])
             you.duration[DUR_CHANNEL_ENERGY] = 0;
+#if TAG_MAJOR_VERSION == 34
         if (you.attribute[ATTR_DIVINE_ENERGY])
             you.attribute[ATTR_DIVINE_ENERGY] = 0;
+#endif
         break;
 
     case GOD_NEMELEX_XOBEH:
@@ -2934,6 +2957,7 @@ void excommunication(bool voluntary, god_type new_god)
         }
         break;
 
+#if TAG_MAJOR_VERSION == 34
     case GOD_PAKELLAS:
         simple_god_message(" continues to block your magic from regenerating.",
                            old_god);
@@ -2943,6 +2967,7 @@ void excommunication(bool voluntary, god_type new_god)
                                   - exp_needed(min<int>(you.max_level, 27));
         you.exp_docked_total[old_god] = you.exp_docked[old_god];
         break;
+#endif
 
     case GOD_CHEIBRIADOS:
         simple_god_message(" continues to slow your movements.", old_god);
@@ -2960,7 +2985,6 @@ void excommunication(bool voluntary, god_type new_god)
     case GOD_WU_JIAN:
         you.attribute[ATTR_SERPENTS_LASH] = 0;
         you.attribute[ATTR_HEAVENLY_STORM] = 0;
-        _set_penance(old_god, 25);
         break;
 
     default:
@@ -2981,8 +3005,8 @@ void excommunication(bool voluntary, god_type new_god)
     for (ability_type abil : get_god_abilities())
         you.stop_train.insert(abil_skill(abil));
 
-    update_can_train();
-    you.can_train.set(SK_INVOCATIONS, false);
+    update_can_currently_train();
+    you.can_currently_train.set(SK_INVOCATIONS, false);
     reset_training();
 
     // Perhaps we abandoned Trog with everything but Spellcasting maxed out.
@@ -3046,7 +3070,7 @@ static bool _transformed_player_can_join_god(god_type which_god)
     switch (you.form)
     {
     case transformation::lich:
-        return !(is_good_god(which_god) || which_god == GOD_FEDHAS);
+        return !is_good_god(which_god);
     case transformation::statue:
     case transformation::wisp:
         return !(which_god == GOD_YREDELEMNUL);
@@ -3099,21 +3123,19 @@ bool player_can_join_god(god_type which_god)
     if (which_god == GOD_BEOGH && !species_is_orcish(you.species))
         return false;
 
-    // Fedhas hates undead, but will accept demonspawn.
-    if (which_god == GOD_FEDHAS && you.holiness() & MH_UNDEAD)
-        return false;
-
     if (which_god == GOD_GOZAG && you.gold < gozag_service_fee())
         return false;
 
     if (you.get_mutation_level(MUT_NO_LOVE) && _god_rejects_loveless(which_god))
         return false;
 
+#if TAG_MAJOR_VERSION == 34
     if (you.get_mutation_level(MUT_NO_ARTIFICE)
         && which_god == GOD_PAKELLAS)
     {
       return false;
     }
+#endif
 
     return _transformed_player_can_join_god(which_god);
 }
@@ -3371,12 +3393,12 @@ static void _set_initial_god_piety()
         // monk bonus...
         you.props[RU_SACRIFICE_PROGRESS_KEY] = 0;
         // offer the first sacrifice faster than normal
-    {
-        int delay = 50;
-        if (crawl_state.game_is_sprint())
-            delay /= SPRINT_MULTIPLIER;
-        you.props[RU_SACRIFICE_DELAY_KEY] = delay;
-    }
+        {
+            int delay = 50;
+            if (crawl_state.game_is_sprint())
+                delay /= SPRINT_MULTIPLIER;
+            you.props[RU_SACRIFICE_DELAY_KEY] = delay;
+        }
         you.props[RU_SACRIFICE_PENALTY_KEY] = 0;
         break;
 
@@ -3440,7 +3462,7 @@ static void _join_gozag()
 #endif
     }
 
-    // Move gold to top of piles.
+    // Move gold to top of piles & detect it.
     add_daction(DACT_GOLD_ON_TOP);
 }
 
@@ -3547,12 +3569,14 @@ static void _join_zin()
     }
 }
 
+#if TAG_MAJOR_VERSION == 34
 // Setup when becoming an overworked assistant to Pakellas.
 static void _join_pakellas()
 {
     mprf(MSGCH_GOD, "You stop regenerating magic.");
     you.attribute[ATTR_PAKELLAS_EXTRA_MP] = POT_MAGIC_MP;
 }
+#endif
 
 // Setup for joining the easygoing followers of Cheibriados.
 static void _join_cheibriados()
@@ -3581,7 +3605,9 @@ static const map<god_type, function<void ()>> on_join = {
         if (you.worshipped[GOD_LUGONU] == 0)
             gain_piety(20, 1, false);  // allow instant access to first power
     }},
+#if TAG_MAJOR_VERSION == 34
     { GOD_PAKELLAS, _join_pakellas },
+#endif
     { GOD_RU, _join_ru },
     { GOD_TROG, _join_trog },
     { GOD_ZIN, _join_zin },
@@ -3614,12 +3640,10 @@ void join_religion(god_type which_god)
     mark_milestone("god.worship", "became a worshipper of "
                    + god_name(you.religion) + ".");
     take_note(Note(NOTE_GET_GOD, you.religion));
-    const bool returning = you.worshipped[which_god]
-                           || is_good_god(which_god)
-                              && you.species == SP_BARACHI;
-    simple_god_message(
-        make_stringf(" welcomes you%s!",
-                     returning ? " back" : "").c_str());
+
+    simple_god_message(make_stringf(" welcomes you%s!",
+                                    you.worshipped[which_god] ? " back"
+                                                              : "").c_str());
     // included in default force_more_message
 #ifdef DGL_WHEREIS
     whereis_record();
@@ -3637,10 +3661,6 @@ void join_religion(god_type which_god)
         add_daction(DACT_ALLY_UNHOLY_EVIL);
         mprf(MSGCH_MONSTER_ENCHANT, "Your unholy and evil allies forsake you.");
     }
-
-    // Move gold to top of piles with Gozag.
-    if (have_passive(passive_t::detect_gold))
-        add_daction(DACT_GOLD_ON_TOP);
 
     const function<void ()> *join_effect = map_find(on_join, you.religion);
     if (join_effect != nullptr)
@@ -3666,7 +3686,7 @@ void join_religion(god_type which_god)
     vector<ability_type> abilities = get_god_abilities();
     for (ability_type abil : abilities)
         you.start_train.insert(abil_skill(abil));
-    update_can_train();
+    update_can_currently_train();
 
     // now that you have a god, you can't save any piety from your prev god
     you.previous_good_god = GOD_NO_GOD;
@@ -3724,12 +3744,14 @@ void god_pitch(god_type which_god)
             simple_god_message(" does not accept worship from the loveless!",
                                which_god);
         }
+#if TAG_MAJOR_VERSION == 34
         else if (you.get_mutation_level(MUT_NO_ARTIFICE)
                  && which_god == GOD_PAKELLAS)
         {
             simple_god_message(" does not accept worship from those who are "
                                "unable to use magical devices!", which_god);
         }
+#endif
         else if (!_transformed_player_can_join_god(which_god))
         {
             simple_god_message(" says: How dare you approach in such a "
@@ -3918,10 +3940,12 @@ bool god_hates_spell(spell_type spell, god_type god, bool fake_spell)
         if (is_hasty_spell(spell))
             return true;
         break;
+#if TAG_MAJOR_VERSION == 34
     case GOD_PAKELLAS:
         if (spell == SPELL_SUBLIMATION_OF_BLOOD)
             return true;
         break;
+#endif
     default:
         break;
     }
@@ -4056,9 +4080,12 @@ void handle_god_time(int /*time_delta*/)
         case GOD_KIKUBAAQUDGHA:
         case GOD_VEHUMET:
         case GOD_ZIN:
+#if TAG_MAJOR_VERSION == 34
         case GOD_PAKELLAS:
+#endif
         case GOD_JIYVA:
         case GOD_WU_JIAN:
+        case GOD_SIF_MUNA:
             if (one_chance_in(17))
                 lose_piety(1);
             break;
@@ -4068,7 +4095,6 @@ void handle_god_time(int /*time_delta*/)
         case GOD_HEPLIAKLQANA:
         case GOD_FEDHAS:
         case GOD_CHEIBRIADOS:
-        case GOD_SIF_MUNA:
         case GOD_SHINING_ONE:
         case GOD_NEMELEX_XOBEH:
             if (one_chance_in(35))
@@ -4161,8 +4187,10 @@ int god_colour(god_type god) // mv - added
     case GOD_RU:
         return BROWN;
 
+#if TAG_MAJOR_VERSION == 34
     case GOD_PAKELLAS:
         return LIGHTGREEN;
+#endif
 
     case GOD_NO_GOD:
     case NUM_GODS:
@@ -4249,8 +4277,10 @@ colour_t god_message_altar_colour(god_type god)
     case GOD_RU:
         return BROWN;
 
+#if TAG_MAJOR_VERSION == 34
     case GOD_PAKELLAS:
         return random_choose(LIGHTMAGENTA, LIGHTGREEN, LIGHTCYAN);
+#endif
 
     case GOD_USKAYAW:
         return random_choose(RED, MAGENTA);

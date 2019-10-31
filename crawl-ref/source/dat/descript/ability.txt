@@ -14,7 +14,8 @@ Randomly translocates the user a short distance.
 Breathe Dispelling Energy ability
 
 Breathes a bolt of dispelling energy at a targeted creature, possibly removing
-some of its enchantments.
+some of its enchantments. The range of the bolt is decreased by one for every
+creature it strikes.
 %%%%
 Breathe Fire ability
 
@@ -51,19 +52,31 @@ for a short time. It may also splash onto other nearby creatures on impact.
 Breathe Steam ability
 
 Breathes a jet of steam at a targeted location, which will scald any creatures
-it hits and will also obscure vision.
+it hits and will also obscure vision. The range of the jet is decreased by one
+for every creature it strikes.
 %%%%
 Breathe Noxious Fumes ability
 
-Breathes a blast of noxious fumes at a targeted creature.
+Breathes a blast of noxious fumes at a targeted creature. The range of the blast
+is decreased by one for every creature it strikes.
 %%%%
 Bat Form ability
 
 Transforms the user into a swift-moving vampire bat, increasing evasion but
-substantially weakening melee attacks.
+substantially weakening melee attacks. The transformation drains the user's
+attributes.
 
 While tranformed, any equipped weapons, armour and rings are melded, and the
 user becomes unable to cast spells.
+%%%%
+Exsanguinate ability
+
+Remove all of your blood, transitioning to a bloodless state.
+%%%%
+Revivify ability
+
+Return to life, transitioning from bloodless to alive. This process renders
+the user temporarily frail.
 %%%%
 Fly ability
 
@@ -248,6 +261,8 @@ skeletons cannot leave the level they were created on.
 %%%%
 Drain Life ability
 
+# Note: part of this description duplicates the Drain Life spell description.
+
 Drains the life force of any nearby creatures, healing the user depending on
 the damage dealt. The amount of life force drained is increased by Invocations
 skill.
@@ -297,16 +312,6 @@ Summons a major demon. Failing to use this ability correctly will turn the
 demon hostile.
 %%%%
 # Sif Muna
-Divine Energy ability
-
-Calls on Sif Muna for divine energy. While active, Sif Muna will allow you to
-cast spells even with insufficient reserves of magic. Doing so will cause you
-to briefly lose access to your magic after the spell is cast.
-%%%%
-Stop Divine Energy ability
-
-Stops requesting divine energy from Sif Muna, no longer allowing you to cast
-spells without sufficient magical reserves.
 %%%%
 Channel Magic ability
 
@@ -316,6 +321,12 @@ that increases with Invocations skill.
 Forget Spell ability
 
 Removes a known spell from memory, so as to free memory to learn others.
+%%%%
+Divine Exegesis ability
+
+Casts any spell from your spell library with guaranteed success. You receive a
+bonus to spell power based on your Invocations skill that is worth 50% more
+than equivalent levels of training in the relevant skills of the spell itself.
 %%%%
 # Trog
 Berserk ability
@@ -470,47 +481,33 @@ Bring an orc corpse back to life. The orc will be an ally, even if it was not
 already one before it died.
 %%%%
 # Fedhas
-Fungal Bloom ability
+Wall of Briars ability
 
-Call up Fedhas to accelerate the natural process of decay, transforming all
-corpses nearby into fast-growing, short-lived toadstools. Zombies, ghouls,
-and necrophages are considered walking corpses, and are affected accordingly;
-zombies rot into skeletons, and ghouls and necrophages rot away entirely,
-granting no experience.
+Grow short-lived briar patches around you. Monsters attacking these briars will
+be damaged by sharp thorns. Invocations skill increases the briars' health.
 %%%%
-Sunlight ability
+Grow Ballistomycete ability
 
-Calls sunlight down over a small area of the dungeon. Monsters illuminated by
-the light will be easier to hit. Water affected by the sunlight will evaporate.
-In particular, deep water will become shallow water, and shallow water will dry
-up completely, revealing the dungeon floor.
+Grow a short-lived ballistomycete at the location you choose. A Ballistomycete
+occasionally release spores that quickly seek out foes and violently explode,
+damaging and confusing all living things caught in the blast.
+
+Invocations skill increases the health and duration of the ballistomycete as
+well as the damage of its exploding spores.
 %%%%
-Growth ability
+Overgrow ability
 
-Uses food to grow a ring of plants around yourself. If a complete ring cannot
-be formed (because you do not have enough food), plants will grow on squares
-adjacent to you that are close to monsters. The plants you create gain bonus
-health proportional to your Invocations skill.
+Permanently destroy a wall-like structure, growing a short-lived plant ally in
+its place. Even a tree will give its life to support the will of Fedhas, and
+only truly indestructible walls are immune to this power.
 %%%%
-Rain ability
+Grow Oklob ability
 
-Causes rain to fall around you, turning the dungeon floor into shallow water
-and shallow water into deep water. This may also allow plants and mushrooms to
-grow in areas that are not directly drenched. Invocations skill increases the
-number of rain-clouds created.
-%%%%
-Reproduction ability
+Grow a short-lived oklob plant at the location you choose. These dangerous
+plants spray corrosive vitriol at your foes.
 
-Creates ballistomycete spores from corpses in your line of sight. The spores will
-explode, causing damage to you or your enemies.
-%%%%
-Evolution ability
-
-Turns plants and fungi into stronger species. Upgraded plants gain a bonus to attack
-accuracy proportional to the user's Invocations skill, and oklob plants are
-more likely to spit acid at higher Invocations.
-
-Upgrading fungi requires piety, while upgrading plants requires food.
+Invocations skill increases the health and duration of the oklob as well as the
+frequency with which it sprays its acid.
 %%%%
 # Cheibriados
 Bend Time ability
@@ -590,7 +587,7 @@ Call Merchant ability
 
 Sends funds to a merchant to help them set up shop at your location. The cost of
 funding a shop increases with the number of shops funded.{{
-    if you.race() == "Mummy" then
+    if you.race() == "Mummy" or you.race() == "Vampire" then
         return
     end
 
@@ -598,8 +595,6 @@ funding a shop increases with the number of shops funded.{{
 
     if you.race() == "Ghoul" then
         desc = desc .. "carrion"
-    elseif you.race() == "Vampire" then
-        desc = desc .. "blood"
     else
         desc = desc .. "food"
     end

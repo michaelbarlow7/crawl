@@ -13,6 +13,7 @@
 #include "decks.h"
 #include "dungeon.h"
 #include "god-companions.h" // hepliaklqana_ancestor
+#include "god-passive.h"
 #include "items.h"
 #include "libutil.h"
 #include "mapmark.h"
@@ -47,9 +48,11 @@ static const char *daction_names[] =
 #else
     "slimes allow another conversion attempt",
 #endif
+#if TAG_MAJOR_VERSION == 34
     "holy beings go neutral",
     "Trog's gifts go hostile",
     "reclaim decks",
+#endif
     "reapply passive mapping",
     "remove Jiyva altars",
     "Pikel's slaves go good-neutral",
@@ -66,8 +69,8 @@ static const char *daction_names[] =
     "bribe timeout",
     "remove Gozag shops",
     "apply Gozag bribes",
-    "Makhleb's servants go hostile",
 #if TAG_MAJOR_VERSION == 34
+    "Makhleb's servants go hostile",
     "make all monsters hate you",
 #endif
     "ancestor vanishes",
@@ -293,9 +296,11 @@ static void _apply_daction(daction_type act)
         }
         break;
 
+#if TAG_MAJOR_VERSION == 34
     case DACT_RECLAIM_DECKS:
         reclaim_decks_on_level();
         break;
+#endif
     case DACT_REAUTOMAP:
         reautomap_level();
         break;
@@ -312,33 +317,8 @@ static void _apply_daction(daction_type act)
                 item.freshness = 1; // thoroughly rotten
         break;
     case DACT_GOLD_ON_TOP:
-    {
-        for (rectangle_iterator ri(0); ri; ++ri)
-        {
-            for (stack_iterator j(*ri); j; ++j)
-            {
-                if (j->base_type == OBJ_GOLD)
-                {
-                    bool detected = false;
-                    int dummy = j->index();
-                    unlink_item(dummy);
-                    move_item_to_grid(&dummy, *ri, true);
-                    if (!env.map_knowledge(*ri).item()
-                        || env.map_knowledge(*ri).item()->base_type != OBJ_GOLD)
-                    {
-                        detected = true;
-                    }
-                    update_item_at(*ri, true);
-
-                    // The gold might be beneath deep water.
-                    if (detected && env.map_knowledge(*ri).item())
-                        env.map_knowledge(*ri).flags |= MAP_DETECTED_ITEM;
-                    break;
-                }
-            }
-        }
+        gozag_detect_level_gold(false);
         break;
-    }
     case DACT_REMOVE_GOZAG_SHOPS:
     {
         vector<map_marker *> markers = env.markers.get_all(MAT_FEATURE);

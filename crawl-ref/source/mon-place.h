@@ -82,7 +82,7 @@ monster_type pick_random_monster(level_id place,
 
 conduct_type player_will_anger_monster(monster_type type);
 conduct_type player_will_anger_monster(const monster &mon);
-bool player_angers_monster(monster* mon);
+bool player_angers_monster(monster* mon, bool real = true);
 
 bool find_habitable_spot_near(const coord_def& where, monster_type mon_type,
                               int radius, bool allow_centre, coord_def& empty,
@@ -123,6 +123,8 @@ void replace_boris();
 
 // Active monster band may influence gear generation on band followers.
 extern band_type active_monster_band;
+
+#define MON_OOD_KEY "mons_is_ood"
 
 #if TAG_MAJOR_VERSION == 34
 #define VAULT_MON_TYPES_KEY   "vault_mon_types"

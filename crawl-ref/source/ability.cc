@@ -61,6 +61,7 @@
 #include "prompt.h"
 #include "religion.h"
 #include "skills.h"
+#include "spl-book.h"
 #include "spl-cast.h"
 #include "spl-clouds.h"
 #include "spl-damage.h"
@@ -311,11 +312,15 @@ static const ability_def Ability_List[] =
       0, 0, 125, 0, {fail_basis::xl, 30, 1}, abflag::breath },
     { ABIL_BREATHE_STEAM, "Breathe Steam",
       0, 0, 75, 0, {fail_basis::xl, 20, 1}, abflag::breath },
-    { ABIL_TRAN_BAT, "Bat Form",
-      2, 0, 0, 0, {fail_basis::xl, 45, 2}, abflag::starve_ok },
-
     { ABIL_BREATHE_ACID, "Breathe Acid",
       0, 0, 125, 0, {fail_basis::xl, 30, 1}, abflag::breath },
+
+    { ABIL_TRAN_BAT, "Bat Form",
+      2, 0, 0, 0, {fail_basis::xl, 45, 2}, abflag::starve_ok },
+    { ABIL_EXSANGUINATE, "Exsanguinate",
+      0, 0, 0, 0, {}, abflag::delay},
+    { ABIL_REVIVIFY, "Revivify",
+      0, 0, 0, 0, {}, abflag::delay},
 
     { ABIL_FLY, "Fly", 3, 0, 100, 0, {fail_basis::xl, 42, 3}, abflag::none },
     { ABIL_STOP_FLYING, "Stop Flying", 0, 0, 0, 0, {}, abflag::starve_ok },
@@ -430,14 +435,12 @@ static const ability_def Ability_List[] =
       {fail_basis::invo, 90, 2, 5}, abflag::hostile },
 
     // Sif Muna
-    { ABIL_SIF_MUNA_DIVINE_ENERGY, "Divine Energy",
-      0, 0, 0, 0, {fail_basis::invo}, abflag::instant | abflag::starve_ok },
-    { ABIL_SIF_MUNA_STOP_DIVINE_ENERGY, "Stop Divine Energy",
-      0, 0, 0, 0, {fail_basis::invo}, abflag::instant | abflag::starve_ok },
-    { ABIL_SIF_MUNA_FORGET_SPELL, "Forget Spell",
-      0, 0, 0, 8, {fail_basis::invo}, abflag::none },
     { ABIL_SIF_MUNA_CHANNEL_ENERGY, "Channel Magic",
       0, 0, 200, 2, {fail_basis::invo, 60, 4, 25}, abflag::none },
+    { ABIL_SIF_MUNA_FORGET_SPELL, "Forget Spell",
+      0, 0, 0, 8, {fail_basis::invo}, abflag::none },
+    { ABIL_SIF_MUNA_DIVINE_EXEGESIS, "Divine Exegesis",
+      0, 0, 0, 12, {fail_basis::invo, 80, 4, 25}, abflag::none },
 
     // Trog
     { ABIL_TROG_BERSERK, "Berserk",
@@ -511,18 +514,14 @@ static const ability_def Ability_List[] =
       0, 0, 0, 15, {fail_basis::invo}, abflag::none },
 
     // Fedhas
-    { ABIL_FEDHAS_FUNGAL_BLOOM, "Fungal Bloom",
-      0, 0, 0, 0, {fail_basis::invo}, abflag::none },
-    { ABIL_FEDHAS_SUNLIGHT, "Sunlight",
-      2, 0, 50, 0, {fail_basis::invo, 30, 6, 20}, abflag::none },
-    { ABIL_FEDHAS_EVOLUTION, "Evolution",
-      2, 0, 0, 0, {fail_basis::invo, 30, 6, 20}, abflag::rations_or_piety },
-    { ABIL_FEDHAS_PLANT_RING, "Growth",
-      2, 0, 0, 0, {fail_basis::invo, 40, 5, 20}, abflag::rations },
-    { ABIL_FEDHAS_SPAWN_SPORES, "Reproduction",
-      4, 0, 100, 1, {fail_basis::invo, 60, 4, 25}, abflag::none },
-    { ABIL_FEDHAS_RAIN, "Rain",
-      4, 0, 150, 4, {fail_basis::invo, 70, 4, 25}, abflag::none },
+    { ABIL_FEDHAS_WALL_OF_BRIARS, "Wall of Briars",
+      3, 0, 50, 2, {fail_basis::invo, 30, 6, 20}, abflag::none},
+    { ABIL_FEDHAS_GROW_BALLISTOMYCETE, "Grow Ballistomycete",
+      4, 0, 100, 4, {fail_basis::invo, 60, 4, 25}, abflag::none },
+    { ABIL_FEDHAS_OVERGROW, "Overgrow",
+      8, 0, 200, 12, {fail_basis::invo, 70, 5, 20}, abflag::none},
+    { ABIL_FEDHAS_GROW_OKLOB, "Grow Oklob",
+      6, 0, 150, 6, {fail_basis::invo, 80, 4, 25}, abflag::none },
 
     // Cheibriados
     { ABIL_CHEIBRIADOS_TIME_BEND, "Bend Time",
@@ -759,6 +758,8 @@ static string _nemelex_card_text(ability_type ability)
         return make_stringf("(%d in deck)", cards);
 }
 
+static const int VAMPIRE_BAT_FORM_STAT_DRAIN = 2;
+
 const string make_cost_description(ability_type ability)
 {
     const ability_def& abil = get_ability_def(ability);
@@ -771,6 +772,15 @@ const string make_cost_description(ability_type ability)
 
     if (ability == ABIL_HEAL_WOUNDS)
         ret += make_stringf(", Permanent MP (%d left)", get_real_mp(false));
+
+    if (ability == ABIL_TRAN_BAT)
+    {
+        ret += make_stringf(", Stat Drain (%d each)",
+                            VAMPIRE_BAT_FORM_STAT_DRAIN);
+    }
+
+    if (ability == ABIL_REVIVIFY)
+        ret += ", Frailty";
 
     if (abil.hp_cost)
         ret += make_stringf(", %d HP", abil.hp_cost.cost(you.hp_max));
@@ -1014,11 +1024,6 @@ ability_type fixup_ability(ability_type ability)
         else
             return ability;
 
-    case ABIL_SIF_MUNA_DIVINE_ENERGY:
-        if (you.attribute[ATTR_DIVINE_ENERGY])
-            return ABIL_SIF_MUNA_STOP_DIVINE_ENERGY;
-        return ability;
-
     case ABIL_ASHENZARI_TRANSFER_KNOWLEDGE:
         if (you.species == SP_GNOLL)
             return ABIL_NON_ABILITY;
@@ -1196,8 +1201,8 @@ void no_ability_msg()
             mpr("You can't untransform!");
         else
         {
-            ASSERT(you.hunger_state > HS_SATIATED);
-            mpr("Sorry, you're too full to transform right now.");
+            ASSERT(you.vampire_alive);
+            mpr("Sorry, you cannot become a bat while alive.");
         }
     }
     else if (you.get_mutation_level(MUT_TENGU_FLIGHT)
@@ -1327,6 +1332,22 @@ static bool _check_ability_possible(const ability_def& abil, bool quiet = false)
             if (!quiet)
             {
                 mprf("Turning back right now would cause you to %s!",
+                    env.grid(you.pos()) == DNGN_LAVA ? "burn" : "drown");
+            }
+
+            return false;
+        }
+    }
+    else if ((abil.ability == ABIL_EXSANGUINATE
+              || abil.ability == ABIL_REVIVIFY)
+            && you.form != transformation::none)
+    {
+        if (feat_dangerous_for_form(transformation::none, env.grid(you.pos())))
+        {
+            if (!quiet)
+            {
+                mprf("Becoming %s right now would cause you to %s!",
+                    abil.ability == ABIL_EXSANGUINATE ? "bloodless" : "alive",
                     env.grid(you.pos()) == DNGN_LAVA ? "burn" : "drown");
             }
 
@@ -1538,6 +1559,9 @@ static bool _check_ability_possible(const ability_def& abil, bool quiet = false)
         }
         return true;
 
+    case ABIL_SIF_MUNA_DIVINE_EXEGESIS:
+        return can_cast_spells();
+
     case ABIL_ASHENZARI_TRANSFER_KNOWLEDGE:
         if (!trainable_skills(true))
         {
@@ -1546,26 +1570,6 @@ static bool _check_ability_possible(const ability_def& abil, bool quiet = false)
             return false;
         }
         return true;
-
-    case ABIL_FEDHAS_EVOLUTION:
-        return fedhas_check_evolve_flora(quiet);
-
-    case ABIL_FEDHAS_SPAWN_SPORES:
-    {
-        const int retval = fedhas_check_corpse_spores(quiet);
-        if (retval <= 0)
-        {
-            if (!quiet)
-            {
-                if (retval == 0)
-                    mpr("No corpses are in range.");
-                else
-                    canned_msg(MSG_OK);
-            }
-            return false;
-        }
-        return true;
-    }
 
     case ABIL_SPIT_POISON:
     case ABIL_BREATHE_FIRE:
@@ -1838,6 +1842,87 @@ static bool _cleansing_flame_affects(const actor *act)
     return act->res_holy_energy() < 3;
 }
 
+static string _vampire_str_int_info_blurb(string stats_affected)
+{
+    return make_stringf("This will reduce your %s to zero. ",
+                        stats_affected.c_str());
+}
+
+/*
+ * Create a string which informs the player of the consequences of bat form.
+ *
+ * @param str_affected Whether the player will cause strength stat zero by
+ * Bat Form's stat drain ability cost.
+ * @param dex_affected Whether the player will cause dexterity stat zero by
+ * Bat Form's stat drain ability cost, disregarding Bat Form's dexterity boost.
+ * @param int_affected Whether the player will cause intelligence stat zero by
+ * Bat Form's stat drain ability cost.
+ * @returns The string prompt to give the player.
+ */
+static string _vampire_bat_transform_prompt(bool str_affected, bool dex_affected,
+                                            bool intel_affected)
+{
+    string prompt = "";
+
+    if (str_affected && intel_affected)
+        prompt += _vampire_str_int_info_blurb("strength and intelligence");
+    else if (str_affected)
+        prompt += _vampire_str_int_info_blurb("strength");
+    else if (intel_affected)
+        prompt += _vampire_str_int_info_blurb("intelligence");
+
+    // Bat form's dexterity boost will keep a vampire's dexterity above zero until
+    // they untransform.
+    if (dex_affected)
+        prompt += "This will reduce your dexterity to zero once you untransform. ";
+
+    prompt += "Continue?";
+
+    return prompt;
+}
+
+static bool _stat_affected_by_bat_form_stat_drain(int stat_value)
+{
+    // We check whether the stat is greater than zero to avoid prompting if a
+    // stat is already zero.
+    return 0 < stat_value && stat_value <= VAMPIRE_BAT_FORM_STAT_DRAIN;
+}
+
+/*
+ * Give the player a chance to cancel a bat form transformation which could
+ * cause their stats to be drained to zero.
+ *
+ * @returns Whether the player canceled the transformation.
+ */
+static bool _player_cancels_vampire_bat_transformation()
+{
+
+    bool str_affected = _stat_affected_by_bat_form_stat_drain(you.strength());
+    bool dex_affected = _stat_affected_by_bat_form_stat_drain(you.dex());
+    bool intel_affected = _stat_affected_by_bat_form_stat_drain(you.intel());
+
+    // Don't prompt if there's no risk of stat-zero
+    if (!str_affected && !dex_affected && !intel_affected)
+        return false;
+
+    string prompt = _vampire_bat_transform_prompt(str_affected, dex_affected,
+                                                  intel_affected);
+
+    bool proceed_with_transformation = yesno(prompt.c_str(), false, 'n');
+
+    if (!proceed_with_transformation)
+        canned_msg(MSG_OK);
+
+    return !proceed_with_transformation;
+}
+
+static void _cause_vampire_bat_form_stat_drain()
+{
+    lose_stat(STAT_STR, VAMPIRE_BAT_FORM_STAT_DRAIN);
+    lose_stat(STAT_INT, VAMPIRE_BAT_FORM_STAT_DRAIN);
+    lose_stat(STAT_DEX, VAMPIRE_BAT_FORM_STAT_DRAIN);
+}
+
 /*
  * Use an ability.
  *
@@ -2100,7 +2185,9 @@ static spret _do_ability(const ability_def& abil, bool fail)
         if (!invis_allowed())
             return spret::abort;
         fail_check();
+#if TAG_MAJOR_VERSION == 34
         surge_power(you.spec_evoke());
+#endif
         potionlike_effect(POT_INVISIBILITY,
                           player_adjust_evoc_power(
                               you.skill(SK_EVOCATIONS, 2) + 5));
@@ -2130,7 +2217,9 @@ static spret _do_ability(const ability_def& abil, bool fail)
         }
         else
         {
+#if TAG_MAJOR_VERSION == 34
             surge_power(you.spec_evoke());
+#endif
             fly_player(
                 player_adjust_evoc_power(you.skill(SK_EVOCATIONS, 2) + 30));
         }
@@ -2280,7 +2369,7 @@ static spret _do_ability(const ability_def& abil, bool fail)
         }
         fail_check();
         cleansing_flame(10 + you.skill_rdiv(SK_INVOCATIONS, 7, 6),
-                        CLEANSING_FLAME_INVOCATION, you.pos(), &you);
+                        cleansing_flame_source::invocation, you.pos(), &you);
         break;
     }
 
@@ -2551,23 +2640,13 @@ static spret _do_ability(const ability_def& abil, bool fail)
                          &you);
         break;
 
-    case ABIL_SIF_MUNA_DIVINE_ENERGY:
-        simple_god_message(" will now grant you divine energy when your "
-                           "reserves of magic are depleted.");
-        mpr("You will briefly lose access to your magic after casting a "
-            "spell in this manner.");
-        you.attribute[ATTR_DIVINE_ENERGY] = 1;
-        break;
-
-    case ABIL_SIF_MUNA_STOP_DIVINE_ENERGY:
-        simple_god_message(" stops granting you divine energy.");
-        you.attribute[ATTR_DIVINE_ENERGY] = 0;
-        break;
-
     case ABIL_SIF_MUNA_FORGET_SPELL:
         fail_check();
         if (cast_selective_amnesia() <= 0)
+        {
+            canned_msg(MSG_OK);
             return spret::abort;
+        }
         break;
 
     case ABIL_SIF_MUNA_CHANNEL_ENERGY:
@@ -2575,6 +2654,12 @@ static spret _do_ability(const ability_def& abil, bool fail)
         fail_check();
         you.increase_duration(DUR_CHANNEL_ENERGY,
             4 + random2avg(you.skill_rdiv(SK_INVOCATIONS, 2, 3), 2), 100);
+        break;
+    }
+
+    case ABIL_SIF_MUNA_DIVINE_EXEGESIS:
+    {
+        return divine_exegesis(fail);
         break;
     }
 
@@ -2755,46 +2840,60 @@ static spret _do_ability(const ability_def& abil, bool fail)
         end_recall();
         break;
 
-    case ABIL_FEDHAS_FUNGAL_BLOOM:
-        fedhas_fungal_bloom();
-        return spret::success;
-
-    case ABIL_FEDHAS_SUNLIGHT:
-        return fedhas_sunlight(fail);
-
-    case ABIL_FEDHAS_PLANT_RING:
+    case ABIL_FEDHAS_WALL_OF_BRIARS:
         fail_check();
-        if (!fedhas_plant_ring_from_rations())
+        if (!fedhas_wall_of_briars())
             return spret::abort;
         break;
 
-    case ABIL_FEDHAS_RAIN:
-        fail_check();
-        if (!fedhas_rain(you.pos()))
-        {
-            canned_msg(MSG_NOTHING_HAPPENS);
-            return spret::abort;
-        }
-        break;
-
-    case ABIL_FEDHAS_SPAWN_SPORES:
+    case ABIL_FEDHAS_GROW_BALLISTOMYCETE:
     {
-        fail_check();
-        const int num = fedhas_corpse_spores();
-        ASSERT(num > 0);
+        return fedhas_grow_ballistomycete(fail);
+
         break;
     }
 
-    case ABIL_FEDHAS_EVOLUTION:
-        return fedhas_evolve_flora(fail);
+    case ABIL_FEDHAS_OVERGROW:
+    {
+        fail_check();
+
+        if (!fedhas_overgrow())
+            return spret::abort;
+
+        break;
+    }
+
+    case ABIL_FEDHAS_GROW_OKLOB:
+    {
+        return fedhas_grow_oklob(fail);
+
+        break;
+    }
 
     case ABIL_TRAN_BAT:
+    {
+        if (_player_cancels_vampire_bat_transformation())
+            return spret::abort;
         fail_check();
         if (!transform(100, transformation::bat))
         {
             crawl_state.zero_turns_taken();
             return spret::abort;
         }
+
+        _cause_vampire_bat_form_stat_drain();
+
+        break;
+    }
+
+    case ABIL_EXSANGUINATE:
+        fail_check();
+        start_delay<ExsanguinateDelay>(5);
+        break;
+
+    case ABIL_REVIVIFY:
+        fail_check();
+        start_delay<RevivifyDelay>(5);
         break;
 
     case ABIL_JIYVA_CALL_JELLY:
@@ -3128,8 +3227,7 @@ static spret _do_ability(const ability_def& abil, bool fail)
         fail_check();
         if (yesno("Really renounce your faith, foregoing its fabulous benefits?",
                   false, 'n')
-            && yesno("Are you sure you won't change your mind later?",
-                     false, 'n'))
+            && yesno("Are you sure?", false, 'n'))
         {
             excommunication(true);
         }
@@ -3413,11 +3511,16 @@ vector<talent> your_talents(bool check_confused, bool include_unusable)
         _add_talent(talents, draconian_breath(you.species), check_confused);
     }
 
-    if (you.species == SP_VAMPIRE && you.experience_level >= 3
-        && you.hunger_state <= HS_SATIATED
-        && you.form != transformation::bat)
+    if (you.species == SP_VAMPIRE)
     {
-        _add_talent(talents, ABIL_TRAN_BAT, check_confused);
+        if (!you.vampire_alive)
+        {
+            if (you.experience_level >= 3 && you.form != transformation::bat)
+                _add_talent(talents, ABIL_TRAN_BAT, check_confused);
+            _add_talent(talents, ABIL_REVIVIFY, check_confused);
+        }
+        else
+            _add_talent(talents, ABIL_EXSANGUINATE, check_confused);
     }
 
     if (you.racial_permanent_flight() && !you.attribute[ATTR_PERM_FLIGHT])
@@ -3534,7 +3637,7 @@ vector<talent> your_talents(bool check_confused, bool include_unusable)
         }
 
         // Try to find a free hotkey for i, starting from Z.
-        for (int k = 51; k >= 0; ++k)
+        for (int k = 51; k >= 0; --k)
         {
             const int kkey = index_to_letter(k);
             bool good_key = true;
@@ -3549,7 +3652,7 @@ vector<talent> your_talents(bool check_confused, bool include_unusable)
 
             if (good_key)
             {
-                tal.hotkey = k;
+                tal.hotkey = kkey;
                 you.ability_letter_table[k] = tal.which;
                 break;
             }

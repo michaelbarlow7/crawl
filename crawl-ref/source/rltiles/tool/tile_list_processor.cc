@@ -39,10 +39,29 @@ tile_list_processor::~tile_list_processor()
         delete m_texture;
 }
 
+bool tile_list_processor::load_image_from_tile(tile &img, string filename)
+{
+    if (filename.substr(0, 5) != "enum:")
+        return false;
+    const string enumname = filename.substr(5);
+
+    int idx = m_page.find(enumname);
+    if (idx == -1)
+        return false;
+
+    img.copy(*m_page.m_tiles[idx]);
+    for (int i = 0; i < MAX_COLOUR; ++i)
+        img.add_variation(i, -1);
+    return true;
+}
+
 bool tile_list_processor::load_image(tile &img, const char *filename,
                                      bool background)
 {
     assert(filename);
+
+    if (load_image_from_tile(img, filename))
+        return true;
 
     char temp[1024];
 
@@ -190,7 +209,7 @@ static int str_to_colour(string colour)
         return 0;
 
     for (unsigned int c = 0; c < colour.size(); c++)
-        colour[c] = tolower(colour[c]);
+        colour[c] = toalower(colour[c]);
 
     for (int i = 0; i < 16; ++i)
     {
@@ -894,8 +913,8 @@ bool tile_list_processor::write_data(bool image, bool code)
     string ucname = m_name;
     for (unsigned int i = 0; i < m_name.size(); i++)
     {
-        lcname[i] = tolower(m_name[i]);
-        ucname[i] = toupper(m_name[i]);
+        lcname[i] = toalower(m_name[i]);
+        ucname[i] = toaupper(m_name[i]);
     }
     string max = m_prefix;
     max += "_";
@@ -1055,7 +1074,7 @@ bool tile_list_processor::write_data(bool image, bool code)
             max_enum += "_MAX";
 
             for (char& c : max_enum)
-                c = toupper(c);
+                c = toaupper(c);
 
             fprintf(fp, "    %s_%s_MAX = %s\n};\n\n", m_prefix.c_str(), ucname.c_str(), max_enum.c_str());
         }
@@ -1112,6 +1131,7 @@ bool tile_list_processor::write_data(bool image, bool code)
 
         fprintf(fp, "// This file has been automatically generated.\n\n");
         fprintf(fp, "#include \"AppHdr.h\"\n");
+        fprintf(fp, "#include \"libutil.h\"\n");
         fprintf(fp, "#include \"tiledef-%s.h\"\n\n", lcname.c_str());
 
         fprintf(fp, "static unsigned int _tile_%s_count[%s - %s] =\n{\n",
@@ -1258,7 +1278,7 @@ bool tile_list_processor::write_data(bool image, bool code)
 
                 string lcenum = enumname;
                 for (unsigned int c = 0; c < enumname.size(); c++)
-                    lcenum[c] = tolower(enumname[c]);
+                    lcenum[c] = toalower(enumname[c]);
 
                 table.insert(sort_map::value_type(lcenum, i));
             }
@@ -1282,7 +1302,7 @@ bool tile_list_processor::write_data(bool image, bool code)
             "\n"
             "    string lc = str;\n"
             "    for (unsigned int i = 0; i < lc.size(); i++)\n"
-            "        lc[i] = tolower(lc[i]);\n"
+            "        lc[i] = toalower(lc[i]);\n"
             "\n"
             "    int num_pairs = sizeof(%s_name_pairs) / sizeof(%s_name_pairs[0]);\n"
             "    bool result = binary_search<const char *, tileidx_t>(\n"
@@ -1371,7 +1391,7 @@ bool tile_list_processor::write_data(bool image, bool code)
             max_enum += "_MAX";
 
             for (char& c : max_enum)
-                c = toupper(c);
+                c = toaupper(c);
 
             uc_max_enum.push_back(max_enum);
 
@@ -1472,7 +1492,7 @@ bool tile_list_processor::write_data(bool image, bool code)
             {
                 string lcenum = m_page.m_tiles[i]->enumname(0);
                 for (unsigned int c = 0; c < lcenum.size(); c++)
-                    lcenum[c] = tolower(lcenum[c]);
+                    lcenum[c] = toalower(lcenum[c]);
 
                 if (i == 0 || m_page.m_counts[i] == 1)
                     fprintf(fp, "<td>%s</td>", lcenum.c_str());
@@ -1704,7 +1724,7 @@ bool tile_list_processor::write_data(bool image, bool code)
                 max_enum += "_MAX";
 
                 for (char& c : max_enum)
-                    c = toupper(c);
+                    c = toaupper(c);
 
                 fprintf(fp, "exports.%s_MAX = window.%s_%s_MAX = %s.%s;\n\n",
                         ucname.c_str(), m_prefix.c_str(), ucname.c_str()
@@ -1719,7 +1739,7 @@ bool tile_list_processor::write_data(bool image, bool code)
                 string max_enum = abstract.first;
                 max_enum += "_MAX";
                 for (char& c : max_enum)
-                    c = toupper(c);
+                    c = toaupper(c);
 
                 max_enum = abstract.first + "." + max_enum;
 

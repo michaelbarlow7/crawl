@@ -64,13 +64,13 @@ enum shoals_height_thresholds
     SHT_SHALLOW_WATER = -30,
 };
 
-enum tide_direction
+enum class tide_dir
 {
-    TIDE_RISING,
-    TIDE_FALLING,
+    rising,
+    falling,
 };
 
-static tide_direction _shoals_tide_direction;
+static tide_dir _shoals_tide_direction;
 static monster* tide_caller = nullptr;
 static coord_def tide_caller_pos;
 static int tide_called_turns = 0;
@@ -858,7 +858,7 @@ static void _shoals_apply_tide_feature_at(
 
 // Determines if the tide is rising or falling based on before and
 // after features at the same square.
-static tide_direction _shoals_feature_tide_height_change(
+static tide_dir _shoals_feature_tide_height_change(
     dungeon_feature_type oldfeat,
     dungeon_feature_type newfeat)
 {
@@ -866,7 +866,7 @@ static tide_direction _shoals_feature_tide_height_change(
         _shoals_feature_height(newfeat) - _shoals_feature_height(oldfeat);
     // If the apparent height of the new feature is greater (floor vs water),
     // the tide is receding.
-    return height_delta < 0 ? TIDE_RISING : TIDE_FALLING;
+    return height_delta < 0 ? tide_dir::rising : tide_dir::falling;
 }
 
 static void _shoals_apply_tide_at(coord_def c, int tide, bool incremental_tide)
@@ -1018,6 +1018,13 @@ void shoals_apply_tides(int turns_elapsed, bool force, bool incremental_tide)
         return;
     }
 
+    // isolate from main levelgen rng if called from there; the behavior of
+    // this function is dependent on global state (tide direction, etc) that
+    // may impact the number of rolls depending on when the player changes
+    // shoals levels, so doing this with the levelgen rng has downstream
+    // effects.
+    rng::generator tide_rng(rng::GAMEPLAY);
+
     CrawlHashTable &props(you.props);
     _shoals_init_tide();
 
@@ -1064,7 +1071,7 @@ void shoals_apply_tides(int turns_elapsed, bool force, bool incremental_tide)
         || old_tide / TIDE_MULTIPLIER != tide / TIDE_MULTIPLIER)
     {
         _shoals_tide_direction =
-            tide > old_tide ? TIDE_RISING : TIDE_FALLING;
+            tide > old_tide ? tide_dir::rising : tide_dir::falling;
         _shoals_apply_tide(tide / TIDE_MULTIPLIER, incremental_tide);
     }
 }
@@ -1103,7 +1110,7 @@ static void _shoals_force_tide(CrawlHashTable &props, int increment)
     tide += increment * TIDE_MULTIPLIER;
     tide = min(HIGH_TIDE, max(LOW_TIDE, tide));
     props[PROPS_SHOALS_TIDE_KEY] = short(tide);
-    _shoals_tide_direction = increment > 0 ? TIDE_RISING : TIDE_FALLING;
+    _shoals_tide_direction = increment > 0 ? tide_dir::rising : tide_dir::falling;
     _shoals_apply_tide(tide / TIDE_MULTIPLIER, false);
 }
 

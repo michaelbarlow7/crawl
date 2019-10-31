@@ -278,7 +278,7 @@ void ghost_demon::init_player_ghost(bool actual_ghost)
 
     name   = you.your_name;
     max_hp = min(get_real_hp(false, false), MAX_GHOST_HP);
-    ev     = min(you.evasion(EV_IGNORE_HELPLESS), MAX_GHOST_EVASION);
+    ev     = min(you.evasion(ev_ignore::helpless), MAX_GHOST_EVASION);
     ac     = you.armour_class();
     dprf("ghost ac: %d, ev: %d", ac, ev);
 
@@ -780,7 +780,7 @@ bool debug_check_ghost(const ghost_demon &ghost)
         return false;
 
     // Name validation.
-    if (!validate_player_name(ghost.name, false))
+    if (!validate_player_name(ghost.name))
         return false;
     // Many combining characters can come per every letter, but if there's
     // that much, it's probably a maliciously forged ghost of some kind.

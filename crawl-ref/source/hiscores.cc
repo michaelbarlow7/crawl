@@ -57,6 +57,7 @@
 #endif
 #include "unwind.h"
 #include "version.h"
+#include "outer-menu.h"
 
 using namespace ui;
 
@@ -283,7 +284,7 @@ void hiscores_print_all(int display_count, int format)
 
 // Displays high scores using curses. For output to the console, use
 // hiscores_print_all.
-string hiscores_print_list(int display_count, int format, int newest_entry)
+string hiscores_print_list(int display_count, int format, int newest_entry, int& start_out)
 {
     unwind_bool scorefile_display(crawl_state.updating_scores, true);
     string ret;
@@ -325,46 +326,8 @@ string hiscores_print_list(int display_count, int format, int newest_entry)
             ret += "<lightgrey>";
     }
 
+    start_out = start;
     return ret;
-}
-
-static void _add_hiscore_row(MenuScroller* scroller, scorefile_entry& se, int id)
-{
-    TextItem* tmp = nullptr;
-    tmp = new TextItem();
-
-    tmp->set_fg_colour(WHITE);
-    tmp->set_highlight_colour(WHITE);
-
-    tmp->set_text(hiscores_format_single(se));
-    tmp->set_description_text(hiscores_format_single_long(se, true));
-    tmp->set_id(id);
-    tmp->set_bounds(coord_def(1,1), coord_def(1,2));
-
-    scroller->attach_item(tmp);
-    tmp->set_visible(true);
-}
-
-static void _construct_hiscore_table(MenuScroller* scroller)
-{
-    FILE *scores = _hs_open("r", _score_file_name());
-
-    if (scores == nullptr)
-        return;
-
-    int i;
-    // read highscore file
-    for (i = 0; i < SCORE_FILE_ENTRIES; i++)
-    {
-        hs_list[i].reset(new scorefile_entry);
-        if (_hs_read(scores, *hs_list[i]) == false)
-            break;
-    }
-
-    _hs_close(scores, _score_file_name());
-
-    for (int j=0; j<i; j++)
-        _add_hiscore_row(scroller, *hs_list[j], j);
 }
 
 static void _show_morgue(scorefile_entry& se)
@@ -415,171 +378,171 @@ static void _show_morgue(scorefile_entry& se)
 class UIHiscoresMenu : public Widget
 {
 public:
-    UIHiscoresMenu() : done(false) {
-        expand_v = true;
-    };
+    UIHiscoresMenu();
+
+    virtual shared_ptr<Widget> get_child_at_offset(int x, int y) override {
+        return static_pointer_cast<Widget>(m_root);
+    }
 
     virtual void _render() override;
     virtual SizeReq _get_preferred_size(Direction dim, int prosp_width) override;
     virtual void _allocate_region() override;
     virtual bool on_event(const wm_event& event) override;
 
-    bool done;
+    void on_show();
+
+    bool done = false;
+
 private:
-    PrecisionMenu menu;
+    void _construct_hiscore_table();
+    void _add_hiscore_row(scorefile_entry& se, int id);
+
+    Widget* initial_focus = nullptr;
+    bool have_allocated {false};
+
+    shared_ptr<Box> m_root;
+    shared_ptr<Text> m_description;
+    shared_ptr<OuterMenu> m_score_entries;
 };
+
+static int nhsr;
+
+UIHiscoresMenu::UIHiscoresMenu()
+{
+    m_root = make_shared<Box>(Widget::VERT);
+    m_root->_set_parent(this);
+    m_root->align_cross = Widget::STRETCH;
+
+    auto title_hbox = make_shared<Box>(Widget::HORZ);
+    title_hbox->set_margin_for_sdl(0, 0, 20, 0);
+    title_hbox->set_margin_for_crt(0, 0, 1, 0);
+
+#ifdef USE_TILE
+    auto tile = make_shared<Image>();
+    tile->set_tile(tile_def(TILEG_STARTUP_HIGH_SCORES, TEX_GUI));
+    title_hbox->add_child(move(tile));
+#endif
+
+    auto title = make_shared<Text>(formatted_string(
+                "Dungeon Crawl Stone Soup: High Scores", YELLOW));
+    title->set_margin_for_sdl(0, 0, 0, 16);
+    title_hbox->add_child(move(title));
+
+    title_hbox->align_main = Widget::CENTER;
+    title_hbox->align_cross = Widget::CENTER;
+
+    m_description = make_shared<Text>(string(9, '\n'));
+
+    m_score_entries= make_shared<OuterMenu>(true, 1, 100);
+    nhsr = 0;
+    _construct_hiscore_table();
+
+    m_root->add_child(move(title_hbox));
+    if (initial_focus)
+    {
+        m_root->add_child(m_description);
+        m_root->add_child(m_score_entries);
+    }
+    else
+    {
+        auto placeholder = formatted_string("No high scores yet...", DARKGRAY);
+        m_root->add_child(make_shared<Text>(placeholder));
+        initial_focus = this;
+    }
+}
+
+void UIHiscoresMenu::_construct_hiscore_table()
+{
+    FILE *scores = _hs_open("r", _score_file_name());
+
+    if (scores == nullptr)
+        return;
+
+    int i;
+    // read highscore file
+    for (i = 0; i < SCORE_FILE_ENTRIES; i++)
+    {
+        hs_list[i].reset(new scorefile_entry);
+        if (_hs_read(scores, *hs_list[i]) == false)
+            break;
+    }
+
+    _hs_close(scores, _score_file_name());
+
+    for (int j=0; j<i; j++)
+        _add_hiscore_row(*hs_list[j], j);
+}
+
+void UIHiscoresMenu::_add_hiscore_row(scorefile_entry& se, int id)
+{
+    auto tmp = make_shared<Text>();
+
+    tmp->set_text(formatted_string(hiscores_format_single(se)));
+    auto btn = make_shared<MenuButton>();
+    tmp->set_margin_for_sdl(2);
+    btn->set_child(move(tmp));
+    btn->on(Widget::slots.event, [this, id, se](wm_event ev) {
+        if (ev.type == WME_MOUSEBUTTONUP && ev.mouse_event.button == MouseEvent::LEFT
+                || ev.type == WME_KEYDOWN && ev.key.keysym.sym == CK_ENTER)
+        {
+            _show_morgue(*hs_list[id]);
+            return true;
+        }
+        if (ev.type == WME_FOCUSIN)
+        {
+            formatted_string desc(hiscores_format_single_long(se, true));
+            desc.cprintf(string(max(0, 9-count_linebreaks(desc)), '\n'));
+            m_description->set_text(move(desc));
+        }
+        return false;
+    });
+
+    if (!initial_focus)
+        initial_focus = btn.get();
+    m_score_entries->add_button(move(btn), 0, nhsr++);
+}
 
 void UIHiscoresMenu::_render()
 {
-#ifdef USE_TILE_LOCAL
-    GLW_3VF t = {(float)m_region[0], (float)m_region[1], 0}, s = {1, 1, 1};
-    glmanager->set_transform(t, s);
-#endif
-    menu.draw_menu();
-#ifdef USE_TILE_LOCAL
-    glmanager->reset_transform();
-#endif
+    m_root->render();
+}
+
+void UIHiscoresMenu::on_show()
+{
+    ui::set_focused_widget(initial_focus);
 }
 
 SizeReq UIHiscoresMenu::_get_preferred_size(Direction dim, int prosp_width)
 {
-    SizeReq ret;
-    if (!dim)
-        ret = { 80, 100 };
-    else
-        ret = { 10, 10 };
-#ifdef USE_TILE_LOCAL
-    const FontWrapper* font = tiles.get_crt_font();
-    const int f = !dim ? font->char_width() : font->char_height();
-    ret.min *= f;
-    ret.nat *= f;
-#endif
-    return ret;
+    return m_root->get_preferred_size(dim, prosp_width);
 }
 
 void UIHiscoresMenu::_allocate_region()
 {
-    menu.clear();
-
-#ifdef USE_TILE_LOCAL
-    const FontWrapper* font = tiles.get_crt_font();
-    const int max_col = m_region[2]/font->char_width();
-    const int max_line = m_region[3]/font->char_height();
-#else
-    const int max_col = m_region[2] - 1, max_line = m_region[3] - 1;
-#endif
-
-    const int scores_col_start = 1;
-    const int descriptor_col_start = 1;
-    const int scores_row_start = 10;
-    const int scores_col_end = max_col;
-    const int scores_row_end = max_line+1;
-
-    menu.set_select_type(PrecisionMenu::PRECISION_SINGLESELECT);
-
-    MenuScroller* score_entries = new MenuScroller();
-
-    score_entries->init(coord_def(scores_col_start, scores_row_start),
-            coord_def(scores_col_end, scores_row_end), "score entries");
-
-    _construct_hiscore_table(score_entries);
-
-    MenuDescriptor* descriptor = new MenuDescriptor(&menu);
-    descriptor->init(coord_def(descriptor_col_start, 1),
-            coord_def(max_col+1, scores_row_start - 1),
-            "descriptor");
-
-#ifdef USE_TILE_LOCAL
-    BoxMenuHighlighter* highlighter = new BoxMenuHighlighter(&menu);
-#else
-    BlackWhiteHighlighter* highlighter = new BlackWhiteHighlighter(&menu);
-#endif
-    highlighter->init(coord_def(-1,-1), coord_def(-1,-1), "highlighter");
-
-    MenuFreeform* freeform = new MenuFreeform();
-    freeform->init(coord_def(1, 1), coord_def(max_col, max_line), "freeform");
-    // This freeform will only contain unfocusable texts
-    freeform->allow_focus(false);
-    freeform->set_visible(true);
-
-    score_entries->set_visible(true);
-    descriptor->set_visible(true);
-    highlighter->set_visible(true);
-
-    menu.attach_object(freeform);
-    menu.attach_object(score_entries);
-    menu.attach_object(descriptor);
-    menu.attach_object(highlighter);
-
-    menu.set_active_object(score_entries);
-    score_entries->set_active_item((MenuItem*) nullptr);
-    score_entries->activate_first_item();
-
-    enable_smart_cursor(false);
+    if (!have_allocated)
+    {
+        have_allocated = true;
+        on_show();
+    }
+    m_root->allocate_region(m_region);
 }
 
 bool UIHiscoresMenu::on_event(const wm_event& ev)
 {
-#ifdef USE_TILE_LOCAL
-    if (ev.type == WME_MOUSEMOTION
-     || ev.type == WME_MOUSEBUTTONDOWN
-     || ev.type == WME_MOUSEWHEEL)
-    {
-        MouseEvent mouse_ev = ev.mouse_event;
-        mouse_ev.px -= m_region[0];
-        mouse_ev.py -= m_region[1];
-
-        int key = menu.handle_mouse(mouse_ev);
-        if (key && key != CK_NO_KEY)
-        {
-            wm_event fake_key = {0};
-            fake_key.type = WME_KEYDOWN;
-            fake_key.key.keysym.sym = key;
-            on_event(fake_key);
-        }
-
-        if (ev.type == WME_MOUSEMOTION)
-            _expose();
-        return true;
-    }
-#endif
-
     if (ev.type != WME_KEYDOWN)
         return false;
-    int keyn = ev.key.keysym.sym;
-
-    if (key_is_escape(keyn) || keyn == CK_MOUSE_CMD)
+    int key = ev.key.keysym.sym;
+    if (key_is_escape(key) || key == CK_MOUSE_CMD)
         return done = true;
-
-    if (menu.process_key(keyn))
-    {
-        menu.clear_selections();
-        _show_morgue(*hs_list[menu.get_active_item()->get_id()]);
-    }
-    _expose();
-
     return true;
 }
 
 void show_hiscore_table()
 {
     unwind_var<string> sprintmap(crawl_state.map, crawl_state.sprint_map);
-
-    auto vbox = make_shared<Box>(Widget::VERT);
-    auto title = make_shared<Text>(formatted_string("Dungeon Crawl Stone Soup: High Scores", YELLOW));
-    title->align_self = Widget::CENTER;
-    title->set_margin_for_sdl({0, 0, 20, 0});
     auto hiscore_ui = make_shared<UIHiscoresMenu>();
-    vbox->add_child(move(title));
-    vbox->add_child(hiscore_ui);
-    auto popup = make_shared<ui::Popup>(move(vbox));
-
-    bool smart_cursor_enabled = is_smart_cursor_enabled();
-
+    auto popup = make_shared<ui::Popup>(hiscore_ui);
     ui::run_layout(move(popup), hiscore_ui->done);
-
-    // Go back to the menu and return the smart cursor to its previous state
-    enable_smart_cursor(smart_cursor_enabled);
 }
 
 // Trying to supply an appropriate verb for the attack type. -- bwr
@@ -834,6 +797,7 @@ void scorefile_entry::init_from(const scorefile_entry &se)
     zigmax             = se.zigmax;
     scrolls_used       = se.scrolls_used;
     potions_used       = se.potions_used;
+    seed               = se.seed;
     fixup_char_name();
 
     // We could just reset raw_line to "" instead.
@@ -1137,6 +1101,8 @@ void scorefile_entry::init_with_fields()
     scrolls_used = fields->int_field("scrollsused");
     potions_used = fields->int_field("potionsused");
 
+    seed = fields->str_field("seed");
+
     fixup_char_name();
 }
 
@@ -1286,6 +1252,8 @@ void scorefile_entry::set_score_fields() const
     if (!killer_map.empty())
         fields->add_field("killermap", "%s", killer_map.c_str());
 
+    fields->add_field("seed", "%s", seed.c_str());
+
 #ifdef DGL_EXTENDED_LOGFILES
     const string short_msg = short_kill_message();
     fields->add_field("tmsg", "%s", short_msg.c_str());
@@ -1313,7 +1281,7 @@ string scorefile_entry::long_kill_message() const
 {
     string msg = death_description(DDV_LOGVERBOSE);
     msg = make_oneline(msg);
-    msg[0] = tolower(msg[0]);
+    msg[0] = tolower_safe(msg[0]);
     trim_string(msg);
     return msg;
 }
@@ -1322,7 +1290,7 @@ string scorefile_entry::short_kill_message() const
 {
     string msg = death_description(DDV_ONELINE);
     msg = make_oneline(msg);
-    msg[0] = tolower(msg[0]);
+    msg[0] = tolower_safe(msg[0]);
     trim_string(msg);
     return msg;
 }
@@ -1571,6 +1539,7 @@ void scorefile_entry::reset()
     zigmax               = 0;
     scrolls_used         = 0;
     potions_used         = 0;
+    seed.clear();
 }
 
 static int _award_modified_experience()
@@ -1810,6 +1779,7 @@ void scorefile_entry::init(time_t dt)
 
     wiz_mode = (you.wizard || you.suppress_wizard ? 1 : 0);
     explore_mode = (you.explore ? 1 : 0);
+    seed = make_stringf("%" PRIu64, crawl_state.seed);
 }
 
 string scorefile_entry::hiscore_line(death_desc_verbosity verbosity) const
@@ -2013,6 +1983,7 @@ scorefile_entry::character_description(death_desc_verbosity verbosity) const
         ASSERT(birth_time);
         desc += " on ";
         desc += _hiscore_date_string(birth_time);
+        // TODO: show seed here?
 
         desc = _append_sentence_delimiter(desc, ".");
         desc += _hiscore_newline_string();
@@ -2667,7 +2638,7 @@ string scorefile_entry::death_description(death_desc_verbosity verbosity) const
     }
 
     if (oneline && desc.length() > 2)
-        desc[1] = tolower(desc[1]);
+        desc[1] = tolower_safe(desc[1]);
 
     // TODO: Eventually, get rid of "..." for cases where the text fits.
     if (terse)

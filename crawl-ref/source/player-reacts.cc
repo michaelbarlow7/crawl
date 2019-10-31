@@ -289,26 +289,19 @@ static void _maybe_melt_armour()
  */
 static int _current_horror_level()
 {
-    const coord_def& center = you.pos();
-    const int radius = LOS_RADIUS;
     int horror_level = 0;
 
-    for (radius_iterator ri(center, radius, C_SQUARE); ri; ++ri)
+    for (monster_near_iterator mi(&you, LOS_NO_TRANS); mi; ++mi)
     {
-        const monster* const mon = monster_at(*ri);
 
-        if (mon == nullptr
-            || mons_aligned(mon, &you)
-            || !mons_is_threatening(*mon)
-            || !you.can_see(*mon)
-            || mons_is_tentacle_or_tentacle_segment(mon->type))
+        if (mons_aligned(*mi, &you)
+            || !mons_is_threatening(**mi)
+            || mons_is_tentacle_or_tentacle_segment(mi->type))
         {
             continue;
         }
 
-        ASSERT(mon);
-
-        const mon_threat_level_type threat_level = mons_threat_level(*mon);
+        const mon_threat_level_type threat_level = mons_threat_level(**mi);
         if (threat_level == MTHRT_NASTY)
             horror_level += 3;
         else if (threat_level == MTHRT_TOUGH)
@@ -461,7 +454,7 @@ void player_reacts_to_monsters()
 {
     // In case Maurice managed to steal a needed item for example.
     if (!you_are_delayed())
-        update_can_train();
+        update_can_currently_train();
 
     if (you.duration[DUR_FIRE_SHIELD] > 0)
         manage_fire_shield(you.time_taken);
@@ -755,10 +748,17 @@ static void _decrement_durations()
         }
     }
 
-    if (you.duration[DUR_DEATHS_DOOR] && you.hp > allowed_deaths_door_hp())
+    if (you.duration[DUR_DEATHS_DOOR]
+        && you.attribute[ATTR_DEATHS_DOOR_HP] > 0
+        && you.hp > you.attribute[ATTR_DEATHS_DOOR_HP])
     {
-        set_hp(allowed_deaths_door_hp());
+        set_hp(you.attribute[ATTR_DEATHS_DOOR_HP]);
         you.redraw_hit_points = true;
+    }
+    else if (!you.duration[DUR_DEATHS_DOOR]
+             && you.attribute[ATTR_DEATHS_DOOR_HP] > 0)
+    {
+        you.attribute[ATTR_DEATHS_DOOR_HP] = 0;
     }
 
     if (_decrement_a_duration(DUR_CLOUD_TRAIL, delay,
@@ -799,11 +799,7 @@ static void _decrement_durations()
     }
 
     if (you.duration[DUR_TOXIC_RADIANCE])
-    {
-        const int ticks = (you.duration[DUR_TOXIC_RADIANCE] / 10)
-                          - ((you.duration[DUR_TOXIC_RADIANCE] - delay) / 10);
-        toxic_radiance_effect(&you, ticks);
-    }
+        toxic_radiance_effect(&you, min(delay, you.duration[DUR_TOXIC_RADIANCE]));
 
     if (you.duration[DUR_RECITE] && _check_recite())
     {
@@ -829,11 +825,15 @@ static void _decrement_durations()
         doom_howl(min(delay, you.duration[DUR_DOOM_HOWL]));
 
     dec_elixir_player(delay);
-    extract_manticore_spikes("You carefully extract the barbed spikes from "
-                             "your body.");
 
-    if (!env.sunlight.empty())
-        process_sunlights();
+    if (!you.cannot_move()
+        && !you.confused()
+        && !you.asleep())
+    {
+        extract_manticore_spikes(
+            make_stringf("You %s the barbed spikes from your body.",
+                you.berserk() ? "rip and tear" : "carefully extract").c_str());
+    }
 
     if (!you.duration[DUR_ANCESTOR_DELAY]
         && in_good_standing(GOD_HEPLIAKLQANA)

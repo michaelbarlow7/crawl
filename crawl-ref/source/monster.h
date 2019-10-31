@@ -104,7 +104,7 @@ public:
     unique_ptr<ghost_demon> ghost;     // Ghost information.
 
     seen_context_type seen_context;    // Non-standard context for
-                                       // AI_SEE_MONSTER
+                                       // activity_interrupt::see_monster
 
     int damage_friendly;               // Damage taken, x2 you, x1 pets, x0 else.
     int damage_total;
@@ -332,6 +332,7 @@ public:
     // will return "Arbolt the orc priest".
     string full_name(description_level_type type) const;
     string pronoun(pronoun_type pro, bool force_visible = false) const override;
+    bool pronoun_plurality(bool force_visible = false) const;
     string conj_verb(const string &verb) const override;
     string hand_name(bool plural, bool *can_plural = nullptr) const override;
     string foot_name(bool plural, bool *can_plural = nullptr) const override;
@@ -446,7 +447,6 @@ public:
     mon_spell_slot_flags spell_slot_flags(spell_type spell) const;
     bool has_unclean_spell() const;
     bool has_chaotic_spell() const;
-    bool has_corpse_violating_spell() const;
 
     bool has_attack_flavour(int flavour) const;
     bool has_damage_type(int dam_type);
@@ -461,7 +461,7 @@ public:
     int armour_class(bool calc_unid = true) const override;
     int gdr_perc() const override { return 0; }
     int base_evasion() const;
-    int evasion(ev_ignore_type evit = EV_IGNORE_NONE,
+    int evasion(ev_ignore_type evit = ev_ignore::none,
                 const actor* /*attacker*/ = nullptr) const override;
 
     bool poison(actor *agent, int amount = 1, bool force = false) override;

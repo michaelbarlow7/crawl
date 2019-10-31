@@ -118,7 +118,7 @@ int show_description(const describe_info &inf, const tile_def *tile)
         {
             auto icon = make_shared<Image>();
             icon->set_tile(*tile);
-            icon->set_margin_for_sdl({0, 10, 0, 0});
+            icon->set_margin_for_sdl(0, 10, 0, 0);
             title_hbox->add_child(move(icon));
         }
 #endif
@@ -126,9 +126,9 @@ int show_description(const describe_info &inf, const tile_def *tile)
         auto title = make_shared<Text>(inf.title);
         title_hbox->add_child(move(title));
 
-        title_hbox->align_items = Widget::CENTER;
-        title_hbox->set_margin_for_sdl({0, 0, 20, 0});
-        title_hbox->set_margin_for_crt({0, 0, 1, 0});
+        title_hbox->align_cross = Widget::CENTER;
+        title_hbox->set_margin_for_sdl(0, 0, 20, 0);
+        title_hbox->set_margin_for_crt(0, 0, 1, 0);
         vbox->add_child(move(title_hbox));
     }
 
@@ -145,7 +145,7 @@ int show_description(const describe_info &inf, const tile_def *tile)
         auto scroller = make_shared<Scroller>();
         auto fs = formatted_string::parse_string(trimmed_string(desc));
         auto text = make_shared<Text>(fs);
-        text->wrap_text = true;
+        text->set_wrap_text(true);
         scroller->set_child(text);
         switcher->add_child(move(scroller));
     }
@@ -153,15 +153,15 @@ int show_description(const describe_info &inf, const tile_def *tile)
     switcher->current() = 0;
     switcher->expand_h = false;
 #ifdef USE_TILE_LOCAL
-    switcher->max_size()[0] = tiles.get_crt_font()->char_width()*80;
+    switcher->max_size().width = tiles.get_crt_font()->char_width()*80;
 #endif
     vbox->add_child(switcher);
 
     if (!inf.quote.empty())
     {
         auto footer = make_shared<Text>(_toggle_message);
-        footer->set_margin_for_sdl({20, 0, 0, 0});
-        footer->set_margin_for_crt({1, 0, 0, 0});
+        footer->set_margin_for_sdl(20, 0, 0, 0);
+        footer->set_margin_for_crt(1, 0, 0, 0);
         vbox->add_child(move(footer));
     }
 
@@ -176,7 +176,7 @@ int show_description(const describe_info &inf, const tile_def *tile)
         if (!inf.quote.empty() && (lastch == '!' || lastch == CK_MOUSE_CMD || lastch == '^'))
             switcher->current() = 1 - switcher->current();
         else
-            done = !vbox->on_event(ev);
+            done = !switcher->current_widget()->on_event(ev);
         return true;
     });
 
@@ -235,7 +235,6 @@ const char* jewellery_base_ability_string(int subtype)
     case RING_FIRE:               return "Fire";
     case RING_ICE:                return "Ice";
     case RING_TELEPORTATION:      return "*Tele";
-    case RING_RESIST_CORROSION:   return "rCorr";
 #if TAG_MAJOR_VERSION == 34
     case RING_TELEPORT_CONTROL:   return "+cTele";
 #endif
@@ -632,9 +631,7 @@ static string _randart_descrip(const item_def &item)
 
 static const char *trap_names[] =
 {
-#if TAG_MAJOR_VERSION == 34
     "dart",
-#endif
     "arrow", "spear",
 #if TAG_MAJOR_VERSION > 34
     "dispersal",
@@ -642,7 +639,10 @@ static const char *trap_names[] =
 #endif
     "permanent teleport",
     "alarm", "blade",
-    "bolt", "net", "Zot", "needle",
+    "bolt", "net", "Zot",
+#if TAG_MAJOR_VERSION == 34
+    "needle",
+#endif
     "shaft", "passage", "pressure plate", "web",
 #if TAG_MAJOR_VERSION == 34
     "gas", "teleport",
@@ -937,7 +937,7 @@ static int _item_training_target(const item_def &item)
         return weapon_min_delay_skill(item) * 10;
     else if (is_shield(item))
         return round(you.get_shield_skill_to_offset_penalty(item) * 10);
-    else if (item.base_type == OBJ_MISSILES && throw_dam)
+    else if (item.base_type == OBJ_MISSILES && is_throwable(&you, item, false))
         return (((10 + throw_dam / 2) - FASTEST_PLAYER_THROWING_SPEED) * 2) * 10;
     else
         return 0;
@@ -950,14 +950,13 @@ static int _item_training_target(const item_def &item)
  */
 static skill_type _item_training_skill(const item_def &item)
 {
-    const int throw_dam = property(item, PWPN_DAMAGE);
     if (item.base_type == OBJ_WEAPONS || item.base_type == OBJ_STAVES)
         return item_attack_skill(item);
     else if (is_shield(item))
         return SK_SHIELDS; // shields are armour, so do shields before armour
     else if (item.base_type == OBJ_ARMOUR)
         return SK_ARMOUR;
-    else if (item.base_type == OBJ_MISSILES && throw_dam)
+    else if (item.base_type == OBJ_MISSILES && is_throwable(&you, item, false))
         return SK_THROWING;
     else if (item_is_evokable(item)) // not very accurate
         return SK_EVOCATIONS;
@@ -982,14 +981,14 @@ static bool _could_set_training_target(const item_def &item, bool ignore_current
 
     const int target = min(_item_training_target(item), 270);
 
-    return target && you.can_train[skill]
+    return target && !is_useless_skill(skill)
        && you.skill(skill, 10, false, false, false) < target
        && (ignore_current || you.get_training_target(skill) < target);
 }
 
 /**
  * Produce the "Your skill:" line for item descriptions where specific skill targets
- * are releveant (weapons, missiles, shields)
+ * are relevant (weapons, missiles, shields)
  *
  * @param skill the skill to look at.
  * @param show_target_button whether to show the button for setting a skill target.
@@ -1271,8 +1270,8 @@ static string _describe_weapon(const item_def &item, bool verbose)
                 description += "It poisons the flesh of those it strikes.";
             break;
         case SPWPN_PROTECTION:
-            description += "It protects the one who uses it against "
-                "injury (+AC on strike).";
+            description += "It grants its wielder temporary protection when "
+                "it strikes (+7 to AC).";
             break;
         case SPWPN_DRAINING:
             description += "A truly terrible weapon, it drains the "
@@ -1341,6 +1340,20 @@ static string _describe_weapon(const item_def &item, bool verbose)
                     "positive or negative.";
             break;
         }
+    }
+
+    if (is_unrandom_artefact(item, UNRAND_STORM_BOW))
+    {
+        description += "\n\nAmmo fired by it will pass through the "
+            "targets it hits, potentially hitting all targets in "
+            "its path until it reaches maximum range.";
+    }
+    else if (is_unrandom_artefact(item, UNRAND_THERMIC_ENGINE))
+    {
+        description += "\n\nIt has been specially enchanted to freeze "
+            "those struck by it, causing extra injury to most foes "
+            "and up to half again as much damage against particularly "
+            "susceptible opponents.";
     }
 
     if (you.duration[DUR_EXCRUCIATING_WOUNDS] && &item == you.weapon())
@@ -1472,51 +1485,25 @@ static string _describe_ammo(const item_def &item)
                            "asphyxiation, dealing direct damage as well as "
                            "poisoning and slowing those it strikes.\n"
                            "It is twice as likely to be destroyed on impact as "
-                           "other needles.";
+                           "other darts.";
             break;
-        case SPMSL_PARALYSIS:
-            description += "It is tipped with a paralysing substance.";
-            break;
-        case SPMSL_SLEEP:
-            description += "It is coated with a fast-acting tranquilizer.";
-            break;
-        case SPMSL_CONFUSION:
-            description += "It is tipped with a substance that causes confusion.";
-            break;
-#if TAG_MAJOR_VERSION == 34
-        case SPMSL_SICKNESS:
-            description += "It has been contaminated by something likely to cause disease.";
-            break;
-#endif
         case SPMSL_FRENZY:
             description += "It is tipped with a substance that sends those it "
                            "hits into a mindless rage, attacking friend and "
                            "foe alike.";
             break;
-        case SPMSL_RETURNING:
-            description += "A skilled user can throw it in such a way that it "
-                           "will return to its owner.";
-            break;
-        case SPMSL_PENETRATION:
-            description += "It will pass through any targets it hits, "
-                           "potentially hitting all targets in its path until "
-                           "it reaches its maximum range.";
+        case SPMSL_BLINDING:
+            description += "It is tipped with a substance that causes "
+                           "blindness and brief confusion.";
             break;
         case SPMSL_DISPERSAL:
             description += "It will cause any target it hits to blink, with a "
                            "tendency towards blinking further away from the "
                            "one who " + threw_or_fired + " it.";
             break;
-        case SPMSL_EXPLODING:
-            description += "It will explode into fragments upon hitting a "
-                           "target, hitting an obstruction, or reaching its "
-                           "maximum range.";
-            break;
-        case SPMSL_STEEL:
-            description += "It deals increased damage compared to normal ammo.";
-            break;
         case SPMSL_SILVER:
-            description += "It deals substantially increased damage to chaotic "
+            description += "It deals increased damage compared to normal ammo "
+                           "and substantially increased damage to chaotic "
                            "and magically transformed beings. It also inflicts "
                            "extra damage against mutated beings, according to "
                            "how mutated they are.";
@@ -1525,7 +1512,8 @@ static string _describe_ammo(const item_def &item)
     }
 
     const int dam = property(item, PWPN_DAMAGE);
-    if (dam)
+    const bool player_throwable = is_throwable(&you, item, false);
+    if (player_throwable)
     {
         const int throw_delay = (10 + dam / 2);
         const int target_skill = _item_training_target(item);
@@ -1994,8 +1982,7 @@ string get_item_description(const item_def &item, bool verbose,
         break;
 
     case OBJ_BOOKS:
-        if (!verbose
-            && (Options.dump_book_spells || is_random_artefact(item)))
+        if (!verbose && is_random_artefact(item))
         {
             desc += describe_item_spells(item);
             if (desc.empty())
@@ -2211,6 +2198,7 @@ void get_feature_desc(const coord_def &pos, describe_info &inf, bool include_ext
 
     string desc      = feature_description_at(pos, false, DESC_A, false);
     string db_name   = feat == DNGN_ENTER_SHOP ? "a shop" : desc;
+    strip_suffix(db_name, " (summoned)");
     string long_desc = getLongDescription(db_name);
 
     inf.title = uppercase_first(desc);
@@ -2249,6 +2237,15 @@ void get_feature_desc(const coord_def &pos, describe_info &inf, bool include_ext
                          command_to_string(CMD_GO_DOWNSTAIRS).c_str());
     }
 
+    // mention that permanent trees are usually flammable
+    // (expect for autumnal trees in Wucad Mu's Monastery)
+    if (feat_is_tree(feat) && !is_temp_terrain(pos)
+        && env.markers.property_at(pos, MAT_ANY, "veto_fire") != "veto")
+    {
+        long_desc += "\nIt is susceptible to bolts of lightning";
+        long_desc += " and to sufficiently intense sources of fire.";
+    }
+
     inf.body << long_desc;
 
     if (include_extra)
@@ -2264,7 +2261,7 @@ void get_feature_desc(const coord_def &pos, describe_info &inf, bool include_ext
 void describe_feature_wide(const coord_def& pos)
 {
     typedef struct {
-        string title, body;
+        string title, body, quote;
         tile_def tile;
     } feat_info;
 
@@ -2273,7 +2270,7 @@ void describe_feature_wide(const coord_def& pos)
     {
         describe_info inf;
         get_feature_desc(pos, inf, false);
-        feat_info f = { "", "", tile_def(TILEG_TODO, TEX_GUI)};
+        feat_info f = { "", "", "", tile_def(TILEG_TODO, TEX_GUI)};
         f.title = inf.title;
         f.body = trimmed_string(inf.body.str());
 #ifdef USE_TILE
@@ -2281,12 +2278,13 @@ void describe_feature_wide(const coord_def& pos)
         apply_variations(env.tile_flv(pos), &tile, pos);
         f.tile = tile_def(tile, get_dngn_tex(tile));
 #endif
+        f.quote = trimmed_string(inf.quote);
         feats.emplace_back(f);
     }
     auto extra_descs = _get_feature_extra_descs(pos);
     for (const auto &desc : extra_descs)
     {
-        feat_info f = { "", "", tile_def(TILEG_TODO, TEX_GUI)};
+        feat_info f = { "", "", "", tile_def(TILEG_TODO, TEX_GUI)};
         f.title = desc.first;
         f.body = trimmed_string(desc.second);
 #ifdef USE_TILE
@@ -2306,7 +2304,7 @@ void describe_feature_wide(const coord_def& pos)
         string hint_text = trimmed_string(hints_describe_pos(pos.x, pos.y));
         if (!hint_text.empty())
         {
-            feat_info f = { "", "", tile_def(TILEG_TODO, TEX_GUI)};
+            feat_info f = { "", "", "", tile_def(TILEG_TODO, TEX_GUI)};
             f.title = "Hints.";
             f.body = hint_text;
             f.tile = tile_def(TILEG_STARTUP_HINTS, TEX_GUI);
@@ -2326,30 +2324,39 @@ void describe_feature_wide(const coord_def& pos)
         title_hbox->add_child(move(icon));
 #endif
         auto title = make_shared<Text>(feat.title);
-        title->set_margin_for_crt({0, 0, 0, 0});
-        title->set_margin_for_sdl({0, 0, 0, 10});
+        title->set_margin_for_sdl(0, 0, 0, 10);
         title_hbox->add_child(move(title));
-        title_hbox->align_items = Widget::CENTER;
+        title_hbox->align_cross = Widget::CENTER;
 
-        bool has_desc = feat.body != feat.title && feat.body != "";
+        const bool has_desc = feat.body != feat.title && feat.body != "";
+
         if (has_desc || &feat != &feats.back())
         {
-            title_hbox->set_margin_for_crt({0, 0, 1, 0});
-            title_hbox->set_margin_for_sdl({0, 0, 20, 0});
+            title_hbox->set_margin_for_crt(0, 0, 1, 0);
+            title_hbox->set_margin_for_sdl(0, 0, 20, 0);
         }
         vbox->add_child(move(title_hbox));
 
         if (has_desc)
         {
-            auto text = make_shared<Text>(formatted_string::parse_string(feat.body));
+            formatted_string desc_text = formatted_string::parse_string(feat.body);
+            if (!feat.quote.empty())
+            {
+                desc_text.cprintf("\n\n");
+                desc_text += formatted_string::parse_string(feat.quote);
+            }
+            auto text = make_shared<Text>(desc_text);
             if (&feat != &feats.back())
-                text->set_margin_for_sdl({0, 0, 20, 0});
-            text->wrap_text = true;
+            {
+                text->set_margin_for_sdl(0, 0, 20, 0);
+                text->set_margin_for_crt(0, 0, 1, 0);
+            }
+            text->set_wrap_text(true);
             vbox->add_child(text);
         }
     }
 #ifdef USE_TILE_LOCAL
-    vbox->max_size()[0] = tiles.get_crt_font()->char_width()*80;
+    vbox->max_size().width = tiles.get_crt_font()->char_width()*80;
 #endif
     scroller->set_child(move(vbox));
 
@@ -2357,10 +2364,9 @@ void describe_feature_wide(const coord_def& pos)
 
     bool done = false;
     popup->on(Widget::slots.event, [&](wm_event ev) {
-        if (ev.type != WME_KEYDOWN)
-            return false;
-        done = !scroller->on_event(ev);
-        return true;
+        if (scroller->on_event(ev))
+            return true;
+        return done = ev.type == WME_KEYDOWN;
     });
 
 #ifdef USE_TILE_WEB
@@ -2370,7 +2376,8 @@ void describe_feature_wide(const coord_def& pos)
     {
         tiles.json_open_object();
         tiles.json_write_string("title", feat.title);
-        tiles.json_write_string("body", feat.body);
+        tiles.json_write_string("body", trimmed_string(feat.body));
+        tiles.json_write_string("quote", trimmed_string(feat.quote));
         tiles.json_open_object("tile");
         tiles.json_write_int("t", feat.tile.tile);
         tiles.json_write_int("tex", feat.tile.tex);
@@ -2545,7 +2552,7 @@ static command_type _get_action(int key, vector<command_type> actions)
         { CMD_SET_SKILL_TARGET, 's' },
     };
 
-    key = tolower(key);
+    key = tolower_safe(key);
 
     for (auto cmd : actions)
         if (key == act_key.at(cmd))
@@ -2691,18 +2698,17 @@ bool describe_item(item_def &item, function<void (string&)> fixup_desc)
 #endif
 
     auto title = make_shared<Text>(name);
-    title->set_margin_for_crt({0, 0, 0, 0});
-    title->set_margin_for_sdl({0, 0, 0, 10});
+    title->set_margin_for_sdl(0, 0, 0, 10);
     title_hbox->add_child(move(title));
 
-    title_hbox->align_items = Widget::CENTER;
-    title_hbox->set_margin_for_crt({0, 0, 1, 0});
-    title_hbox->set_margin_for_sdl({0, 0, 20, 0});
+    title_hbox->align_cross = Widget::CENTER;
+    title_hbox->set_margin_for_crt(0, 0, 1, 0);
+    title_hbox->set_margin_for_sdl(0, 0, 20, 0);
     vbox->add_child(move(title_hbox));
 
     auto scroller = make_shared<Scroller>();
     auto text = make_shared<Text>(fs_desc.trim());
-    text->wrap_text = true;
+    text->set_wrap_text(true);
     scroller->set_child(text);
     vbox->add_child(scroller);
 
@@ -2714,13 +2720,13 @@ bool describe_item(item_def &item, function<void (string&)> fixup_desc)
         footer_text += formatted_string(_actions_desc(actions, item));
         auto footer = make_shared<Text>();
         footer->set_text(footer_text);
-        footer->set_margin_for_crt({1, 0, 0, 0});
-        footer->set_margin_for_sdl({20, 0, 0, 0});
+        footer->set_margin_for_crt(1, 0, 0, 0);
+        footer->set_margin_for_sdl(20, 0, 0, 0);
         vbox->add_child(move(footer));
     }
 
 #ifdef USE_TILE_LOCAL
-    vbox->max_size()[0] = tiles.get_crt_font()->char_width()*80;
+    vbox->max_size().width = tiles.get_crt_font()->char_width()*80;
 #endif
 
     auto popup = make_shared<ui::Popup>(move(vbox));
@@ -2845,7 +2851,12 @@ static string _player_spell_stats(const spell_type spell)
         return description; // all other info is player-dependent
     }
 
-    const string failure = failure_rate_to_string(raw_spell_fail(spell));
+
+    string failure;
+    if (you.divine_exegesis)
+        failure = "0%";
+    else
+        failure = failure_rate_to_string(raw_spell_fail(spell));
     description += make_stringf("        Fail: %s", failure.c_str());
 
     description += "\n\nPower : ";
@@ -2909,7 +2920,7 @@ string get_skill_description(skill_type skill, bool need_title)
 static int _hex_pow(const spell_type spell, const int hd)
 {
     const int cap = 200;
-    const int pow = mons_power_for_hd(spell, hd, false) / ENCH_POW_FACTOR;
+    const int pow = mons_power_for_hd(spell, hd) / ENCH_POW_FACTOR;
     return min(cap, pow);
 }
 
@@ -3160,7 +3171,7 @@ void describe_spell(spell_type spell, const monster_info *mon_owner,
 
     auto vbox = make_shared<Box>(Widget::VERT);
 #ifdef USE_TILE_LOCAL
-    vbox->max_size()[0] = tiles.get_crt_font()->char_width()*80;
+    vbox->max_size().width = tiles.get_crt_font()->char_width()*80;
 #endif
 
     auto title_hbox = make_shared<Box>(Widget::HORZ);
@@ -3175,19 +3186,18 @@ void describe_spell(spell_type spell, const monster_info *mon_owner,
 
     auto title = make_shared<Text>();
     title->set_text(formatted_string(spl_title));
-    title->set_margin_for_crt({0, 0, 0, 0});
-    title->set_margin_for_sdl({0, 0, 0, 10});
+    title->set_margin_for_sdl(0, 0, 0, 10);
     title_hbox->add_child(move(title));
 
-    title_hbox->align_items = Widget::CENTER;
-    title_hbox->set_margin_for_crt({0, 0, 1, 0});
-    title_hbox->set_margin_for_sdl({0, 0, 20, 0});
+    title_hbox->align_cross = Widget::CENTER;
+    title_hbox->set_margin_for_crt(0, 0, 1, 0);
+    title_hbox->set_margin_for_sdl(0, 0, 20, 0);
     vbox->add_child(move(title_hbox));
 
     auto scroller = make_shared<Scroller>();
     auto text = make_shared<Text>();
     text->set_text(formatted_string::parse_string(desc));
-    text->wrap_text = true;
+    text->set_wrap_text(true);
     scroller->set_child(move(text));
     vbox->add_child(scroller);
 
@@ -3195,8 +3205,8 @@ void describe_spell(spell_type spell, const monster_info *mon_owner,
     {
         auto more = make_shared<Text>();
         more->set_text(formatted_string("(M)emorise this spell.", CYAN));
-        more->set_margin_for_crt({1, 0, 0, 0});
-        more->set_margin_for_sdl({20, 0, 0, 0});
+        more->set_margin_for_crt(1, 0, 0, 0);
+        more->set_margin_for_sdl(20, 0, 0, 0);
         vbox->add_child(move(more));
     }
 
@@ -3208,7 +3218,7 @@ void describe_spell(spell_type spell, const monster_info *mon_owner,
         if (ev.type != WME_KEYDOWN)
             return false;
         lastch = ev.key.keysym.sym;
-        done = (toupper(lastch) == 'M' && can_mem || lastch == CK_ESCAPE
+        done = (toupper_safe(lastch) == 'M' && can_mem || lastch == CK_ESCAPE
             || lastch == CK_ENTER || lastch == ' ');
         return done;
     });
@@ -3234,7 +3244,7 @@ void describe_spell(spell_type spell, const monster_info *mon_owner,
     tiles.pop_ui_layout();
 #endif
 
-    if (toupper(lastch) == 'M' && can_mem)
+    if (toupper_safe(lastch) == 'M' && can_mem)
     {
         redraw_screen(); // necessary to ensure stats is redrawn (!?)
         if (!learn_spell(spell) || !you.turn_is_over)
@@ -3487,7 +3497,9 @@ static string _flavour_base_desc(attack_flavour flavour)
         { AF_POISON_STRONG,     "cause strong poisoning" },
         { AF_ROT,               "cause rotting" },
         { AF_VAMPIRIC,          "drain health from the living" },
+#if TAG_MAJOR_VERSION == 34
         { AF_KLOWN,             "cause random powerful effects" },
+#endif
         { AF_DISTORT,           "cause wild translocation effects" },
         { AF_RAGE,              "cause berserking" },
         { AF_STICKY_FLAME,      "apply sticky flame" },
@@ -3851,6 +3863,7 @@ COMPILE_CHECK(ARRAYSZ(size_adj) == NUM_SIZE_LEVELS);
 // This is used in monster description and on '%' screen for player size
 const char* get_size_adj(const size_type size, bool ignore_medium)
 {
+    ASSERT_RANGE(static_cast<int>(size), 0, ARRAYSZ(size_adj));
     if (ignore_medium && size == SIZE_MEDIUM)
         return nullptr; // don't mention medium size
     return size_adj[size];
@@ -3941,16 +3954,19 @@ static string _monster_stat_description(const monster_info& mi)
     }
 
     const char* pronoun = mi.pronoun(PRONOUN_SUBJECTIVE);
+    const bool plural = mi.pronoun_plurality();
 
     if (mi.threat != MTHRT_UNDEF)
     {
-        result << uppercase_first(pronoun) << " looks "
+        result << uppercase_first(pronoun) << " "
+               << conjugate_verb("look", plural) << " "
                << _get_threat_desc(mi.threat) << ".\n";
     }
 
     if (!resist_descriptions.empty())
     {
-        result << uppercase_first(pronoun) << " is "
+        result << uppercase_first(pronoun) << " "
+               << conjugate_verb("are", plural) << " "
                << comma_separated_line(resist_descriptions.begin(),
                                        resist_descriptions.end(),
                                        "; and ", "; ")
@@ -3960,15 +3976,17 @@ static string _monster_stat_description(const monster_info& mi)
     // Is monster susceptible to anything? (On a new line.)
     if (!suscept.empty())
     {
-        result << uppercase_first(pronoun) << " is susceptible to "
+        result << uppercase_first(pronoun) << " "
+               << conjugate_verb("are", plural) << " susceptible to "
                << comma_separated_line(suscept.begin(), suscept.end())
                << ".\n";
     }
 
     if (mi.is(MB_CHAOTIC))
     {
-        result << uppercase_first(pronoun) << " is vulnerable to silver and"
-                                              " hated by Zin.\n";
+        result << uppercase_first(pronoun) << " "
+               << conjugate_verb("are", plural)
+               << " vulnerable to silver and hated by Zin.\n";
     }
 
     if (mons_class_flag(mi.type, M_STATIONARY)
@@ -3980,8 +3998,9 @@ static string _monster_stat_description(const monster_info& mi)
     if (mons_class_flag(mi.type, M_COLD_BLOOD)
         && get_resist(resist, MR_RES_COLD) <= 0)
     {
-        result << uppercase_first(pronoun) << " is cold-blooded and may be "
-                                              "slowed by cold attacks.\n";
+        result << uppercase_first(pronoun)
+               << " " << conjugate_verb("are", plural)
+               << " cold-blooded and may be slowed by cold attacks.\n";
     }
 
     // Seeing invisible.
@@ -3990,7 +4009,11 @@ static string _monster_stat_description(const monster_info& mi)
 
     // Echolocation, wolf noses, jellies, etc
     if (!mons_can_be_blinded(mi.type))
-        result << uppercase_first(pronoun) << " is immune to blinding.\n";
+    {
+        result << uppercase_first(pronoun) << " "
+               << conjugate_verb("are", plural)
+               << " immune to blinding.\n";
+    }
     // XXX: could mention "immune to dazzling" here, but that's spammy, since
     // it's true of such a huge number of monsters. (undead, statues, plants).
     // Might be better to have some place where players can see holiness &
@@ -3999,12 +4022,14 @@ static string _monster_stat_description(const monster_info& mi)
     if (mi.intel() <= I_BRAINLESS)
     {
         // Matters for Ely.
-        result << uppercase_first(pronoun) << " is mindless.\n";
+        result << uppercase_first(pronoun) << " "
+               << conjugate_verb("are", plural) << " mindless.\n";
     }
     else if (mi.intel() >= I_HUMAN)
     {
         // Matters for Yred, Gozag, Zin, TSO, Alistair....
-        result << uppercase_first(pronoun) << " is intelligent.\n";
+        result << uppercase_first(pronoun) << " "
+               << conjugate_verb("are", plural) << " intelligent.\n";
     }
 
     // Unusual monster speed.
@@ -4013,7 +4038,9 @@ static string _monster_stat_description(const monster_info& mi)
     if (speed != 10 && speed != 0)
     {
         did_speed = true;
-        result << uppercase_first(pronoun) << " is " << mi.speed_description();
+        result << uppercase_first(pronoun) << " "
+               << conjugate_verb("are", plural) << " "
+               << mi.speed_description();
     }
     const mon_energy_usage def = DEFAULT_ENERGY;
     if (!(mi.menergy == def))
@@ -4022,22 +4049,40 @@ static string _monster_stat_description(const monster_info& mi)
         vector<string> fast, slow;
         if (!did_speed)
             result << uppercase_first(pronoun) << " ";
-        _add_energy_to_string(speed, me.move, "covers ground", fast, slow);
+        _add_energy_to_string(speed, me.move,
+                              conjugate_verb("cover", plural) + " ground",
+                              fast, slow);
         // since MOVE_ENERGY also sets me.swim
         if (me.swim != me.move)
-            _add_energy_to_string(speed, me.swim, "swims", fast, slow);
-        _add_energy_to_string(speed, me.attack, "attacks", fast, slow);
+        {
+            _add_energy_to_string(speed, me.swim,
+                                  conjugate_verb("swim", plural), fast, slow);
+        }
+        _add_energy_to_string(speed, me.attack,
+                              conjugate_verb("attack", plural), fast, slow);
         if (mons_class_itemuse(mi.type) >= MONUSE_STARTING_EQUIPMENT)
-            _add_energy_to_string(speed, me.missile, "shoots", fast, slow);
+        {
+            _add_energy_to_string(speed, me.missile,
+                                  conjugate_verb("shoot", plural), fast, slow);
+        }
         _add_energy_to_string(
             speed, me.spell,
-            mi.is_actual_spellcaster() ? "casts spells" :
-            mi.is_priest()             ? "uses invocations"
-                                       : "uses natural abilities", fast, slow);
-        _add_energy_to_string(speed, me.special, "uses special abilities",
+            mi.is_actual_spellcaster() ? conjugate_verb("cast", plural)
+                                         + " spells" :
+            mi.is_priest()             ? conjugate_verb("use", plural)
+                                         + " invocations"
+                                       : conjugate_verb("use", plural)
+                                         + " natural abilities", fast, slow);
+        _add_energy_to_string(speed, me.special,
+                              conjugate_verb("use", plural)
+                              + " special abilities",
                               fast, slow);
         if (mons_class_itemuse(mi.type) >= MONUSE_STARTING_EQUIPMENT)
-            _add_energy_to_string(speed, me.item, "uses items", fast, slow);
+        {
+            _add_energy_to_string(speed, me.item,
+                                  conjugate_verb("use", plural) + " items",
+                                  fast, slow);
+        }
 
         if (speed >= 10)
         {
@@ -4081,8 +4126,9 @@ static string _monster_stat_description(const monster_info& mi)
     if (mi.type == MONS_SHADOW)
     {
         // Cf. monster::action_energy() in monster.cc.
-        result << uppercase_first(pronoun) << " covers ground more"
-               << " quickly when invisible.\n";
+        result << uppercase_first(pronoun) << " "
+               << conjugate_verb("cover", plural)
+               << " ground more quickly when invisible.\n";
     }
 
     if (mi.airborne())
@@ -4092,11 +4138,17 @@ static string _monster_stat_description(const monster_info& mi)
     if (!mi.can_regenerate())
         result << uppercase_first(pronoun) << " cannot regenerate.\n";
     else if (mons_class_fast_regen(mi.type))
-        result << uppercase_first(pronoun) << " regenerates quickly.\n";
+        result << uppercase_first(pronoun) << " "
+               << conjugate_verb("regenerate", plural)
+               << " quickly.\n";
 
     const char* mon_size = get_size_adj(mi.body_size(), true);
     if (mon_size)
-        result << uppercase_first(pronoun) << " is " << mon_size << ".\n";
+    {
+        result << uppercase_first(pronoun) << " "
+               << conjugate_verb("are", plural) << " "
+               << mon_size << ".\n";
+    }
 
     if (in_good_standing(GOD_ZIN, 0) && !mi.pos.origin() && monster_at(mi.pos))
     {
@@ -4110,8 +4162,9 @@ static string _monster_stat_description(const monster_info& mi)
         }
         else if (eligibility == RE_TOO_STRONG)
         {
-            result << uppercase_first(pronoun) <<
-                    " is too strong to be affected by reciting Zin's laws.";
+            result << uppercase_first(pronoun) << " "
+                   << conjugate_verb("are", plural)
+                   << " too strong to be affected by reciting Zin's laws.";
         }
         else // RE_ELIGIBLE || RE_RECITE_TIMER
         {
@@ -4216,6 +4269,7 @@ void get_monster_db_desc(const monster_info& mi, describe_info &inf,
     const string it = mi.pronoun(PRONOUN_SUBJECTIVE);
     const string it_o = mi.pronoun(PRONOUN_OBJECTIVE);
     const string It = uppercase_first(it);
+    const string is = conjugate_verb("are", mi.pronoun_plurality());
 
     switch (mi.type)
     {
@@ -4326,7 +4380,7 @@ void get_monster_db_desc(const monster_info& mi, describe_info &inf,
     bool stair_use = false;
     if (!mons_class_can_use_stairs(mi.type))
     {
-        inf.body << It << " is incapable of using stairs.\n";
+        inf.body << It << " " << is << " incapable of using stairs.\n";
         stair_use = true;
     }
 
@@ -4336,14 +4390,17 @@ void get_monster_db_desc(const monster_info& mi, describe_info &inf,
                     "temporary. Killing " << it_o << " yields no experience, "
                     "nutrition or items";
         if (!stair_use)
-            inf.body << ", and " << it << " is incapable of using stairs";
+        {
+            inf.body << ", and " << it << " " << is
+                     << " incapable of using stairs";
+        }
         inf.body << ".\n";
     }
     else if (mi.is(MB_PERM_SUMMON))
     {
         inf.body << "\nThis monster has been summoned in a durable way. "
                     "Killing " << it_o << " yields no experience, nutrition "
-                    "or items, but " << it_o << " cannot be abjured.\n";
+                    "or items, but " << it << " cannot be abjured.\n";
     }
     else if (mi.is(MB_NO_REWARD))
     {
@@ -4352,8 +4409,9 @@ void get_monster_db_desc(const monster_info& mi, describe_info &inf,
     }
     else if (mons_class_leaves_hide(mi.type))
     {
-        inf.body << "\nIf " << it << " is slain, it may be possible to "
-                    "recover " << mi.pronoun(PRONOUN_POSSESSIVE)
+        inf.body << "\nIf " << it << " " << is <<
+                    " slain, it may be possible to recover "
+                 << mi.pronoun(PRONOUN_POSSESSIVE)
                  << " hide, which can be used as armour.\n";
     }
 
@@ -4494,13 +4552,12 @@ int describe_monsters(const monster_info &mi, bool force_seen,
 
     auto title = make_shared<Text>();
     title->set_text(formatted_string(inf.title));
-    title->set_margin_for_crt({0, 0, 0, 0});
-    title->set_margin_for_sdl({0, 0, 0, 10});
+    title->set_margin_for_sdl(0, 0, 0, 10);
     title_hbox->add_child(move(title));
 
-    title_hbox->align_items = Widget::CENTER;
-    title_hbox->set_margin_for_crt({0, 0, 1, 0});
-    title_hbox->set_margin_for_sdl({0, 0, 20, 0});
+    title_hbox->align_cross = Widget::CENTER;
+    title_hbox->set_margin_for_crt(0, 0, 1, 0);
+    title_hbox->set_margin_for_sdl(0, 0, 20, 0);
     vbox->add_child(move(title_hbox));
 
     desc += formatted_string(inf.body.str());
@@ -4532,7 +4589,7 @@ int describe_monsters(const monster_info &mi, bool force_seen,
         const formatted_string *content[2] = { &desc, &quote };
         auto scroller = make_shared<Scroller>();
         auto text = make_shared<Text>(content[i]->trim());
-        text->wrap_text = true;
+        text->set_wrap_text(true);
         scroller->set_child(text);
         desc_sw->add_child(move(scroller));
 
@@ -4540,15 +4597,15 @@ int describe_monsters(const monster_info &mi, bool force_seen,
                 formatted_string::parse_string(mores[i])));
     }
 
-    more_sw->set_margin_for_sdl({20, 0, 0, 0});
-    more_sw->set_margin_for_crt({1, 0, 0, 0});
+    more_sw->set_margin_for_sdl(20, 0, 0, 0);
+    more_sw->set_margin_for_crt(1, 0, 0, 0);
     desc_sw->expand_h = false;
     vbox->add_child(desc_sw);
     if (!inf.quote.empty())
         vbox->add_child(more_sw);
 
 #ifdef USE_TILE_LOCAL
-    vbox->max_size()[0] = tiles.get_crt_font()->char_width()*80;
+    vbox->max_size().width = tiles.get_crt_font()->char_width()*80;
 #endif
 
     auto popup = make_shared<ui::Popup>(move(vbox));

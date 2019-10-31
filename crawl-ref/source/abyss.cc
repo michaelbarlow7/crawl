@@ -20,6 +20,7 @@
 #include "colour.h"
 #include "coordit.h"
 #include "dbg-scan.h"
+#include "dbg-util.h"
 #include "delay.h"
 #include "dgn-overview.h"
 #include "dgn-proclayouts.h"
@@ -28,6 +29,7 @@
 #include "god-passive.h" // passive_t::slow_abyss
 #include "hiscores.h"
 #include "item-prop.h"
+#include "item-status-flag-type.h"
 #include "items.h"
 #include "libutil.h"
 #include "mapmark.h"
@@ -589,6 +591,8 @@ static void _abyss_lose_monster(monster& mons)
     // make sure we don't end up with an invalid hep ancestor
     else if (hepliaklqana_ancestor() == mons.mid)
     {
+        simple_monster_message(mons, " is pulled into the Abyss.",
+                MSGCH_BANISHMENT);
         remove_companion(&mons);
         you.duration[DUR_ANCESTOR_DELAY] = random_range(50, 150); //~5-15 turns
     }
@@ -627,7 +631,8 @@ static void _place_displaced_monsters()
         if (mon->alive() && !mon->find_home_near_place(mon->pos()))
         {
             maybe_bloodify_square(mon->pos());
-            if (you.can_see(*mon))
+            // hep messaging is done in _abyss_lose_monster
+            if (you.can_see(*mon) && hepliaklqana_ancestor() != mon->mid)
             {
                 simple_monster_message(*mon, " is pulled into the Abyss.",
                         MSGCH_BANISHMENT);
@@ -667,6 +672,7 @@ static void _push_items()
             if (!_pushy_feature(grd(*di)))
             {
                 int j = i;
+                ASSERT(!testbits(item.flags, ISFLAG_SUMMONED));
                 move_item_to_grid(&j, *di, true);
                 break;
             }
@@ -1056,8 +1062,11 @@ static level_id _get_random_level()
     vector<level_id> levels;
     for (branch_iterator it; it; ++it)
     {
-        if (it->id == BRANCH_ABYSS || it->id == BRANCH_SHOALS)
+        if (it->id == BRANCH_VESTIBULE || it->id == BRANCH_ABYSS
+            || it->id == BRANCH_SHOALS)
+        {
             continue;
+        }
         for (int j = 1; j <= brdepth[it->id]; ++j)
         {
             const level_id id(it->id, j);
@@ -1373,7 +1382,7 @@ static int _abyss_place_vaults(const map_bitmask &abyss_genlevel_mask)
         const map_def *map = random_map_in_depth(level_id::current(), extra);
         if (map)
         {
-            if (_abyss_place_map(map) && !map->has_tag("extra"))
+            if (_abyss_place_map(map) && !map->is_extra_vault())
             {
                 extra = true;
 
@@ -1432,11 +1441,11 @@ static void _generate_area(const map_bitmask &abyss_genlevel_mask)
 
 static void _initialize_abyss_state()
 {
-    abyssal_state.major_coord.x = get_uint32() & 0x7FFFFFFF;
-    abyssal_state.major_coord.y = get_uint32() & 0x7FFFFFFF;
-    abyssal_state.seed = get_uint32() & 0x7FFFFFFF;
+    abyssal_state.major_coord.x = rng::get_uint32() & 0x7FFFFFFF;
+    abyssal_state.major_coord.y = rng::get_uint32() & 0x7FFFFFFF;
+    abyssal_state.seed = rng::get_uint32() & 0x7FFFFFFF;
     abyssal_state.phase = 0.0;
-    abyssal_state.depth = get_uint32() & 0x7FFFFFFF;
+    abyssal_state.depth = rng::get_uint32() & 0x7FFFFFFF;
     abyssal_state.destroy_all_terrain = false;
     abyssal_state.level = _get_random_level();
     abyss_sample_queue = sample_queue(ProceduralSamplePQCompare());
@@ -1446,7 +1455,7 @@ void set_abyss_state(coord_def coord, uint32_t depth)
 {
     abyssal_state.major_coord = coord;
     abyssal_state.depth = depth;
-    abyssal_state.seed = get_uint32() & 0x7FFFFFFF;
+    abyssal_state.seed = rng::get_uint32() & 0x7FFFFFFF;
     abyssal_state.phase = 0.0;
     abyssal_state.destroy_all_terrain = true;
     abyss_sample_queue = sample_queue(ProceduralSamplePQCompare());
@@ -1488,7 +1497,19 @@ static void abyss_area_shift()
     // And allow monsters in transit another chance to return.
     place_transiting_monsters();
 
+    auto &vault_list =  you.vault_list[level_id::current()];
+#ifdef DEBUG
+    vault_list.push_back("[shift]");
+#endif
+    const auto &level_vaults = level_vault_names();
+    vault_list.insert(vault_list.end(),
+                        level_vaults.begin(), level_vaults.end());
+
+
     check_map_validity();
+    // TODO: should dactions be rerun at this point instead? That would cover
+    // this particular case...
+    gozag_detect_level_gold(false);
 }
 
 void destroy_abyss()
@@ -1667,6 +1688,7 @@ void abyss_morph()
     _abyss_apply_terrain(abyss_genlevel_mask, true);
     _place_displaced_monsters();
     _push_items();
+    // TODO: does gozag gold detection need to be here too?
     los_changed();
 }
 
@@ -1711,6 +1733,15 @@ void abyss_teleport()
     stop_delay(true);
     forget_map(false);
     clear_excludes();
+    gozag_detect_level_gold(false);
+    auto &vault_list =  you.vault_list[level_id::current()];
+#ifdef DEBUG
+    vault_list.push_back("[tele]");
+#endif
+    const auto &level_vaults = level_vault_names();
+    vault_list.insert(vault_list.end(),
+                        level_vaults.begin(), level_vaults.end());
+
     more();
 }
 

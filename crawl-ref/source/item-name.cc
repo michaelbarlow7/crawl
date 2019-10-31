@@ -15,7 +15,6 @@
 #include "areas.h"
 #include "artefact.h"
 #include "art-enum.h"
-#include "pcg.h" // for make_name()'s use
 #include "branch.h"
 #include "butcher.h"
 #include "cio.h"
@@ -61,9 +60,9 @@
 #include "viewgeom.h"
 
 static bool _is_consonant(char let);
-static char _random_vowel(int seed);
-static char _random_cons(int seed);
-static string _random_consonant_set(int seed);
+static char _random_vowel();
+static char _random_cons();
+static string _random_consonant_set(size_t seed);
 
 static void _maybe_identify_pack_item()
 {
@@ -335,8 +334,12 @@ static bool _missile_brand_is_prefix(special_missile_type brand)
     {
     case SPMSL_POISONED:
     case SPMSL_CURARE:
+    case SPMSL_BLINDING:
+    case SPMSL_FRENZY:
     case SPMSL_EXPLODING:
+#if TAG_MAJOR_VERSION == 34
     case SPMSL_STEEL:
+#endif
     case SPMSL_SILVER:
         return true;
     default:
@@ -365,40 +368,38 @@ const char* missile_brand_name(const item_def &item, mbn_type t)
         return t == MBN_NAME ? "poisoned" : "poison";
     case SPMSL_CURARE:
         return t == MBN_NAME ? "curare-tipped" : "curare";
+#if TAG_MAJOR_VERSION == 34
     case SPMSL_EXPLODING:
         return t == MBN_TERSE ? "explode" : "exploding";
     case SPMSL_STEEL:
         return "steel";
+    case SPMSL_RETURNING:
+        return t == MBN_TERSE ? "return" : "returning";
+    case SPMSL_PENETRATION:
+        return t == MBN_TERSE ? "penet" : "penetration";
+#endif
     case SPMSL_SILVER:
         return "silver";
+#if TAG_MAJOR_VERSION == 34
     case SPMSL_PARALYSIS:
         return "paralysis";
-#if TAG_MAJOR_VERSION == 34
     case SPMSL_SLOW:
         return t == MBN_TERSE ? "slow" : "slowing";
-#endif
     case SPMSL_SLEEP:
         return t == MBN_TERSE ? "sleep" : "sleeping";
     case SPMSL_CONFUSION:
         return t == MBN_TERSE ? "conf" : "confusion";
-#if TAG_MAJOR_VERSION == 34
     case SPMSL_SICKNESS:
         return t == MBN_TERSE ? "sick" : "sickness";
 #endif
     case SPMSL_FRENZY:
-        return "frenzy";
-    case SPMSL_RETURNING:
-        return t == MBN_TERSE ? "return" : "returning";
+        return t == MBN_NAME ? "datura-tipped" : "datura";
     case SPMSL_CHAOS:
         return "chaos";
-    case SPMSL_PENETRATION:
-        return t == MBN_TERSE ? "penet" : "penetration";
     case SPMSL_DISPERSAL:
         return t == MBN_TERSE ? "disperse" : "dispersal";
-#if TAG_MAJOR_VERSION == 34
     case SPMSL_BLINDING:
-        return t == MBN_TERSE ? "blind" : "blinding";
-#endif
+        return t == MBN_NAME ? "atropa-tipped" : "atropa";
     case SPMSL_NORMAL:
         return "";
     default:
@@ -726,8 +727,8 @@ const char* potion_type_name(int potiontype)
     case POT_CURE_MUTATION:     return "cure mutation";
 #endif
     case POT_MUTATION:          return "mutation";
-    case POT_BLOOD:             return "blood";
 #if TAG_MAJOR_VERSION == 34
+    case POT_BLOOD:             return "blood";
     case POT_BLOOD_COAGULATED:  return "coagulated blood";
 #endif
     case POT_RESISTANCE:        return "resistance";
@@ -1627,9 +1628,6 @@ string item_def::name_aux(description_level_type desc, bool terse, bool ident,
         buff << ammo_name(static_cast<missile_type>(item_typ));
 
         if (msl_brand != SPMSL_NORMAL
-#if TAG_MAJOR_VERSION == 34
-            && msl_brand != SPMSL_BLINDING
-#endif
             && !basename && !dbname)
         {
             if (terse)
@@ -2323,12 +2321,7 @@ public:
             }
         }
         else if (item->base_type == OBJ_MISCELLANY)
-        {
-            if (item->sub_type == MISC_PHANTOM_MIRROR)
-                name = pluralise(item->name(DESC_PLAIN));
-            else
-                name = "miscellaneous";
-        }
+            name = pluralise(item->name(DESC_DBNAME));
         else if (item->is_type(OBJ_BOOKS, BOOK_MANUAL))
             name = "manuals";
         else if (item->base_type == OBJ_GOLD)
@@ -2388,9 +2381,12 @@ public:
         else
             selected_qty = 0;
 
-        // Set the force_autopickup values
-        const int forceval = (selected_qty == 2 ? -1 : selected_qty);
-        you.force_autopickup[item->base_type][item->sub_type] = forceval;
+        if (selected_qty == 2)
+            set_item_autopickup(*item, AP_FORCE_OFF);
+        else if (selected_qty == 1)
+            set_item_autopickup(*item, AP_FORCE_ON);
+        else
+            set_item_autopickup(*item, AP_FORCE_NONE);
     }
 };
 
@@ -2462,9 +2458,9 @@ static void _add_fake_item(object_class_type base, int sub,
 
     items.push_back(ptmp);
 
-    if (you.force_autopickup[base][sub] == 1)
+    if (you.force_autopickup[base][sub] == AP_FORCE_ON)
         selected.emplace_back(0, 1, ptmp);
-    else if (you.force_autopickup[base][sub] == -1)
+    else if (you.force_autopickup[base][sub] == AP_FORCE_OFF)
         selected.emplace_back(0, 2, ptmp);
 }
 
@@ -2473,6 +2469,7 @@ void check_item_knowledge(bool unknown_items)
     vector<const item_def*> items;
     vector<const item_def*> items_missile; //List of missiles should go after normal items
     vector<const item_def*> items_food;    //List of foods should come next
+    vector<const item_def*> items_misc;
     vector<const item_def*> items_other;   //List of other items should go after everything
     vector<SelItem> selected_items;
 
@@ -2487,7 +2484,7 @@ void check_item_knowledge(bool unknown_items)
             if (i == OBJ_JEWELLERY && j >= NUM_RINGS && j < AMU_FIRST_AMULET)
                 continue;
 
-            if (i == OBJ_BOOKS && j > MAX_FIXED_BOOK)
+            if (i == OBJ_BOOKS && (j > MAX_FIXED_BOOK || !unknown_items))
                 continue;
 
             if (item_type_removed(i, j))
@@ -2508,7 +2505,7 @@ void check_item_knowledge(bool unknown_items)
         for (int ii = 0; ii < NUM_OBJECT_CLASSES; ii++)
         {
             object_class_type i = (object_class_type)ii;
-            if (!item_type_has_ids(i))
+            if (i == OBJ_BOOKS || !item_type_has_ids(i))
                 continue;
             _add_fake_item(i, get_max_subtype(i), selected_items, items);
         }
@@ -2516,7 +2513,7 @@ void check_item_knowledge(bool unknown_items)
         for (int i = 0; i < NUM_MISSILES; i++)
         {
 #if TAG_MAJOR_VERSION == 34
-            if (i == MI_DART)
+            if (i == MI_NEEDLE)
                 continue;
 #endif
             _add_fake_item(OBJ_MISSILES, i, selected_items, items_missile);
@@ -2531,12 +2528,31 @@ void check_item_knowledge(bool unknown_items)
             _add_fake_item(OBJ_FOOD, i, selected_items, items_food);
         }
 
+        for (int i = 0; i < NUM_MISCELLANY; i++)
+        {
+            if (i == MISC_HORN_OF_GERYON
+#if TAG_MAJOR_VERSION == 34
+                || is_deck_type(i)
+                || i == MISC_BUGGY_EBONY_CASKET
+                || i == MISC_BUGGY_LANTERN_OF_SHADOWS
+                || i == MISC_BOTTLED_EFREET
+                || i == MISC_RUNE_OF_ZOT
+                || i == MISC_STONE_OF_TREMORS
+                || i == MISC_XOMS_CHESSBOARD
+#endif
+                || (i == MISC_QUAD_DAMAGE && !crawl_state.game_is_sprint()))
+            {
+                continue;
+            }
+            _add_fake_item(OBJ_MISCELLANY, i, selected_items, items_misc);
+        }
+
         // Misc.
         static const pair<object_class_type, int> misc_list[] =
         {
             { OBJ_BOOKS, BOOK_MANUAL },
             { OBJ_GOLD, 1 },
-            { OBJ_MISCELLANY, NUM_MISCELLANY },
+            { OBJ_BOOKS, NUM_BOOKS },
             { OBJ_RUNES, NUM_RUNE_TYPES },
         };
         for (auto e : misc_list)
@@ -2546,6 +2562,7 @@ void check_item_knowledge(bool unknown_items)
     sort(items.begin(), items.end(), _identified_item_names);
     sort(items_missile.begin(), items_missile.end(), _identified_item_names);
     sort(items_food.begin(), items_food.end(), _identified_item_names);
+    sort(items_misc.begin(), items_misc.end(), _identified_item_names);
 
     KnownMenu menu;
     string stitle;
@@ -2566,13 +2583,14 @@ void check_item_knowledge(bool unknown_items)
     menu.set_flags( MF_QUIET_SELECT | MF_ALLOW_FORMATTING | MF_USE_TWO_COLUMNS
                     | ((unknown_items) ? MF_NOSELECT
                                        : MF_MULTISELECT | MF_ALLOW_FILTER));
-    menu.set_type(MT_KNOW);
+    menu.set_type(menu_type::know);
     menu_letter ml;
     ml = menu.load_items(items, unknown_items ? unknown_item_mangle
                                               : known_item_mangle, 'a', false);
 
     ml = menu.load_items(items_missile, known_item_mangle, ml, false);
     ml = menu.load_items(items_food, known_item_mangle, ml, false);
+    ml = menu.load_items(items_misc, known_item_mangle, ml, false);
     if (!items_other.empty())
     {
         menu.add_entry(new MenuEntry("Other Items", MEL_SUBTITLE));
@@ -2587,6 +2605,7 @@ void check_item_knowledge(bool unknown_items)
     deleteAll(items);
     deleteAll(items_missile);
     deleteAll(items_food);
+    deleteAll(items_misc);
     deleteAll(items_other);
 
     if (!all_items_known && (last_char == '\\' || last_char == '-'))
@@ -2657,7 +2676,7 @@ void display_runes()
     if (!crawl_state.game_is_sprint())
     {
         // Add the runes in order of challenge (semi-arbitrary).
-        for (branch_iterator it(BRANCH_ITER_DANGER); it; ++it)
+        for (branch_iterator it(branch_iterator_type::danger); it; ++it)
         {
             const branch_type br = it->id;
             if (!connected_branch_can_exist(br))
@@ -2726,7 +2745,7 @@ const size_t RCS_END = RCS_EM;
  *
  * @param seed      The seed to generate the name from.
  *                  The same seed will always generate the same name.
- *                  By default a random number from the RNG.
+ *                  By default a random number from the current RNG.
  * @param name_type The type of name to be generated.
  *                  If MNAME_SCROLL, increase length by 6 and force to allcaps.
  *                  If MNAME_JIYVA, start with J, do not generate spaces,
@@ -2738,16 +2757,18 @@ const size_t RCS_END = RCS_EM;
  */
 string make_name(uint32_t seed, makename_type name_type)
 {
-    uint64_t sarg[1] = { static_cast<uint64_t>(seed) };
-    PcgRNG rng = PcgRNG(sarg, ARRAYSZ(sarg));
+    // use the seed to select sequence, rather than seed per se. This is
+    // because it is not important that the sequence be randomly distributed
+    // in uint64_t.
+    rng::subgenerator subgen(you.game_seed, static_cast<uint64_t>(seed));
 
     string name;
 
     bool has_space  = false; // Keep track of whether the name contains a space.
 
     size_t len = 3;
-    len += rng.get_uint32() % 5;
-    len += (rng.get_uint32() % 5 == 0) ? rng.get_uint32() % 6 : 1;
+    len += random2(5);
+    len += (random2(5) == 0) ? random2(6) : 1;
 
     if (name_type == MNAME_SCROLL)   // scrolls have longer names
         len += 6;
@@ -2764,7 +2785,6 @@ string make_name(uint32_t seed, makename_type name_type)
                                               : '\0';
         const char penult_char = name.length() > 1 ? name[name.length() - 2]
                                                     : '\0';
-
         if (name.empty() && name_type == MNAME_JIYVA)
         {
             // Start the name with a predefined letter.
@@ -2773,11 +2793,11 @@ string make_name(uint32_t seed, makename_type name_type)
         else if (name.empty() || prev_char == ' ')
         {
             // Start the word with any letter.
-            name += 'a' + (rng.get_uint32() % 26);
+            name += 'a' + random2(26);
         }
         else if (!has_space && name_type != MNAME_JIYVA
                  && name.length() > 5 && name.length() < len - 4
-                 && rng.get_uint32() % 5 != 0) // 4/5 chance
+                 && random2(5) != 0) // 4/5 chance
         {
              // Hand out a space.
             name += ' ';
@@ -2787,10 +2807,10 @@ string make_name(uint32_t seed, makename_type name_type)
                      || (name.length() > 1
                          && !_is_consonant(prev_char)
                          && _is_consonant(penult_char)
-                         && rng.get_uint32() % 5 <= 1))) // 2/5
+                         && random2(5) <= 1))) // 2/5
         {
             // Place a vowel.
-            const char vowel = _random_vowel(rng.get_uint32());
+            const char vowel = _random_vowel();
 
             if (vowel == ' ')
             {
@@ -2814,7 +2834,7 @@ string make_name(uint32_t seed, makename_type name_type)
             else if (name.length() > 1
                      && vowel == prev_char
                      && (vowel == 'y' || vowel == 'i'
-                         || rng.get_uint32() % 5 <= 1))
+                         || random2(5) <= 1))
             {
                 // Replace the vowel with something else if the previous
                 // letter was the same, and it's a 'y', 'i' or with 2/5 chance.
@@ -2831,7 +2851,7 @@ string make_name(uint32_t seed, makename_type name_type)
 
             // Use one of number of predefined letter combinations.
             if ((len > 3 || !name.empty())
-                && rng.get_uint32() % 7 <= 1 // 2/7 chance
+                && random2(7) <= 1 // 2/7 chance
                 && (!beg || !end))
             {
                 const int first = (beg ? RCS_BB : (end ? RCS_BE : RCS_BM));
@@ -2839,7 +2859,7 @@ string make_name(uint32_t seed, makename_type name_type)
 
                 const int range = last - first;
 
-                const int cons_seed = rng.get_uint32() % range + first;
+                const int cons_seed = random2(range) + first;
 
                 const string consonant_set = _random_consonant_set(cons_seed);
 
@@ -2850,7 +2870,7 @@ string make_name(uint32_t seed, makename_type name_type)
             else // Place a single letter instead.
             {
                 // Pick a random consonant.
-                name += _random_cons(rng.get_uint32());
+                name += _random_cons();
             }
         }
 
@@ -2869,10 +2889,10 @@ string make_name(uint32_t seed, makename_type name_type)
         && !_is_consonant(name[name.length() - 1])
         && (name.length() < len    // early exit
             || (len < 8
-                && rng.get_uint32() % 3 != 0))) // 2/3 chance for other short names
+                && random2(3) != 0))) // 2/3 chance for other short names
     {
         // Specifically, add a consonant.
-        name += _random_cons(rng.get_uint32());
+        name += _random_cons();
     }
 
     if (maxlen != SIZE_MAX)
@@ -2884,7 +2904,7 @@ string make_name(uint32_t seed, makename_type name_type)
     {
         // convolute & recurse
         if (name_type == MNAME_JIYVA)
-            return make_name(rng.get_uint32(), MNAME_JIYVA);
+            return make_name(rng::get_uint32(), MNAME_JIYVA);
 
         name = "plog";
     }
@@ -2896,7 +2916,7 @@ string make_name(uint32_t seed, makename_type name_type)
             ASSERT(name[i] != ' ');
 
         if (name_type == MNAME_SCROLL || i == 0 || name[i - 1] == ' ')
-            uppercased_name += toupper(name[i]);
+            uppercased_name += toupper_safe(name[i]);
         else
             uppercased_name += name[i];
     }
@@ -2921,18 +2941,18 @@ static bool _is_consonant(char let)
 
 // Returns a random vowel (a, e, i, o, u with equal probability) or space
 // or 'y' with lower chances.
-static char _random_vowel(int seed)
+static char _random_vowel()
 {
     static const char vowels[] = "aeiouaeiouaeiouy  ";
-    return vowels[ seed % (sizeof(vowels) - 1) ];
+    return vowels[random2(sizeof(vowels) - 1)];
 }
 
 // Returns a random consonant with not quite equal probability.
 // Does not include 'y'.
-static char _random_cons(int seed)
+static char _random_cons()
 {
     static const char consonants[] = "bcdfghjklmnpqrstvwxzcdfghlmnrstlmnrst";
-    return consonants[ seed % (sizeof(consonants) - 1) ];
+    return consonants[random2(sizeof(consonants) - 1)];
 }
 
 /**
@@ -2944,7 +2964,7 @@ static char _random_cons(int seed)
  * @return      A random length 2 or 3 consonant set; e.g. "kl", "str", etc.
  *              If the seed is out of bounds, return "";
  */
-static string _random_consonant_set(int seed)
+static string _random_consonant_set(size_t c)
 {
     // Pick a random combination of consonants from the set below.
     //   begin  -> [RCS_BB, RCS_EB) = [ 0, 27)
@@ -2974,9 +2994,9 @@ static string _random_consonant_set(int seed)
     };
     COMPILE_CHECK(ARRAYSZ(consonant_sets) == RCS_END);
 
-    ASSERT_RANGE(seed, 0, (int) ARRAYSZ(consonant_sets));
+    ASSERT_RANGE(c, 0, ARRAYSZ(consonant_sets));
 
-    return consonant_sets[seed];
+    return consonant_sets[c];
 }
 
 /**
@@ -3016,10 +3036,10 @@ static void _test_jiyva_names(const string& fname)
         sysfail("can't write test output");
 
     string longest;
-    seed_rng(27);
+    rng::seed(27);
     for (int i = 0; i < 1000000; i++)
     {
-        const string name = make_name(get_uint32(), MNAME_JIYVA);
+        const string name = make_name(rng::get_uint32(), MNAME_JIYVA);
         ASSERT(name[0] == 'J');
         if (name.length() > longest.length())
             longest = name;
@@ -3041,7 +3061,7 @@ void make_name_tests()
     _test_jiyva_names("jiyva_names.out");
     _test_scroll_names("scroll_names.out");
 
-    seed_rng(27);
+    rng::seed(27);
     for (int i = 0; i < 1000000; ++i)
         make_name();
 }
@@ -3492,7 +3512,7 @@ bool is_useless_item(const item_def &item, bool temp)
         case POT_LIGNIFY:
             return you.undead_state(temp)
                    && (you.species != SP_VAMPIRE
-                       || temp && you.hunger_state < HS_SATIATED);
+                       || temp && !you.vampire_alive);
 
         case POT_FLIGHT:
             return you.permanent_flight()
@@ -3503,10 +3523,8 @@ bool is_useless_item(const item_def &item, bool temp)
             return you.species == SP_VAMPIRE
                     || you.get_mutation_level(MUT_CARNIVOROUS) > 0;
         case POT_BLOOD_COAGULATED:
-#endif
         case POT_BLOOD:
             return you.species != SP_VAMPIRE;
-#if TAG_MAJOR_VERSION == 34
         case POT_DECAY:
             return you.res_rotting(temp) > 0;
         case POT_STRONG_POISON:
@@ -3540,7 +3558,7 @@ bool is_useless_item(const item_def &item, bool temp)
         case AMU_RAGE:
             return you.undead_state(temp)
                    && (you.species != SP_VAMPIRE
-                       || temp && you.hunger_state < HS_SATIATED)
+                       || temp && !you.vampire_alive)
                    || you.species == SP_FORMICID
                    || you.get_mutation_level(MUT_NO_ARTIFICE);
 
@@ -3567,13 +3585,14 @@ bool is_useless_item(const item_def &item, bool temp)
         case AMU_REGENERATION:
             return you.get_mutation_level(MUT_NO_REGENERATION) > 0
                    || (temp
-                       && you.get_mutation_level(MUT_INHIBITED_REGENERATION) > 0
-                       && regeneration_is_inhibited())
-                   || (temp && you.species == SP_VAMPIRE
-                       && you.hunger_state <= HS_STARVING);
+                       && (you.get_mutation_level(MUT_INHIBITED_REGENERATION) > 0
+                           || you.species == SP_VAMPIRE)
+                       && regeneration_is_inhibited());
 
+#if TAG_MAJOR_VERSION == 34
         case AMU_MANA_REGENERATION:
             return you_worship(GOD_PAKELLAS);
+#endif
 
         case RING_SEE_INVISIBLE:
             return you.innate_sinv();

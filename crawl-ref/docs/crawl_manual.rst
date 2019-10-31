@@ -41,7 +41,7 @@ You can:
 - view your past games or those of others
 - battle ghosts of other players
 - compete using a common score list
-- take part in the annual tournament
+- take part in the semiannual tournament
 - play the most recent development version
 
 A full list of available servers and information on how to connect to them can
@@ -67,10 +67,13 @@ Game modes are:
 Dungeon Crawl
   Start a standard game of Crawl.
 
+Choose game seed
+  Start a standard game of Crawl with a custom seed (see `Seeded play`_ below).
+
 Tutorial for Dungeon Crawl
   Start one of several specialised tutorials to learn how to play.
 
-Hints mode for Dungeon Crawl
+Hints Mode for Dungeon Crawl
   Start a standard game of Crawl, modified to provide help as you play.
 
 Dungeon Sprint
@@ -468,31 +471,30 @@ Seeded play
 ========================================
 
 Crawl dungeons are determined by a "seed" number used to initialise the game's
-random number generator. If you initialise the game, keeping the game version
-constant, then the same seed should (within certain parameters) lead to the same
-dungeon. In offline games you can view your game's seed with '?V' as well as in
-a character file; in online games you normally must finish a game in order to
-see the game's seed. There are two seeded modes:
+random number generator. You may either let the game choose a seed randomly,
+or specify a seed; if you choose a seed this puts the game in "Seeded" mode,
+which is scored separately. Playing games with the same seed value, as long as
+the game version is constant, should (within certain parameters) lead to the
+same dungeon. The entire connected dungeon will be determined by the game
+seed, including dungeon layout, monster placement, and items. Portal vaults
+and chaotic zones such as the abyss are not guaranteed to be the same, and the
+placement of rare unique artefacts may vary depending on certain player
+actions.
 
-Without dungeon pregeneration ('pregen_dungeon = false')
-  If dungeon pregeneration is turned off (the default), every game with the
-  same seed will have at least the same initial dungeon level and temple
-  layout. However, the order in which you explore levels after the first one
-  can lead to multiple possible dungeon layouts, depending on your choices. This
-  is implicitly how dungeon generation always worked before version 0.23.
-
-With dungeon pregeneration ('pregen_dungeon = true')
-  If dungeon pregeneration is turned on, the entire connected dungeon will be
-  determined by the game seed. Portal vaults and chaotic zones such as the
-  abyss are not guaranteed to be the same, though.
-
-To set a game seed, use the 'game_seed' rc file option, or the '-seed' command
-line option.
+To set a game seed, use the "Choose game seed" option from the main menu; you
+can also use the 'game_seed' rc file option, or the '-seed' command line
+option. In offline games you can view your game's seed with '?V' as well as in
+a character file; in online games a randomly chosen seed will only be shown to
+you after finishing the game.
 
 If you find that the same seed generates distinct parts of a dungeon on the
 same or different devices, please report it as a bug. However, keep in mind
-that upgrading your save game between multiple versions of crawl, or traversing
-dungeon levels in different orders, will naturally lead to seed divergence.
+that upgrading your save game between multiple versions of crawl will
+naturally lead to seed divergence. When playing offline, if you would like to
+ensure that your game can be upgraded without divergence, you can set
+'pregen_dungeon = full' in your options file. (This will also ensure
+completely stable unique artefact placement.) On the other hand, to completely
+disable incremental pregeneration, you can set 'pregen_dungeon = false'.
 
 Further Help
 ========================================
@@ -665,7 +667,7 @@ adventures, how they are displayed, and what commands there are to use them:
 =        rings          (use 'P'ut on and 'R'emove)
 "        amulets        (use 'P'ut on and 'R'emove)
 \|        staves         (use 'w'ield)
-:        spellbooks     (use 'r'ead and 'M'emorise and 'z'ap)
+:        spellbooks     (use 'M'emorise and 'z'ap)
 }        miscellaneous  (use 'V' for evoking from the inventory)
 $        gold           (use 'g' to pick up)
 =======  =============  ================================================
@@ -736,6 +738,10 @@ In order to get a description of what an item does, bring up the inventory (with
 'i') and press the letter of that item. Try this when comparing different types
 of armours and weapons, but don't expect too much information from examining
 unidentified items.
+
+In most equipment-related prompts and menus, the ';' key is a shortcut for
+"last unequipped item," meaning the armour, jewellery or weapon you most
+recently took off or unwielded.
 
 Another useful command is the '{' key, which lets you inscribe items with a
 comment. You can also inscribe items when looking at your inventory with 'i',
@@ -855,11 +861,6 @@ produce a number of 'chunks', which can be eaten with the 'e' command as above.
 Some species are happy to eat raw meat at any time, and others cannot eat meat at
 all. Information on special diets is displayed on the 'A' screen.
 
-Vampires are a special case. Members of this species can try to drink blood
-directly from a fresh corpse (use the 'e' command). They can also bottle potions
-of blood from corpses instead of chopping corpses into chunks with the 'c'
-command.
-
 ? Magical Scrolls
 ========================================
 
@@ -883,16 +884,14 @@ the 'q' command.
 ========================================
 
 Sometimes you will be lucky enough to find a stick which contains stored magical
-energies. Wands each have a certain amount of charges, and a wand will cease to
-function when its charges run out. You must identify a wand to find out how many
-uses it has left. This can be done with a scroll of identify; characters with a
-good Evocations skill may also deduce the number of charges simply upon evoking
-the wand. Evoking a wand without having fully identified the number of charges
-remaining will waste some charges.
+energies. Wands each have a certain number of charges, which you immediately
+recognise when you pick them up. When you pick up a wand of type you already
+have in inventory, the charges from the new wand are merged into the existing
+one, and the new wand no longer exists. Beware that when the last charge of a
+wand is used, the wand is destroyed.
 
-Wands are aimed in the same way as missile weapons, and you can release the power
-of a wand by evoking it with 'V'. See section I for targeting. There are also a
-number of wands that may be useful to aim at yourself.
+Wands are aimed in the same way as missile weapons, and you can release the
+power of a wand by evoking it with 'V'. See section I for targeting.
 
 =" Rings and Amulets
 ========================================
@@ -925,9 +924,10 @@ magic school tend to have no combat powers at all.
 : Books
 ========================================
 
-Most books contain magical spells which your character may be able to learn. You
-can read a book with the 'r' command, which lets you access a description of
-each spell or memorise spells from it with the 'M' command.
+Most books contain magical spells which your character may be able to learn.
+Upon picking up a book, all of the spells in it will be added to your spell
+library, allowing you to access a description of each spell or memorise spells
+from it with the 'M' command.
 
 Occasionally you will find manuals of some skill. Carrying these will cause your
 experience to have twice the effect as usual when used for training that skill.
@@ -989,10 +989,9 @@ Air and Earth) and, finally, Poison. A particular spell can belong to (and thus
 allow training of) up to three areas. Being good in the areas of a spell will
 improve the casting chance and, in many cases, the effect as well.
 
-Spells are stored in books, which you will occasionally find in the dungeon. You
-can read books with 'r' to check what spells they contain; doing so will allow
-you to read the individual spells' descriptions. In order to memorise a certain
-spell, use the 'M' command.
+Spells are stored in books, which you will occasionally find in the dungeon.
+Once you have picked up a book and added its contents to your spell library, you
+can memorise a spell using the 'M' command.
 
 In addition to picking up new spells, your character may also wish to get rid of
 old ones by reading a scroll of amnesia, which will let you pick a spell to
@@ -1066,11 +1065,11 @@ There are some shortcuts while targeting:
   strokes. At times, it will be useful to switch targets with the '+' or '-'
   commands, though.
 
-It is possible to target yourself: obviously beneficial effects like hasting or
-healing will actually target the cursor on you, leaving to you only the pressing
-of '.', Enter, etc. - except if you want to heal or haste someone else. If you
-target yourself while firing something harmful (which can be sensible at times),
-you will be asked for confirmation.
+It is possible to target yourself, and some beneficial effects like invisibility
+will automatically target the cursor on you, leaving to you only the pressing
+of '.', Enter, etc. - except if you want to aim at someone else. If you target
+yourself while firing something harmful (which can be sensible at times), you
+will be asked for confirmation.
 
 Finally, the ':' key allows you to hide the path of your spell/wand/missile.
 
@@ -1086,8 +1085,7 @@ faith (use the 'a' command - but most gods resent being scorned). Further detail
 can be seen with '!' while in the '^' screen.
 
 To use any powers which your god deems you fit for, access the abilities menu
-via the 'a' command; god-given abilities are listed as invocations. The god
-Fedhas Madash also has a corpse decay ability specially accessed through 'p'.
+via the 'a' command; god-given abilities are listed as invocations.
 
 Depending on background, some characters start out religious; others have to
 pray at an altar to dedicate themselves to a life of servitude. There are altars
@@ -1761,17 +1759,14 @@ Vine Stalkers (VS)
   spells' fuel with each voracious bite.
 
 Vampires (Vp)
-  Vampires are another form of undead, but with a peculiarity: by consuming
-  fresh blood, they may become alive. A bloodless Vampire has the traits of
-  an undead (immunity to poisons, negative energy and torment, resistant to
-  damage from the cold), but cannot regain lost physical attributes or
-  regenerate from wounds over time - in particular, magical items or spells
-  which increase the rate of regeneration will not work (though divine ones
-  will). On the other hand, a Vampire full with blood will regenerate very
-  quickly, but lose all undead powers. Vampires can never starve. They can
-  drink from fresh corpses with the 'e' command, or can bottle blood for later
-  use with 'c'. Upon growing, they learn to transform into quick bats. Unlike
-  other undead species, they may be mutated normally at all times.
+  Vampires are another form of undead, but with a peculiarity they may become
+  alive. A bloodless Vampire has the traits of an undead (immunity to poisons,
+  negative energy and torment, resistant to damage from the cold), but cannot
+  physically regenerate when monsters are in sight and are less resilient. On
+  the other hand, a Vampire full with blood will regenerate very quickly, but
+  will lose all undead powers. Vampires can never starve. Upon growing, they
+  learn to transform into quick bats. Unlike other undead species, they may be
+  mutated normally at all times.
 
 Demigods (Dg)
   Demigods are mortals with some divine or angelic ancestry, however distant;
@@ -1975,8 +1970,8 @@ Hunters
 
 Assassins
   An Assassin is a stealthy character who is especially good at killing, using
-  daggers or blowguns. They start with a dagger, a robe and cloak, a blowgun,
-  poisoned needles, and a few deadly and rare curare needles.
+  daggers or darts. They start with a dagger, a robe and cloak, poisoned darts,
+  and a few deadly and rare curare darts.
 
 Adventurer backgrounds
 ======================
@@ -2047,13 +2042,13 @@ Warpers
   Warpers specialise in translocation magic, and are experts in traveling long
   distances and positioning themselves precisely and use this to their advantage
   in melee or missile combat. They start with a scroll of blinking, the Book of
-  Spatial Translocations, some dispersal tomahawks, a simple weapon of thier
+  Spatial Translocations, some dispersal tomahawks, a simple weapon of their
   choice, and leather armour.
 
 Arcane Marksmen
   Arcane Marksmen are Hunters who use debilitating spells to assist their ranged
   attacks. They are particularly good at keeping their enemies at a distance.
-  They begin the game with a the Book of Debilitation, a ranged weapon of their
+  They begin the game with the Book of Debilitation, a ranged weapon of their
   choice, and a robe.
 
 Enchanters
@@ -2187,16 +2182,15 @@ Ranged combat skills
 
 There are a number of individual weapon skills for missile weapons:
 
-  * Throwing (includes blowguns)
+  * Throwing
   * Bows
   * Crossbows
   * Slings
 
 Throwing is the skill for all things hurled without a launcher: tomahawks,
-javelins, nets, etc. The other skills refer to various types of missiles shot
-with a launcher. An exception to this are needles: these are launched using
-blowguns, an action which uses the Throwing skill. Since stones can be thrown
-without launchers to some effect, these skills crosstrain:
+javelins, nets, darts, etc. The other skills refer to various types of missiles
+shot with a launcher. Since stones can be thrown without launchers to some
+effect, these skills crosstrain:
 
   * Throwing and Slings
 
@@ -2260,7 +2254,7 @@ Shields
   Affects the amount of protection you gain by using a shield, and the degree to
   which it hinders you. For most races, 5/15/25 skill is enough to mitigate the
   encumbrance of bucklers/shields/large shields respectively, though larger
-  races need less skill and and smaller races more.
+  races need less skill and smaller races more.
 
 Invocations
   Affects your ability to call on your god for aid. Those skilled at Invocations
@@ -2270,9 +2264,8 @@ Invocations
 
 Evocations
   This skill lets you use wands much more effectively, in terms of both damage
-  and precision. Furthermore, with high Evocations, you can easily deduce the
-  number of charges in a wand through usage. Similarly, various other items
-  that have evocable powers work better for characters trained in this skill.
+  and precision. Similarly, various other items that have evocable powers work
+  better for characters trained in this skill.
 
   Invocations and Evocations can increase your maximum magical reserves,
   although both have a smaller effect than Spellcasting in this regard. The
@@ -2557,7 +2550,7 @@ e
   synonymous to y.
 
 r
-  Read a scroll or book.
+  Read a scroll.
 
 M
   Memorise a spell from a book.
@@ -2640,7 +2633,7 @@ will deselect it (except for ',' and '-', obviously).
 &amp;
   Select all carrion and inedible food.
 
-\+ or :
+:
   Select all books.
 
 /
@@ -2675,6 +2668,10 @@ will deselect it (except for ',' and '-', obviously).
   Selects next item. (If you have pressed the key of an item in the list, '.'
   will toggle the next item. This can be repeated, quickly selecting several
   subsequent items).
+
+;
+  Select last unequipped. Selects the equipment (armour, jewellery, or weapon)
+  you last took off or unwielded.
 
 Level map ('X')
 ========================================

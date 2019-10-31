@@ -529,7 +529,8 @@ static void _maybe_drop_monster_hide(const item_def &corpse, bool silent)
 item_def* place_monster_corpse(const monster& mons, bool silent, bool force)
 {
     if (mons.is_summoned()
-        || mons.flags & (MF_BANISHED | MF_HARD_RESET))
+        || mons.flags & (MF_BANISHED | MF_HARD_RESET)
+        || mons.props.exists("pikel_band"))
     {
         return nullptr;
     }
@@ -541,14 +542,9 @@ item_def* place_monster_corpse(const monster& mons, bool silent, bool force)
                    && mons_gives_xp(mons, you)
                    && !force;
 
-    const bool no_coinflip =
-        mons.props.exists("always_corpse")
-        || force
-        || goldify
-        || mons_class_flag(mons.type, M_ALWAYS_CORPSE)
-        || mons_is_demonspawn(mons.type)
-           && mons_class_flag(draco_or_demonspawn_subspecies(mons),
-                              M_ALWAYS_CORPSE);
+    const bool no_coinflip = mons.props.exists("always_corpse")
+                             || force
+                             || goldify;
 
     // 50/50 chance of getting a corpse, usually.
     if (!no_coinflip && coinflip())
@@ -1061,128 +1057,6 @@ static void _search_dungeon(const coord_def & start,
     }
 }
 
-static bool _ballisto_at(const coord_def & target)
-{
-    monster* mons = monster_at(target);
-    return mons && mons->type == MONS_BALLISTOMYCETE
-           && mons->alive();
-}
-
-static bool _mold_connected(const coord_def & target)
-{
-    return is_moldy(target) || _ballisto_at(target);
-}
-
-// If 'monster' is a ballistomycete or spore, activate some number of
-// ballistomycetes on the level.
-static void _activate_ballistomycetes(monster* mons, const coord_def& origin,
-                                      bool player_kill)
-{
-    if (!mons || mons->is_summoned()
-              || mons->mons_species() != MONS_BALLISTOMYCETE
-                 && mons->type != MONS_BALLISTOMYCETE_SPORE)
-    {
-        return;
-    }
-
-    // If a spore or inactive ballisto died we will only activate one
-    // other ballisto. If it was an active ballisto we will distribute
-    // its count to others on the level.
-    int activation_count = 1;
-    if (mons->type == MONS_BALLISTOMYCETE)
-        activation_count += mons->ballisto_activity;
-    if (mons->type == MONS_HYPERACTIVE_BALLISTOMYCETE)
-        activation_count = 0;
-
-    int non_activable_count = 0;
-    int ballisto_count = 0;
-
-    for (monster_iterator mi; mi; ++mi)
-    {
-        if (mi->mindex() != mons->mindex() && mi->alive())
-        {
-            if (mi->type == MONS_BALLISTOMYCETE)
-                ballisto_count++;
-            else if (mi->type == MONS_BALLISTOMYCETE_SPORE
-                     || mi->type == MONS_HYPERACTIVE_BALLISTOMYCETE)
-            {
-                non_activable_count++;
-            }
-        }
-    }
-
-    bool exhaustive = true;
-    bool (*valid_target)(const coord_def &) = _ballisto_at;
-    bool (*connecting_square) (const coord_def &) = _mold_connected;
-
-    set<position_node> visited;
-    vector<set<position_node>::iterator > candidates;
-
-    _search_dungeon(origin, valid_target, connecting_square, visited,
-                    candidates, exhaustive);
-
-    if (candidates.empty())
-    {
-        if (non_activable_count == 0
-            && ballisto_count == 0
-            && mons->attitude == ATT_HOSTILE)
-        {
-            if (player_kill)
-                mpr("The fungal colony is destroyed.");
-
-            // Get rid of the mold, so it'll be more useful when new fungi
-            // spawn.
-            for (rectangle_iterator ri(1); ri; ++ri)
-                remove_mold(*ri);
-        }
-
-        return;
-    }
-
-    // A (very) soft cap on colony growth, no activations if there are
-    // already a lot of ballistos on level.
-    if (candidates.size() > 25)
-        return;
-
-    shuffle_array(candidates);
-
-    int index = 0;
-
-    for (int i = 0; i < activation_count; ++i)
-    {
-        index = i % candidates.size();
-
-        monster* spawner = monster_at(candidates[index]->pos);
-
-        // This may be the players position, in which case we don't
-        // have to mess with spore production on anything
-        if (spawner)
-        {
-            spawner->ballisto_activity++;
-
-            // Change color and start the spore production timer if we
-            // are moving from 0 to 1.
-            if (spawner->ballisto_activity == 1)
-            {
-                spawner->colour = LIGHTMAGENTA;
-                // Reset the spore production timer.
-                spawner->del_ench(ENCH_SPORE_PRODUCTION, false);
-                spawner->add_ench(ENCH_SPORE_PRODUCTION);
-            }
-        }
-
-        const position_node* thread = &(*candidates[index]);
-        while (thread)
-        {
-            if (!one_chance_in(3))
-                env.pgrid(thread->pos) |= FPROP_GLOW_MOLD;
-
-            thread = thread->last;
-        }
-        env.level_state |= LSTATE_GLOW_MOLD;
-    }
-}
-
 static void _setup_base_explosion(bolt & beam, const monster& origin)
 {
     beam.is_tracer    = false;
@@ -1210,10 +1084,10 @@ void setup_spore_explosion(bolt & beam, const monster& origin)
 {
     _setup_base_explosion(beam, origin);
     beam.flavour = BEAM_SPORE;
-    beam.damage  = dice_def(3, 15);
+    beam.damage  = dice_def(3, 5 + origin.get_hit_dice());
     beam.name    = "explosion of spores";
     beam.colour  = LIGHTGREY;
-    beam.ex_size = 2;
+    beam.ex_size = 1;
 }
 
 static void _setup_lightning_explosion(bolt & beam, const monster& origin)
@@ -1408,7 +1282,6 @@ static bool _explode_monster(monster* mons, killer_type killer,
     else
         beam.explode();
 
-    _activate_ballistomycetes(mons, beam.target, YOU_KILL(beam.killer()));
     // Monster died in explosion, so don't re-attach it to the grid.
     return true;
 }
@@ -1802,8 +1675,8 @@ static void _special_corpse_messaging(monster &mons)
         if (!(mons.flags & MF_KNOWN_SHIFTER))
         {
             const string message = "'s shape twists and changes as "
-                                    + mons.pronoun(PRONOUN_SUBJECTIVE)
-                                    + " dies.";
+                + mons.pronoun(PRONOUN_SUBJECTIVE) + " "
+                + conjugate_verb("die", mons.pronoun_plurality()) + ".";
             simple_monster_message(mons, message.c_str());
         }
 
@@ -1819,8 +1692,9 @@ static void _special_corpse_messaging(monster &mons)
     const string message = " returns to " +
                             mons.pronoun(PRONOUN_POSSESSIVE) +
                             " original shape as " +
-                            mons.pronoun(PRONOUN_SUBJECTIVE) +
-                            " dies.";
+                            mons.pronoun(PRONOUN_SUBJECTIVE) + " " +
+                            conjugate_verb("die", mons.pronoun_plurality()) +
+                            ".";
     simple_monster_message(mons, message.c_str());
 }
 
@@ -1913,10 +1787,6 @@ item_def* monster_die(monster& mons, killer_type killer,
     you.remove_fearmonger(&mons);
     // Uniques leave notes and milestones, so this information is already leaked.
     remove_unique_annotation(&mons);
-
-    // Clear auto exclusion now the monster is killed - if we know about it.
-    if (you.see_cell(mons.pos()) || wizard || mons_is_unique(mons.type))
-        remove_auto_exclude(&mons);
 
           int  duration      = 0;
     const bool summoned      = mons.is_summoned(&duration);
@@ -2231,8 +2101,12 @@ item_def* monster_die(monster& mons, killer_type killer,
                        && mons.evil())
                 && !mons_is_object(mons.type)
                 && !player_under_penance()
-                && (you_worship(GOD_PAKELLAS)
-                    || random2(you.piety) >= piety_breakpoint(0)))
+                && (random2(you.piety) >= piety_breakpoint(0)
+#if TAG_MAJOR_VERSION == 34
+                    || you_worship(GOD_PAKELLAS)
+#endif
+                   )
+                )
             {
                 int hp_heal = 0, mp_heal = 0;
 
@@ -2249,16 +2123,11 @@ item_def* monster_die(monster& mons, killer_type killer,
 
                 if (have_passive(passive_t::mp_on_kill))
                 {
-                    switch (you.religion)
-                    {
-                    case GOD_PAKELLAS:
+                    mp_heal = 1 + random2(mons.get_experience_level() / 2);
+#if TAG_MAJOR_VERSION == 34
+                    if (you.religion == GOD_PAKELLAS)
                         mp_heal = random2(2 + mons.get_experience_level() / 6);
-                        break;
-                    case GOD_VEHUMET:
-                    default:
-                        mp_heal = 1 + random2(mons.get_experience_level() / 2);
-                        break;
-                    }
+#endif
                 }
 
                 if (hp_heal && you.hp < you.hp_max
@@ -2277,6 +2146,7 @@ item_def* monster_die(monster& mons, killer_type killer,
                     mp_heal -= tmp;
                 }
 
+#if TAG_MAJOR_VERSION == 34
                 // perhaps this should go to its own function
                 if (mp_heal
                     && have_passive(passive_t::bottle_mp)
@@ -2306,6 +2176,7 @@ item_def* monster_die(monster& mons, killer_type killer,
                         }
                     }
                 }
+#endif
             }
 
             if (gives_player_xp && you_worship(GOD_RU) && you.piety < 200
@@ -2344,21 +2215,6 @@ item_def* monster_die(monster& mons, killer_type killer,
                 break;
 
             _fire_kill_conducts(mons, killer, killer_index, gives_player_xp);
-
-            // Kill conducts do not assess piety loss for friends
-            // killed by other monsters.
-            if (mons.friendly())
-            {
-                const bool sentient = mons_class_intel(mons.type) >= I_HUMAN;
-                // plant HD aren't very meaningful. (fedhas hack)
-                const int severity = mons.holiness() & MH_PLANT ?
-                                     1 :
-                                     1 + (mons.get_experience_level() / 4);
-
-                did_god_conduct(sentient ? DID_SOULED_FRIEND_DIED
-                                         : DID_FRIEND_DIED,
-                                severity, true, &mons);
-            }
 
             // Trying to prevent summoning abuse here, so we're trying to
             // prevent summoned creatures from being done_good kills. Only
@@ -2619,8 +2475,11 @@ item_def* monster_die(monster& mons, killer_type killer,
     }
     else if (!mons.is_summoned() && mummy_curse_power(mons.type) > 0)
     {
+        // TODO: set attacker better? (Player attacker is handled by checking
+        // killer when running the fineff.)
         mummy_death_curse_fineff::schedule(
-                actor_by_mid(killer_index),
+                invalid_monster_index(killer_index)
+                                            ? nullptr : &menv[killer_index],
                 mons.name(DESC_A),
                 killer,
                 mummy_curse_power(mons.type));
@@ -2633,12 +2492,6 @@ item_def* monster_die(monster& mons, killer_type killer,
             _infestation_create_scarab(&mons);
         if (you.duration[DUR_DEATH_CHANNEL] && was_visible && gives_player_xp)
             _make_derived_undead(&mons, !death_message, false);
-    }
-
-    if (mons.mons_species() == MONS_BALLISTOMYCETE)
-    {
-        _activate_ballistomycetes(&mons, mons.pos(),
-                                  YOU_KILL(killer) || pet_kill);
     }
 
     if (!wizard && !submerged && !was_banished)
@@ -2874,6 +2727,8 @@ void monster_cleanup(monster* mons)
     // on the order in which things are cleaned up: If the constrictee is
     // cleaned up first, we wouldn't get a message anyway.
     mons->stop_constricting_all(false, true);
+
+    mons->clear_far_engulf();
 
     if (mons_is_tentacle_head(mons_base_type(*mons)))
         destroy_tentacles(mons);

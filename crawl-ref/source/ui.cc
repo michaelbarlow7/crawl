@@ -12,51 +12,40 @@
 #include "ui.h"
 #include "cio.h"
 #include "macro.h"
-# include "state.h"
+#include "state.h"
 #include "tileweb.h"
 
 #ifdef USE_TILE_LOCAL
 # include "glwrapper.h"
 # include "tilebuf.h"
+# include "tilepick.h"
+# include "tilepick-p.h"
+# include "tile-player-flag-cut.h"
 #else
 # include <unistd.h>
 # include "output.h"
-# include "view.h"
 # include "stringutil.h"
+# include "view.h"
 #endif
 
 namespace ui {
 
-static i4 aabb_intersect(i4 a, i4 b)
+static Region aabb_intersect(Region a, Region b)
 {
-    a[2] += a[0]; a[3] += a[1];
-    b[2] += b[0]; b[3] += b[1];
-    i4 i = { max(a[0], b[0]), max(a[1], b[1]), min(a[2], b[2]), min(a[3], b[3]) };
-    i[2] -= i[0]; i[3] -= i[1];
+    Region i = { max(a.x, b.x), max(a.y, b.y), min(a.ex(), b.ex()), min(a.ey(), b.ey()) };
+    i.width -= i.x; i.height -= i.y;
     return i;
 }
 
-static i4 aabb_union(i4 a, i4 b)
+static Region aabb_union(Region a, Region b)
 {
-    a[2] += a[0]; a[3] += a[1];
-    b[2] += b[0]; b[3] += b[1];
-    i4 i = { min(a[0], b[0]), min(a[1], b[1]), max(a[2], b[2]), max(a[3], b[3]) };
-    i[2] -= i[0]; i[3] -= i[1];
+    Region i = { min(a.x, b.x), min(a.y, b.y), max(a.ex(), b.ex()), max(a.ey(), b.ey()) };
+    i.width -= i.x; i.height -= i.y;
     return i;
-}
-
-
-static inline bool pos_in_rect(i2 pos, i4 rect)
-{
-    if (pos[0] < rect[0] || pos[0] >= rect[0]+rect[2])
-        return false;
-    if (pos[1] < rect[1] || pos[1] >= rect[1]+rect[3])
-        return false;
-    return true;
 }
 
 #ifndef USE_TILE_LOCAL
-static void clear_text_region(i4 region);
+static void clear_text_region(Region region, COLOURS bg);
 #endif
 
 // must be before ui_root declaration for correct destruction order
@@ -73,16 +62,24 @@ public:
     };
     size_t num_children() const { return m_root.num_children(); };
 
+    bool widget_is_in_layout(const Widget* w)
+    {
+        for (; w; w = w->_get_parent())
+            if (w == &m_root)
+                return true;
+        return false;
+    }
+
     void resize(int w, int h);
     void layout();
     void render();
 
     bool on_event(const wm_event& event);
     void queue_layout() { m_needs_layout = true; };
-    void expose_region(i4 r) {
-        if (r[2] == 0 || r[3] == 0)
+    void expose_region(Region r) {
+        if (r.empty())
             return;
-        if (m_dirty_region[2] == 0)
+        if (m_dirty_region.empty())
             m_dirty_region = r;
         else
             m_dirty_region = aabb_union(m_dirty_region, r);
@@ -91,81 +88,54 @@ public:
     void send_mouse_enter_leave_events(int mx, int my);
 
     bool needs_paint;
+#ifdef DEBUG
+    bool debug_draw = false;
+#endif
     vector<KeymapContext> keymap_stack;
     vector<int> cutoff_stack;
+    vector<Widget*> focus_stack;
+
+    struct RestartAllocation {};
 
 protected:
     int m_w, m_h;
-    i4 m_region;
-    i4 m_dirty_region{0, 0, 0, 0};
+    Region m_region;
+    Region m_dirty_region;
     Stack m_root;
     bool m_needs_layout{false};
+    bool m_changed_layout_since_click = false;
 } ui_root;
 
-static stack<i4> scissor_stack;
+static stack<Region> scissor_stack;
 
 struct Widget::slots Widget::slots = {};
+
+Widget::~Widget()
+{
+    Widget::slots.event.remove_by_target(this);
+    if (m_parent && get_focused_widget() == this)
+        set_focused_widget(nullptr);
+    _set_parent(nullptr);
+}
 
 bool Widget::on_event(const wm_event& event)
 {
     return Widget::slots.event.emit(this, event);
 }
 
-static inline bool _maybe_propagate_event(wm_event event, shared_ptr<Widget> &child)
-{
-#ifdef USE_TILE_LOCAL
-    /* WME_MOUSELEAVE is conspicuously absent because it is emitted
-     * only on widgets that the cursor just left */
-    if (event.type == WME_MOUSEMOTION
-     || event.type == WME_MOUSEENTER
-     || event.type == WME_MOUSEBUTTONDOWN
-     || event.type == WME_MOUSEBUTTONUP)
-    {
-        i2 pos = {(int)event.mouse_event.px, (int)event.mouse_event.py};
-        if (!pos_in_rect(pos, child->get_region()))
-            return false;
-    }
-#endif
-    return child->on_event(event);
-}
-
 shared_ptr<Widget> ContainerVec::get_child_at_offset(int x, int y)
 {
     for (shared_ptr<Widget>& child : m_children)
-    {
-        const i4 region = child->get_region();
-        bool inside = (x >= region[0] && x < region[0] + region[2])
-            && (y >= region[1] && y < region[1] + region[3]);
-        if (inside)
+        if (child->get_region().contains_point(x, y))
             return child;
-    }
     return nullptr;
-}
-
-bool Container::on_event(const wm_event& event)
-{
-    if (Widget::on_event(event))
-        return true;
-    for (shared_ptr<Widget> &child : *this)
-        if (_maybe_propagate_event(event, child))
-            return true;
-    return false;
-}
-
-bool Bin::on_event(const wm_event& event)
-{
-    if (Widget::on_event(event))
-        return true;
-    if (_maybe_propagate_event(event, m_child))
-        return true;
-    return false;
 }
 
 shared_ptr<Widget> Bin::get_child_at_offset(int x, int y)
 {
-    bool inside = (x > m_region[0] && x < m_region[0] + m_region[2])
-        && (y > m_region[1] && y < m_region[1] + m_region[3]);
-    return inside ? m_child : nullptr;
+    if (m_child && m_child->get_region().contains_point(x, y))
+        return m_child;
+    return nullptr;
 }
 
 void Bin::set_child(shared_ptr<Widget> child)
@@ -177,17 +147,21 @@ void Bin::set_child(shared_ptr<Widget> child)
 
 void Widget::render()
 {
-    _render();
+    if (m_visible)
+        _render();
 }
 
 SizeReq Widget::get_preferred_size(Direction dim, int prosp_width)
 {
     ASSERT((dim == HORZ) == (prosp_width == -1));
 
+    if (!m_visible)
+        return { 0, 0 };
+
     if (cached_sr_valid[dim] && (!dim || cached_sr_pw == prosp_width))
         return cached_sr[dim];
 
-    prosp_width = dim ? prosp_width - margin[1] - margin[3] : prosp_width;
+    prosp_width = dim ? prosp_width - margin.right - margin.left : prosp_width;
     SizeReq ret = _get_preferred_size(dim, prosp_width);
     ASSERT(ret.min <= ret.nat);
 
@@ -202,13 +176,16 @@ SizeReq Widget::get_preferred_size(Direction dim, int prosp_width)
     else if (shrink)
         ret.nat = ret.min;
 
-    ASSERT(m_min_size[dim] <= m_max_size[dim]);
-    ret.min = max(ret.min, m_min_size[dim]);
-    ret.nat = min(ret.nat, max(m_max_size[dim], ret.min));
+    int& min_size = dim ? m_min_size.height : m_min_size.width;
+    int& max_size = dim ? m_max_size.height : m_max_size.width;
+
+    ASSERT(min_size <= max_size);
+    ret.min = max(ret.min, min_size);
+    ret.nat = min(ret.nat, max(max_size, ret.min));
     ret.nat = max(ret.nat, ret.min);
     ASSERT(ret.min <= ret.nat);
 
-    int m = margin[1-dim] + margin[3-dim];
+    const int m = dim ? margin.top + margin.bottom : margin.left + margin.right;
     ret.min += m;
     ret.nat += m;
 
@@ -222,13 +199,16 @@ SizeReq Widget::get_preferred_size(Direction dim, int prosp_width)
     return ret;
 }
 
-void Widget::allocate_region(i4 region)
+void Widget::allocate_region(Region region)
 {
-    i4 new_region = {
-        region[0] + margin[3],
-        region[1] + margin[0],
-        region[2] - margin[3] - margin[1],
-        region[3] - margin[0] - margin[2],
+    if (!m_visible)
+        return;
+
+    Region new_region = {
+        region.x + margin.left,
+        region.y + margin.top,
+        region.width - margin.left - margin.right,
+        region.height - margin.top - margin.bottom,
     };
 
     if (m_region == new_region && !alloc_queued)
@@ -238,8 +218,8 @@ void Widget::allocate_region(i4 region)
     m_region = new_region;
     alloc_queued = false;
 
-    ASSERT(m_region[2] >= 0);
-    ASSERT(m_region[3] >= 0);
+    ASSERT(m_region.width >= 0);
+    ASSERT(m_region.height >= 0);
     _allocate_region();
 }
 
@@ -251,6 +231,20 @@ SizeReq Widget::_get_preferred_size(Direction dim, int prosp_width)
 
 void Widget::_allocate_region()
 {
+}
+
+/**
+ * Determine whether a widget contains the given widget.
+ *
+ * @param child   The other widget.
+ * @return        True if the other widget is a descendant of this widget.
+ */
+bool Widget::is_ancestor_of(const shared_ptr<Widget>& other)
+{
+    for (Widget* w = other.get(); w; w = w->_get_parent())
+        if (w == this)
+            return true;
+    return false;
 }
 
 void Widget::_set_parent(Widget* p)
@@ -265,6 +259,20 @@ void Widget::_set_parent(Widget* p)
             }
     }
     m_parent = p;
+}
+
+/**
+ * Unparent a widget.
+ *
+ * This function verifies that a widget has the correct parent before orphaning.
+ * Intended for use in container widget destructors.
+ *
+ * @param child   The child widget to unparent.
+ */
+void Widget::_unparent(shared_ptr<Widget>& child)
+{
+    if (child->m_parent == this)
+        child->_set_parent(nullptr);
 }
 
 void Widget::_invalidate_sizereq(bool immediate)
@@ -286,6 +294,14 @@ void Widget::_queue_allocation(bool immediate)
 void Widget::_expose()
 {
     ui_root.expose_region(m_region);
+}
+
+void Widget::set_visible(bool visible)
+{
+    if (m_visible == visible)
+        return;
+    m_visible = visible;
+    _invalidate_sizereq();
 }
 
 void Box::add_child(shared_ptr<Widget> child)
@@ -311,6 +327,8 @@ vector<int> Box::layout_main_axis(vector<SizeReq>& ch_psz, int main_sz)
     {
         ch_sz[i] = ch_psz[i].min;
         extra -= ch_psz[i].min;
+        if (align_main == Align::STRETCH)
+            ch_psz[i].nat = INT_MAX;
     }
     ASSERT(extra >= 0);
 
@@ -344,10 +362,7 @@ vector<int> Box::layout_cross_axis(vector<SizeReq>& ch_psz, int cross_sz)
 
     for (size_t i = 0; i < m_children.size(); i++)
     {
-        auto const& child = m_children[i];
-        // find the child's size on the cross axis
-        bool stretch = child->align_self == STRETCH ? true
-            : align_items == STRETCH;
+        const bool stretch = align_cross == STRETCH;
         ch_sz[i] = stretch ? cross_sz : min(max(ch_psz[i].min, cross_sz), ch_psz[i].nat);
     }
 
@@ -392,35 +407,39 @@ void Box::_allocate_region()
         sr[i] = m_children[i]->get_preferred_size(Widget::HORZ, -1);
 
     // Get actual widths
-    vector<int> cw = horz ? layout_main_axis(sr, m_region[2]) : layout_cross_axis(sr, m_region[2]);
+    vector<int> cw = horz ? layout_main_axis(sr, m_region.width) : layout_cross_axis(sr, m_region.width);
 
     // Get preferred heights
     for (size_t i = 0; i < m_children.size(); i++)
         sr[i] = m_children[i]->get_preferred_size(Widget::VERT, cw[i]);
 
     // Get actual heights
-    vector<int> ch = horz ? layout_cross_axis(sr, m_region[3]) : layout_main_axis(sr, m_region[3]);
+    vector<int> ch = horz ? layout_cross_axis(sr, m_region.height) : layout_main_axis(sr, m_region.height);
 
     auto const &m = horz ? cw : ch;
-    int extra_main_space = m_region[horz ? 2 : 3] - accumulate(m.begin(), m.end(), 0);
+    int extra_main_space = (horz ? m_region.width : m_region.height) - accumulate(m.begin(), m.end(), 0);
     ASSERT(extra_main_space >= 0);
 
     // main axis offset
-    int mo = extra_main_space*(justify_items - Box::Justify::START)/2;
-    int ho = m_region[0] + (horz ? mo : 0);
-    int vo = m_region[1] + (!horz ? mo : 0);
+    int mo;
+    switch (align_main)
+    {
+        case Widget::START:   mo = 0; break;
+        case Widget::CENTER:  mo = extra_main_space/2; break;
+        case Widget::END:     mo = extra_main_space; break;
+        case Widget::STRETCH: mo = 0; break;
+        default: ASSERT(0);
+    }
+    int ho = m_region.x + (horz ? mo : 0);
+    int vo = m_region.y + (!horz ? mo : 0);
 
-    i4 cr = {ho, vo, 0, 0};
+    Region cr = {ho, vo, 0, 0};
     for (size_t i = 0; i < m_children.size(); i++)
     {
         // cross axis offset
-        int extra_cross_space = horz ? m_region[3] - ch[i] : m_region[2] - cw[i];
-        int xp = horz ? 1 : 0, xs = xp + 2;
+        int extra_cross_space = horz ? m_region.height - ch[i] : m_region.width - cw[i];
 
-        auto const& child = m_children[i];
-        Align child_align = child->align_self ? child->align_self
-                : align_items ? align_items
-                : Align::START;
+        const Align child_align = align_cross;
         int xo;
         switch (child_align)
         {
@@ -430,26 +449,50 @@ void Box::_allocate_region()
             case Widget::STRETCH: xo = 0; break;
             default: ASSERT(0);
         }
-        cr[xp] = (horz ? vo : ho) + xo;
 
-        cr[2] = cw[i];
-        cr[3] = ch[i];
+        int& cr_cross_offset = horz ? cr.y : cr.x;
+        int& cr_cross_size = horz ? cr.height : cr.width;
+
+        cr_cross_offset = (horz ? vo : ho) + xo;
+        cr.width = cw[i];
+        cr.height = ch[i];
         if (child_align == STRETCH)
-            cr[xs] = (horz ? ch : cw)[i];
+            cr_cross_size = (horz ? ch : cw)[i];
         m_children[i]->allocate_region(cr);
-        cr[horz ? 0 : 1] += cr[horz ? 2 : 3];
+
+        int& cr_main_offset = horz ? cr.x : cr.y;
+        int& cr_main_size = horz ? cr.width : cr.height;
+        cr_main_offset += cr_main_size;
     }
+}
+
+Text::Text()
+{
+#ifdef USE_TILE_LOCAL
+    set_font(tiles.get_crt_font());
+#endif
 }
 
 void Text::set_text(const formatted_string &fs)
 {
+    if (fs == m_text)
+        return;
     m_text.clear();
     m_text += fs;
     _invalidate_sizereq();
     _expose();
-    m_wrapped_size = { -1, -1 };
+    m_wrapped_size = Size(-1);
     _queue_allocation();
 }
+
+#ifdef USE_TILE_LOCAL
+void Text::set_font(FontWrapper *font)
+{
+    ASSERT(font);
+    m_font = font;
+    _queue_allocation();
+}
+#endif
 
 void Text::set_highlight_pattern(string pattern, bool line)
 {
@@ -460,7 +503,7 @@ void Text::set_highlight_pattern(string pattern, bool line)
 
 void Text::wrap_text_to_size(int width, int height)
 {
-    i2 wrapped_size = { width, height };
+    Size wrapped_size = { width, height };
     if (m_wrapped_size == wrapped_size)
         return;
     m_wrapped_size = wrapped_size;
@@ -469,7 +512,7 @@ void Text::wrap_text_to_size(int width, int height)
 
 #ifdef USE_TILE_LOCAL
     if (wrap_text || ellipsize)
-        m_text_wrapped = tiles.get_crt_font()->split(m_text, width, height);
+        m_text_wrapped = m_font->split(m_text, width, height);
     else
         m_text_wrapped = m_text;
 
@@ -503,6 +546,8 @@ void Text::wrap_text_to_size(int width, int height)
         last_line += formatted_string("..");
         m_wrapped_lines.resize(height);
     }
+    if (m_wrapped_lines.empty())
+        m_wrapped_lines.emplace_back("");
 #endif
 }
 
@@ -520,20 +565,20 @@ static vector<size_t> _find_highlights(const string& haystack, const string& nee
 
 void Text::_render()
 {
-    i4 region = m_region;
+    Region region = m_region;
     if (scissor_stack.size() > 0)
         region = aabb_intersect(region, scissor_stack.top());
-    if (region[2] <= 0 || region[3] <= 0)
+    if (region.width <= 0 || region.height <= 0)
         return;
 
-    wrap_text_to_size(m_region[2], m_region[3]);
+    wrap_text_to_size(m_region.width, m_region.height);
 
 #ifdef USE_TILE_LOCAL
-    const int dev_line_height = tiles.get_crt_font()->char_height(false);
+    const int dev_line_height = m_font->char_height(false);
     const int line_min_pos = display_density.logical_to_device(
-                                                    region[1] - m_region[1]);
+                                                    region.y - m_region.y);
     const int line_max_pos = display_density.logical_to_device(
-                                        region[1] + region[3] - m_region[1]);
+                                        region.y + region.height - m_region.y);
     const int line_min = line_min_pos / dev_line_height;
     const int line_max = line_max_pos / dev_line_height;
 
@@ -587,13 +632,12 @@ void Text::_render()
         vector<size_t> highlights = _find_highlights(full_text, hl_pat,
                                                      begin_idx, end_idx);
 
-        int ox = m_region[0];
-        const int oy = display_density.logical_to_device(m_region[1]) +
+        int ox = m_region.x;
+        const int oy = display_density.logical_to_device(m_region.y) +
                                                 dev_line_height * line_off;
         size_t lacc = 0; // the start char of the current op relative to region
         size_t line = 0; // the line we are at relative to the region
 
-        FontWrapper *font = tiles.get_crt_font();
         bool inside = false;
         // Iterate over formatted_string op slices, looking for highlight
         // sequences. Highlight sequences may span multiple op slices, hence
@@ -621,13 +665,13 @@ void Text::_render()
             string line_before_op = full_text.substr(op_line_start,
                                             begin_idx + lacc - op_line_start);
             // pixel positions for the current op
-            size_t op_x = font->string_width(line_before_op.c_str());
+            size_t op_x = m_font->string_width(line_before_op.c_str());
             const size_t op_y =
-                            font->string_height(line_before_op.c_str(), false)
+                            m_font->string_height(line_before_op.c_str(), false)
                             - dev_line_height;
 
             // positions in device pixels to highlight relative to current op
-            size_t sx = 0, ex = font->string_width(op.text.c_str());
+            size_t sx = 0, ex = m_font->string_width(op.text.c_str());
             size_t sy = 0, ey = dev_line_height;
 
             bool started = false; // does the highlight start in the current op?
@@ -643,16 +687,16 @@ void Text::_render()
                     op_x = 0;
                 // start position is somewhere in the current op
                 const string before = full_text.substr(begin_idx + lacc, start);
-                sx = font->string_width(before.c_str());
-                sy = font->string_height(before.c_str(), false)
+                sx = m_font->string_width(before.c_str());
+                sy = m_font->string_height(before.c_str(), false)
                                                             - dev_line_height;
                 started = true;
             }
             if (end <= oplen) // assume end is unsigned and so >=0
             {
                 const string to_end = full_text.substr(begin_idx + lacc, end);
-                ex = font->string_width(to_end.c_str());
-                ey = font->string_height(to_end.c_str(), false);
+                ex = m_font->string_width(to_end.c_str());
+                ey = m_font->string_height(to_end.c_str(), false);
                 ended = true;
             }
 
@@ -670,9 +714,9 @@ void Text::_render()
                     if (hl_line)
                     {
                         block_lines.insert(y);
-                        m_hl_buf.add(region[0],
+                        m_hl_buf.add(region.x,
                             display_density.device_to_logical(y),
-                            region[0] + region[2],
+                            region.x + region.width,
                             display_density.device_to_logical(y
                                                             + dev_line_height),
                             VColour(255, 255, 0, 50));
@@ -699,7 +743,7 @@ void Text::_render()
             else
             {
                 lacc += oplen;
-                line += font->string_height(op.text.c_str(), false)
+                line += m_font->string_height(op.text.c_str(), false)
                                                             - dev_line_height;
             }
         }
@@ -708,8 +752,8 @@ void Text::_render()
     // XXX: should be moved into a new function render_formatted_string()
     // in FTFontWrapper, that, like render_textblock(), would automatically
     // handle swapping atlas glyphs as necessary.
-    FontBuffer m_font_buf(tiles.get_crt_font());
-    m_font_buf.add(slice, m_region[0], m_region[1] +
+    FontBuffer m_font_buf(m_font);
+    m_font_buf.add(slice, m_region.x, m_region.y +
             display_density.device_to_logical(dev_line_height * line_off));
     m_font_buf.draw();
 #else
@@ -717,21 +761,23 @@ void Text::_render()
     vector<size_t> highlights;
     int begin_idx = 0;
 
+    clear_text_region(m_region, m_bg_colour);
+
     if (!hl_pat.empty())
     {
-        for (int i = 0; i < region[1]-m_region[1]; i++)
+        for (int i = 0; i < region.y-m_region.y; i++)
             begin_idx += m_wrapped_lines[i].tostring().size()+1;
         int end_idx = begin_idx;
-        for (int i = region[1]-m_region[1]; i < region[1]-m_region[1]+region[3]; i++)
+        for (int i = region.y-m_region.y; i < region.y-m_region.y+region.height; i++)
             end_idx += m_wrapped_lines[i].tostring().size()+1;
         highlights = _find_highlights(m_text.tostring(), hl_pat, begin_idx, end_idx);
     }
 
     unsigned int hl_idx = 0;
-    for (size_t i = 0; i < min(lines.size(), (size_t)region[3]); i++)
+    for (size_t i = 0; i < min(lines.size(), (size_t)region.height); i++)
     {
-        cgotoxy(region[0]+1, region[1]+1+i);
-        formatted_string line = lines[i+region[1]-m_region[1]];
+        cgotoxy(region.x+1, region.y+1+i);
+        formatted_string line = lines[i+region.y-m_region.y];
         int end_idx = begin_idx + line.tostring().size();
 
         // convert highlights on this line to a list of line cuts
@@ -764,7 +810,7 @@ void Text::_render()
             else
                 out += slice;
         }
-        out.chop(region[2]).display(0);
+        out.chop(region.width).display(0);
 
         begin_idx = end_idx + 1; // +1 is for the newline
     }
@@ -774,10 +820,9 @@ void Text::_render()
 SizeReq Text::_get_preferred_size(Direction dim, int prosp_width)
 {
 #ifdef USE_TILE_LOCAL
-    FontWrapper *font = tiles.get_crt_font();
     if (!dim)
     {
-        int w = font->string_width(m_text);
+        int w = m_font->string_width(m_text);
         // XXX: should be width of '..', unless string itself is shorter than '..'
         static constexpr int min_ellipsized_width = 0;
         static constexpr int min_wrapped_width = 0; // XXX: should be width of longest word
@@ -786,8 +831,8 @@ SizeReq Text::_get_preferred_size(Direction dim, int prosp_width)
     else
     {
         wrap_text_to_size(prosp_width, 0);
-        int height = font->string_height(m_text_wrapped);
-        return { ellipsize ? (int)font->char_height() : height, height };
+        int height = m_font->string_height(m_text_wrapped);
+        return { ellipsize ? (int)m_font->char_height() : height, height };
     }
 #else
     if (!dim)
@@ -816,17 +861,27 @@ SizeReq Text::_get_preferred_size(Direction dim, int prosp_width)
 
 void Text::_allocate_region()
 {
-    wrap_text_to_size(m_region[2], m_region[3]);
+    wrap_text_to_size(m_region.width, m_region.height);
 }
+
+#ifndef USE_TILE_LOCAL
+void Text::set_bg_colour(COLOURS colour)
+{
+    m_bg_colour = colour;
+    _expose();
+}
+#endif
 
 void Image::set_tile(tile_def tile)
 {
-#ifdef USE_TILE_LOCAL
+#ifdef USE_TILE
     m_tile = tile;
+#ifdef USE_TILE_LOCAL
     const tile_info &ti = tiles.get_image_manager()->tile_def_info(m_tile);
     m_tw = ti.width;
     m_th = ti.height;
     _invalidate_sizereq();
+#endif
 #endif
 }
 
@@ -837,8 +892,8 @@ void Image::_render()
     TileBuffer tb;
     tb.set_tex(&tiles.get_image_manager()->m_textures[m_tile.tex]);
 
-    for (int y = m_region[1]; y < m_region[1]+m_region[3]; y+=m_th)
-        for (int x = m_region[0]; x < m_region[0]+m_region[2]; x+=m_tw)
+    for (int y = m_region.y; y < m_region.y+m_region.height; y+=m_th)
+        for (int x = m_region.x; x < m_region.x+m_region.width; x+=m_tw)
             tb.add(m_tile.tile, x, y, 0, 0, false, m_th, 1.0, 1.0);
 
     tb.draw();
@@ -883,9 +938,7 @@ shared_ptr<Widget> Stack::get_child_at_offset(int x, int y)
 {
     if (m_children.size() == 0)
         return nullptr;
-    const i4 region = m_children.back()->get_region();
-    bool inside = (x > region[0] && x < region[0] + region[2])
-        && (y > region[1] && y < region[1] + region[3]);
+    bool inside = m_children.back()->get_region().contains_point(x, y);
     return inside ? m_children.back() : nullptr;
 }
 
@@ -911,26 +964,20 @@ void Stack::_allocate_region()
 {
     for (auto const& child : m_children)
     {
-        i4 cr = m_region;
+        Region cr = m_region;
         SizeReq pw = child->get_preferred_size(Widget::HORZ, -1);
-        cr[2] = min(max(pw.min, m_region[2]), pw.nat);
-        SizeReq ph = child->get_preferred_size(Widget::VERT, cr[2]);
-        cr[3] = min(max(ph.min, m_region[3]), ph.nat);
+        cr.width = min(max(pw.min, m_region.width), pw.nat);
+        SizeReq ph = child->get_preferred_size(Widget::VERT, cr.width);
+        cr.height = min(max(ph.min, m_region.height), ph.nat);
         child->allocate_region(cr);
     }
 }
 
-bool Stack::on_event(const wm_event& event)
-{
-    if (Widget::on_event(event))
-        return true;
-    if (m_children.size() > 0 &&_maybe_propagate_event(event, m_children.back()))
-        return true;
-    return false;
-}
-
 void Switcher::add_child(shared_ptr<Widget> child)
 {
+    // TODO XXX: if there's a focused widget
+    // - it must be in the current top child
+    // - unfocus it before we
     child->_set_parent(this);
     m_children.push_back(move(child));
     _invalidate_sizereq();
@@ -939,15 +986,25 @@ void Switcher::add_child(shared_ptr<Widget> child)
 
 int& Switcher::current()
 {
+    // TODO XXX: we need to update the focused widget
+    // so we need an API change
     _expose();
     return m_current;
+}
+
+shared_ptr<Widget> Switcher::current_widget()
+{
+    if (m_children.size() == 0)
+        return nullptr;
+    m_current = max(0, min(m_current, (int)m_children.size()-1));
+    return m_children[m_current];
 }
 
 void Switcher::_render()
 {
     if (m_children.size() == 0)
         return;
-    m_current = max(0, min(m_current, (int)m_children.size()));
+    m_current = max(0, min(m_current, (int)m_children.size()-1));
     m_children[m_current]->render();
 }
 
@@ -967,29 +1024,52 @@ void Switcher::_allocate_region()
 {
     for (auto const& child : m_children)
     {
-        i4 cr = m_region;
+        Region cr = m_region;
         SizeReq pw = child->get_preferred_size(Widget::HORZ, -1);
-        cr[2] = min(max(pw.min, m_region[2]), pw.nat);
-        SizeReq ph = child->get_preferred_size(Widget::VERT, cr[2]);
-        cr[3] = min(max(ph.min, m_region[3]), ph.nat);
+        cr.width = min(max(pw.min, m_region.width), pw.nat);
+        SizeReq ph = child->get_preferred_size(Widget::VERT, cr.width);
+        cr.height = min(max(ph.min, m_region.height), ph.nat);
+        int xo, yo;
+        switch (align_x)
+        {
+            case Widget::START:   xo = 0; break;
+            case Widget::CENTER:  xo = (m_region.width - cr.width)/2; break;
+            case Widget::END:     xo = m_region.width - cr.width; break;
+            case Widget::STRETCH: xo = 0; break;
+            default: ASSERT(0);
+        }
+        switch (align_y)
+        {
+            case Widget::START:   yo = 0; break;
+            case Widget::CENTER:  yo = (m_region.height - cr.height)/2; break;
+            case Widget::END:     yo = m_region.height - cr.height; break;
+            case Widget::STRETCH: yo = 0; break;
+            default: ASSERT(0);
+        }
+        cr.width += xo;
+        cr.height += yo;
+        if (align_x == Widget::STRETCH)
+            cr.width = m_region.width;
+        if (align_y == Widget::STRETCH)
+            cr.height = m_region.height;
         child->allocate_region(cr);
     }
 }
 
-bool Switcher::on_event(const wm_event& event)
+shared_ptr<Widget> Switcher::get_child_at_offset(int x, int y)
 {
-    if (Widget::on_event(event))
-        return true;
-    m_current = max(0, min(m_current, (int)m_children.size()));
-    if (m_children.size() > 0 &&_maybe_propagate_event(event, m_children[m_current]))
-        return true;
-    return false;
+    if (m_children.size() == 0)
+        return nullptr;
+
+    int c = max(0, min(m_current, (int)m_children.size()));
+    bool inside = m_children[c]->get_region().contains_point(x, y);
+    return inside ? m_children[c] : nullptr;
 }
 
 shared_ptr<Widget> Grid::get_child_at_offset(int x, int y)
 {
-    int lx = x - m_region[0];
-    int ly = y - m_region[1];
+    int lx = x - m_region.x;
+    int ly = y - m_region.y;
     int row = -1, col = -1;
     for (int i = 0; i < (int)m_col_info.size(); i++)
     {
@@ -1013,9 +1093,9 @@ shared_ptr<Widget> Grid::get_child_at_offset(int x, int y)
         return nullptr;
     for (auto& child : m_child_info)
     {
-        if (child.pos[0] <= col && col < child.pos[0] + child.span[0])
-        if (child.pos[1] <= row && row < child.pos[1] + child.span[1])
-        if (pos_in_rect({x, y}, child.widget->get_region()))
+        if (child.pos.x <= col && col < child.pos.x + child.span.width)
+        if (child.pos.y <= row && row < child.pos.y + child.span.height)
+        if (child.widget->get_region().contains_point(x, y))
             return child.widget;
     }
     return nullptr;
@@ -1040,31 +1120,31 @@ void Grid::init_track_info()
     int n_rows = 0, n_cols = 0;
     for (auto info : m_child_info)
     {
-        n_rows = max(n_rows, info.pos[1]+info.span[1]);
-        n_cols = max(n_cols, info.pos[0]+info.span[0]);
+        n_rows = max(n_rows, info.pos.y+info.span.height);
+        n_cols = max(n_cols, info.pos.x+info.span.width);
     }
     m_row_info.resize(n_rows);
     m_col_info.resize(n_cols);
 
     sort(m_child_info.begin(), m_child_info.end(),
             [](const child_info& a, const child_info& b) {
-        return a.pos[1] < b.pos[1];
+        return a.pos.y < b.pos.y;
     });
 }
 
 void Grid::_render()
 {
     // Find the visible rows
-    i4 scissor = get_scissor();
+    const auto scissor = get_scissor();
     int row_min = 0, row_max = m_row_info.size()-1, i = 0;
     for (; i < (int)m_row_info.size(); i++)
-        if (m_row_info[i].offset+m_row_info[i].size+m_region[1] >= scissor[1])
+        if (m_row_info[i].offset+m_row_info[i].size+m_region.y >= scissor.y)
         {
             row_min = i;
             break;
         }
     for (; i < (int)m_row_info.size(); i++)
-        if (m_row_info[i].offset+m_region[1] >= scissor[1]+scissor[3])
+        if (m_row_info[i].offset+m_region.y >= scissor.ey())
         {
             row_max = i-1;
             break;
@@ -1072,8 +1152,8 @@ void Grid::_render()
 
     for (auto const& child : m_child_info)
     {
-        if (child.pos[1] < row_min) continue;
-        if (child.pos[1] > row_max) break;
+        if (child.pos.y < row_min) continue;
+        if (child.pos.y > row_max) break;
         child.widget->render();
     }
 }
@@ -1087,15 +1167,16 @@ void Grid::compute_track_sizereqs(Direction dim)
         t.sr = {0, 0};
     for (size_t i = 0; i < m_child_info.size(); i++)
     {
-        auto& cp = m_child_info[i].pos, cs = m_child_info[i].span;
+        auto& cp = m_child_info[i].pos;
+        auto& cs = m_child_info[i].span;
         // if merging horizontally, need to find (possibly multi-col) width
-        int prosp_width = dim ? get_tracks_region(cp[0], cp[1], cs[0], cs[1])[2] : -1;
+        int prosp_width = dim ? get_tracks_region(cp.x, cp.y, cs.width, cs.height).width : -1;
 
         const SizeReq c = m_child_info[i].widget->get_preferred_size(dim, prosp_width);
         // NOTE: items spanning multiple rows/cols don't contribute!
-        if (cs[0] == 1 && cs[1] == 1)
+        if (cs.width == 1 && cs.height == 1)
         {
-            auto& s = track[cp[dim]].sr;
+            auto& s = track[dim ? cp.y : cp.x].sr;
             s.min = max(s.min, c.min);
             s.nat = max(s.nat, c.nat);
         }
@@ -1157,20 +1238,33 @@ void Grid::layout_track(Direction dim, SizeReq sr, int size)
     for (size_t i = 0; i < infos.size(); ++i)
         infos[i].size = infos[i].sr.min;
 
+    const bool stretch = dim ? stretch_v : stretch_h;
+    bool stretching = false;
+
     while (true)
     {
         int sum_flex_grow = 0, sum_taken = 0;
         for (const auto& info : infos)
             sum_flex_grow += info.size < info.sr.nat ? info.flex_grow : 0;
         if (!sum_flex_grow)
-            break;
+        {
+            if (!stretch)
+                break;
+            stretching = true;
+            for (const auto& info : infos)
+                sum_flex_grow += info.flex_grow;
+            if (!sum_flex_grow)
+                break;
+        }
 
         for (size_t i = 0; i < infos.size(); ++i)
         {
-            float efg = infos[i].size < infos[i].sr.nat ? infos[i].flex_grow : 0;
+            float efg = (infos[i].size < infos[i].sr.nat || stretching)
+                ? infos[i].flex_grow : 0;
             int tr_extra = extra * efg / sum_flex_grow;
-            ASSERT(infos[i].size <= infos[i].sr.nat);
-            int taken = min(tr_extra, infos[i].sr.nat - infos[i].size);
+            ASSERT(stretching || infos[i].size <= infos[i].sr.nat);
+            int taken = stretching ? tr_extra
+                : min(tr_extra, infos[i].sr.nat - infos[i].size);
             infos[i].size += taken;
             sum_taken += taken;
         }
@@ -1183,17 +1277,18 @@ void Grid::layout_track(Direction dim, SizeReq sr, int size)
 void Grid::_allocate_region()
 {
     // Use of _-prefixed member function is necessary here
-    SizeReq h_sr = _get_preferred_size(Widget::VERT, m_region[2]);
+    SizeReq h_sr = _get_preferred_size(Widget::VERT, m_region.width);
 
-    layout_track(Widget::VERT, h_sr, m_region[3]);
+    layout_track(Widget::VERT, h_sr, m_region.height);
     set_track_offsets(m_row_info);
 
     for (size_t i = 0; i < m_child_info.size(); i++)
     {
-        auto& cp = m_child_info[i].pos, cs = m_child_info[i].span;
-        i4 cell_reg = get_tracks_region(cp[0], cp[1], cs[0], cs[1]);
-        cell_reg[0] += m_region[0];
-        cell_reg[1] += m_region[1];
+        auto& cp = m_child_info[i].pos;
+        auto& cs = m_child_info[i].span;
+        Region cell_reg = get_tracks_region(cp.x, cp.y, cs.width, cs.height);
+        cell_reg.x += m_region.x;
+        cell_reg.y += m_region.y;
         m_child_info[i].widget->allocate_region(cell_reg);
     }
 }
@@ -1244,38 +1339,38 @@ SizeReq Scroller::_get_preferred_size(Direction dim, int prosp_width)
 
 void Scroller::_allocate_region()
 {
-    SizeReq sr = m_child->get_preferred_size(Widget::VERT, m_region[2]);
-    m_scroll = max(0, min(m_scroll, sr.nat-m_region[3]));
-    i4 ch_reg = {m_region[0], m_region[1]-m_scroll, m_region[2], sr.nat};
+    SizeReq sr = m_child->get_preferred_size(Widget::VERT, m_region.width);
+    m_scroll = max(0, min(m_scroll, sr.nat-m_region.height));
+    Region ch_reg = {m_region.x, m_region.y-m_scroll, m_region.width, sr.nat};
     m_child->allocate_region(ch_reg);
 
 #ifdef USE_TILE_LOCAL
     int shade_height = 12, ds = 4;
-    int shade_top = min({m_scroll/ds, shade_height, m_region[3]/2});
-    int shade_bot = min({(sr.nat-m_region[3]-m_scroll)/ds, shade_height, m_region[3]/2});
+    int shade_top = min({m_scroll/ds, shade_height, m_region.height/2});
+    int shade_bot = min({(sr.nat-m_region.height-m_scroll)/ds, shade_height, m_region.height/2});
     VColour col_a(4,2,4,0), col_b(4,2,4,200);
 
     m_shade_buf.clear();
     m_scrollbar_buf.clear();
     {
-        GLWPrim rect(m_region[0], m_region[1]+shade_top-shade_height,
-                m_region[0]+m_region[2], m_region[1]+shade_top);
+        GLWPrim rect(m_region.x, m_region.y+shade_top-shade_height,
+                m_region.x+m_region.width, m_region.y+shade_top);
         rect.set_col(col_b, col_a);
         m_shade_buf.add_primitive(rect);
     }
     {
-        GLWPrim rect(m_region[0], m_region[1]+m_region[3]-shade_bot,
-                m_region[0]+m_region[2], m_region[1]+m_region[3]-shade_bot+shade_height);
+        GLWPrim rect(m_region.x, m_region.y+m_region.height-shade_bot,
+                m_region.x+m_region.width, m_region.y+m_region.height-shade_bot+shade_height);
         rect.set_col(col_a, col_b);
         m_shade_buf.add_primitive(rect);
     }
-    if (ch_reg[3] > m_region[3]) {
-        const int x = m_region[0]+m_region[2];
-        const float h_percent = m_region[3] / (float)ch_reg[3];
-        const int h = m_region[3]*min(max(0.05f, h_percent), 1.0f);
-        const float scroll_percent = m_scroll/(float)(ch_reg[3]-m_region[3]);
-        const int y = m_region[1] + (m_region[3]-h)*scroll_percent;
-        GLWPrim bg_rect(x+10, m_region[1], x+12, m_region[1]+m_region[3]);
+    if (ch_reg.height > m_region.height && m_scrolbar_visible) {
+        const int x = m_region.x+m_region.width;
+        const float h_percent = m_region.height / (float)ch_reg.height;
+        const int h = m_region.height*min(max(0.05f, h_percent), 1.0f);
+        const float scroll_percent = m_scroll/(float)(ch_reg.height-m_region.height);
+        const int y = m_region.y + (m_region.height-h)*scroll_percent;
+        GLWPrim bg_rect(x+10, m_region.y, x+12, m_region.y+m_region.height);
         bg_rect.set_col(VColour(41,41,41));
         m_scrollbar_buf.add_primitive(bg_rect);
         GLWPrim fg_rect(x+10, y, x+12, y+h);
@@ -1300,11 +1395,11 @@ bool Scroller::on_event(const wm_event& event)
         switch (event.key.keysym.sym)
         {
             case ' ': case '+': case CK_PGDN: case '>': case '\'':
-                delta = m_region[3];
+                delta = m_region.height;
                 break;
 
             case '-': case CK_PGUP: case '<': case ';':
-                delta = -m_region[3];
+                delta = -m_region.height;
                 break;
 
             case CK_UP:
@@ -1337,7 +1432,7 @@ bool Scroller::on_event(const wm_event& event)
     return false;
 }
 
-Popup::Popup(shared_ptr<Widget> child)
+Layout::Layout(shared_ptr<Widget> child)
 {
 #ifdef USE_TILE_LOCAL
     m_depth = ui_root.num_children();
@@ -1345,6 +1440,21 @@ Popup::Popup(shared_ptr<Widget> child)
     child->_set_parent(this);
     m_child = move(child);
     expand_h = expand_v = true;
+}
+
+void Layout::_render()
+{
+    m_child->render();
+}
+
+SizeReq Layout::_get_preferred_size(Direction dim, int prosp_width)
+{
+    return m_child->get_preferred_size(dim, prosp_width);
+}
+
+void Layout::_allocate_region()
+{
+    m_child->allocate_region(m_region);
 }
 
 void Popup::_render()
@@ -1368,7 +1478,7 @@ SizeReq Popup::_get_preferred_size(Direction dim, int prosp_width)
 #endif
     SizeReq sr = m_child->get_preferred_size(dim, prosp_width);
 #ifdef USE_TILE_LOCAL
-    constexpr int pad = m_base_margin + m_padding;
+    const int pad = base_margin() + m_padding;
     return {
         0, sr.nat + 2*pad + (dim ? m_depth*m_depth_indent*(!m_centred) : 0)
     };
@@ -1379,59 +1489,71 @@ SizeReq Popup::_get_preferred_size(Direction dim, int prosp_width)
 
 void Popup::_allocate_region()
 {
-    i4 region = m_region;
+    Region region = m_region;
 #ifdef USE_TILE_LOCAL
     m_buf.clear();
-    m_buf.add(m_region[0], m_region[1],
-            m_region[0] + m_region[2], m_region[1] + m_region[3],
+    m_buf.add(m_region.x, m_region.y,
+            m_region.x + m_region.width, m_region.y + m_region.height,
             VColour(0, 0, 0, 150));
-    constexpr int pad = m_base_margin + m_padding;
-    region[2] -= 2*pad;
-    region[3] -= 2*pad + m_depth*m_depth_indent*(!m_centred);
+    const int pad = base_margin() + m_padding;
+    region.width -= 2*pad;
+    region.height -= 2*pad + m_depth*m_depth_indent*(!m_centred);
 
     SizeReq hsr = m_child->get_preferred_size(HORZ, -1);
-    region[2] = max(hsr.min, min(region[2], hsr.nat));
-    SizeReq vsr = m_child->get_preferred_size(VERT, region[2]);
-    region[3] = max(vsr.min, min(region[3], vsr.nat));
+    region.width = max(hsr.min, min(region.width, hsr.nat));
+    SizeReq vsr = m_child->get_preferred_size(VERT, region.width);
+    region.height = max(vsr.min, min(region.height, vsr.nat));
 
-    region[0] += pad + (m_region[2]-2*pad-region[2])/2;
-    region[1] += pad + (m_centred ? (m_region[3]-2*pad-region[3])/2
+    region.x += pad + (m_region.width-2*pad-region.width)/2;
+    region.y += pad + (m_centred ? (m_region.height-2*pad-region.height)/2
             : m_depth*m_depth_indent);
 
-    m_buf.add(region[0] - m_padding, region[1] - m_padding,
-            region[0] + region[2] + m_padding,
-            region[1] + region[3] + m_padding,
+    m_buf.add(region.x - m_padding, region.y - m_padding,
+            region.x + region.width + m_padding,
+            region.y + region.height + m_padding,
             VColour(125, 98, 60));
-    m_buf.add(region[0] - m_padding + 2, region[1] - m_padding + 2,
-            region[0] + region[2] + m_padding - 2,
-            region[1] + region[3] + m_padding - 2,
+    m_buf.add(region.x - m_padding + 2, region.y - m_padding + 2,
+            region.x + region.width + m_padding - 2,
+            region.y + region.height + m_padding - 2,
             VColour(0, 0, 0));
-    m_buf.add(region[0] - m_padding + 3, region[1] - m_padding + 3,
-            region[0] + region[2] + m_padding - 3,
-            region[1] + region[3] + m_padding - 3,
+    m_buf.add(region.x - m_padding + 3, region.y - m_padding + 3,
+            region.x + region.width + m_padding - 3,
+            region.y + region.height + m_padding - 3,
             VColour(4, 2, 4));
+#else
+    SizeReq hsr = m_child->get_preferred_size(HORZ, -1);
+    region.width = max(hsr.min, min(region.width, hsr.nat));
+    SizeReq vsr = m_child->get_preferred_size(VERT, region.width);
+    region.height = max(vsr.min, min(region.height, vsr.nat));
 #endif
     m_child->allocate_region(region);
 }
 
-i2 Popup::get_max_child_size()
+Size Popup::get_max_child_size()
 {
+    Size max_child_size = Size(m_region.width, m_region.height);
 #ifdef USE_TILE_LOCAL
-    constexpr int pad = m_base_margin + m_padding;
-    return {
-        (m_region[2] - 2*pad) & ~0x1,
-        (m_region[3] - 2*pad - m_depth*m_depth_indent) & ~0x1,
-    };
-#else
-    return { m_region[2], m_region[3] };
+    const int pad = base_margin() + m_padding;
+    max_child_size.width = (max_child_size.width - 2*pad) & ~0x1;
+    max_child_size.height = (max_child_size.height - 2*pad - m_depth*m_depth_indent) & ~0x1;
 #endif
+    return max_child_size;
 }
 
 #ifdef USE_TILE_LOCAL
+int Popup::base_margin()
+{
+    const int screen_small = 800, screen_large = 1000;
+    const int margin_small = 10, margin_large = 50;
+    const int clipped = max(screen_small, min(screen_large, m_region.height));
+    return margin_small + (clipped-screen_small)
+            *(margin_large-margin_small)/(screen_large-screen_small);
+}
+
 void Dungeon::_render()
 {
 #ifdef USE_TILE_LOCAL
-    GLW_3VF t = {(float)m_region[0], (float)m_region[1], 0}, s = {32, 32, 1};
+    GLW_3VF t = {(float)m_region.x, (float)m_region.y, 0}, s = {32, 32, 1};
     glmanager->set_transform(t, s);
     m_buf.draw();
     glmanager->reset_transform();
@@ -1443,13 +1565,133 @@ SizeReq Dungeon::_get_preferred_size(Direction dim, int prosp_width)
     int sz = (dim ? height : width)*32;
     return {sz, sz};
 }
+
+PlayerDoll::PlayerDoll(dolls_data doll)
+{
+    m_save_doll = doll;
+    for (int i = 0; i < TEX_MAX; i++)
+        m_tile_buf[i].set_tex(&tiles.get_image_manager()->m_textures[i]);
+    _pack_doll();
+}
+
+PlayerDoll::~PlayerDoll()
+{
+    for (int t = 0; t < TEX_MAX; t++)
+        m_tile_buf[t].clear();
+}
+
+void PlayerDoll::_pack_doll()
+{
+    m_tiles.clear();
+    // FIXME: Implement this logic in one place in e.g. pack_doll_buf().
+    int p_order[TILEP_PART_MAX] =
+    {
+        TILEP_PART_SHADOW,  //  0
+        TILEP_PART_HALO,
+        TILEP_PART_ENCH,
+        TILEP_PART_DRCWING,
+        TILEP_PART_CLOAK,
+        TILEP_PART_BASE,    //  5
+        TILEP_PART_BOOTS,
+        TILEP_PART_LEG,
+        TILEP_PART_BODY,
+        TILEP_PART_ARM,
+        TILEP_PART_HAIR,
+        TILEP_PART_BEARD,
+        TILEP_PART_DRCHEAD,  // 15
+        TILEP_PART_HELM,
+        TILEP_PART_HAND1,   // 10
+        TILEP_PART_HAND2,
+    };
+
+    int flags[TILEP_PART_MAX];
+    tilep_calc_flags(m_save_doll, flags);
+
+    // For skirts, boots go under the leg armour. For pants, they go over.
+    if (m_save_doll.parts[TILEP_PART_LEG] < TILEP_LEG_SKIRT_OFS)
+    {
+        p_order[6] = TILEP_PART_BOOTS;
+        p_order[7] = TILEP_PART_LEG;
+    }
+
+    // Special case bardings from being cut off.
+    bool is_naga = (m_save_doll.parts[TILEP_PART_BASE] == TILEP_BASE_NAGA
+                    || m_save_doll.parts[TILEP_PART_BASE] == TILEP_BASE_NAGA + 1);
+    if (m_save_doll.parts[TILEP_PART_BOOTS] >= TILEP_BOOTS_NAGA_BARDING
+        && m_save_doll.parts[TILEP_PART_BOOTS] <= TILEP_BOOTS_NAGA_BARDING_RED)
+    {
+        flags[TILEP_PART_BOOTS] = is_naga ? TILEP_FLAG_NORMAL : TILEP_FLAG_HIDE;
+    }
+
+    bool is_cent = (m_save_doll.parts[TILEP_PART_BASE] == TILEP_BASE_CENTAUR
+                    || m_save_doll.parts[TILEP_PART_BASE] == TILEP_BASE_CENTAUR + 1);
+    if (m_save_doll.parts[TILEP_PART_BOOTS] >= TILEP_BOOTS_CENTAUR_BARDING
+        && m_save_doll.parts[TILEP_PART_BOOTS] <= TILEP_BOOTS_CENTAUR_BARDING_RED)
+    {
+        flags[TILEP_PART_BOOTS] = is_cent ? TILEP_FLAG_NORMAL : TILEP_FLAG_HIDE;
+    }
+
+    for (int i = 0; i < TILEP_PART_MAX; ++i)
+    {
+        const int p   = p_order[i];
+        const tileidx_t idx = m_save_doll.parts[p];
+        if (idx == 0 || idx == TILEP_SHOW_EQUIP || flags[p] == TILEP_FLAG_HIDE)
+            continue;
+
+        ASSERT_RANGE(idx, TILE_MAIN_MAX, TILEP_PLAYER_MAX);
+
+        int ymax = TILE_Y;
+
+        if (flags[p] == TILEP_FLAG_CUT_CENTAUR
+            || flags[p] == TILEP_FLAG_CUT_NAGA)
+        {
+            ymax = 18;
+        }
+
+        m_tiles.emplace_back(idx, TEX_PLAYER, ymax);
+    }
+}
+
+void PlayerDoll::_render()
+{
+    for (int i = 0; i < TEX_MAX; i++)
+        m_tile_buf[i].draw();
+}
+
+SizeReq PlayerDoll::_get_preferred_size(Direction dim, int prosp_width)
+{
+    return { TILE_Y, TILE_Y };
+}
+
+void PlayerDoll::_allocate_region()
+{
+    for (int t = 0; t < TEX_MAX; t++)
+        m_tile_buf[t].clear();
+    for (const tile_def &tdef : m_tiles)
+    {
+        int tile      = tdef.tile;
+        TextureID tex = tdef.tex;
+        m_tile_buf[tex].add_unscaled(tile, m_region.x, m_region.y, tdef.ymax);
+    }
+}
+
+bool PlayerDoll::on_event(const wm_event& event)
+{
+    return false;
+}
+
 #endif
 
 void UIRoot::push_child(shared_ptr<Widget> ch, KeymapContext km)
 {
+    if (auto popup = dynamic_cast<Popup*>(ch.get()))
+        focus_stack.push_back(popup->get_child().get());
+    else
+        focus_stack.push_back(ch.get());
     m_root.add_child(move(ch));
     m_needs_layout = true;
     keymap_stack.push_back(km);
+    m_changed_layout_since_click = true;
 #ifndef USE_TILE_LOCAL
     if (m_root.num_children() == 1)
     {
@@ -1464,6 +1706,8 @@ void UIRoot::pop_child()
     m_root.pop_child();
     m_needs_layout = true;
     keymap_stack.pop_back();
+    focus_stack.pop_back();
+    m_changed_layout_since_click = true;
 #ifndef USE_TILE_LOCAL
     if (m_root.num_children() == 0)
         clrscr();
@@ -1537,7 +1781,7 @@ void UIRoot::render()
     m_dirty_region = aabb_intersect(m_dirty_region, m_region);
     textcolour(LIGHTGREY);
     textbackground(BLACK);
-    clear_text_region(m_dirty_region);
+    clear_text_region(m_dirty_region, BLACK);
 #endif
 
     push_scissor(m_region);
@@ -1546,6 +1790,41 @@ void UIRoot::render()
     ASSERT(cutoff <= static_cast<int>(m_root.num_children()));
     for (int i = cutoff; i < static_cast<int>(m_root.num_children()); i++)
         m_root.get_child(i)->render();
+#ifdef DEBUG
+    if (debug_draw)
+    {
+        LineBuffer lb;
+        ShapeBuffer sb;
+        size_t i = 0;
+        for (const auto& w : prev_hover_path)
+        {
+            const auto r = w->get_region();
+            i++;
+            VColour lc;
+            lc = i == prev_hover_path.size() ?
+                VColour(255, 100, 0, 100) : VColour(0, 50 + i*40, 0, 100);
+            lb.add_square(r.x+1, r.y+1, r.ex(), r.ey(), lc);
+        }
+        if (!prev_hover_path.empty())
+        {
+            const auto& hovered_widget = prev_hover_path.back();
+            Region r = hovered_widget->get_region();
+            const Margin m = hovered_widget->get_margin();
+
+            VColour lc = VColour(0, 0, 100, 100);
+            sb.add(r.x, r.y-m.top, r.ex(), r.y, lc);
+            sb.add(r.ex(), r.y, r.ex()+m.right, r.ey(), lc);
+            sb.add(r.x, r.ey(), r.ex(), r.ey()+m.bottom, lc);
+            sb.add(r.x-m.left, r.y, r.x, r.ey(), lc);
+        }
+        if (auto w = get_focused_widget()) {
+            Region r = w->get_region();
+            lb.add_square(r.x+1, r.y+1, r.ex(), r.ey(), VColour(128,31,239,255));
+        }
+        lb.draw();
+        sb.draw();
+    }
+#endif
 #else
     // Render only the top of the UI stack on console
     if (m_root.num_children() > 0)
@@ -1578,6 +1857,7 @@ void UIRoot::send_mouse_enter_leave_events(int mx, int my)
         current = current->get_child_at_offset(mx, my);
     }
 
+    size_t new_hover_path_size = hover_path.size();
     size_t sz = max(prev_hover_path.size(), hover_path.size());
     prev_hover_path.resize(sz, nullptr);
     hover_path.resize(sz, nullptr);
@@ -1597,33 +1877,97 @@ void UIRoot::send_mouse_enter_leave_events(int mx, int my)
         {
             ev.type = WME_MOUSELEAVE;
             if (!event_filter || !event_filter(ev))
-                prev_hover_path[diff]->on_event(ev);
+                for (size_t i = sz; i > diff; --i)
+                {
+                    if (!prev_hover_path[i-1])
+                        continue;
+                    prev_hover_path[i-1]->on_event(ev);
+                }
         }
         if (hover_path[diff])
         {
             ev.type = WME_MOUSEENTER;
             if (!event_filter || !event_filter(ev))
-                hover_path[diff]->on_event(ev);
+                for (size_t i = diff; i < sz; ++i)
+                {
+                    if (!hover_path[i])
+                        break;
+                    hover_path[i]->on_event(ev);
+                }
         }
     }
 
     prev_hover_path = move(hover_path);
+    prev_hover_path.resize(new_hover_path_size);
 }
 
 bool UIRoot::on_event(const wm_event& event)
 {
     if (event_filter && event_filter(event))
         return true;
-    return m_root.on_event(event);
+
+#ifdef DEBUG
+    if (event.type == WME_KEYDOWN && event.key.keysym.sym == CK_INSERT)
+    {
+        ui_root.debug_draw = !ui_root.debug_draw;
+        ui_root.queue_layout();
+        ui_root.expose_region({0,0,INT_MAX,INT_MAX});
+        return true;
+    }
+#endif
+
+    switch (event.type)
+    {
+        case WME_MOUSEBUTTONDOWN:
+        case WME_MOUSEBUTTONUP:
+        case WME_MOUSEMOTION:
+#ifdef DEBUG
+            if (ui_root.debug_draw)
+            {
+                ui_root.queue_layout();
+                ui_root.expose_region({0,0,INT_MAX,INT_MAX});
+            }
+#endif
+        case WME_MOUSEWHEEL:
+            if (event.type == WME_MOUSEBUTTONDOWN)
+                m_changed_layout_since_click = false;
+            else if (event.type == WME_MOUSEBUTTONUP)
+                if (m_changed_layout_since_click)
+                    break;
+            if (!prev_hover_path.empty()) {
+                for (auto w = prev_hover_path.back(); w; w = w->_get_parent())
+                    if (w->on_event(event))
+                        return true;
+            }
+            break;
+        case WME_MOUSEENTER:
+        case WME_MOUSELEAVE:
+            die("unreachable");
+            break;
+        default:
+            size_t layer_idx = m_root.num_children();
+            if (!layer_idx)
+                return false;
+            Widget* layer_root = m_root.get_child(layer_idx-1).get();
+            Layout* layout_root = dynamic_cast<Layout*>(layer_root);
+            if (layout_root && layout_root->event_filters.emit(layout_root, event))
+                return true;
+            for (Widget* w = focus_stack.back(); w; w = w->_get_parent())
+                if (w->on_event(event))
+                    return true;
+            break;
+    }
+
+    return false;
 }
 
-void push_scissor(i4 scissor)
+void push_scissor(Region scissor)
 {
     if (scissor_stack.size() > 0)
         scissor = aabb_intersect(scissor, scissor_stack.top());
     scissor_stack.push(scissor);
 #ifdef USE_TILE_LOCAL
-    glmanager->set_scissor(scissor[0], scissor[1], scissor[2], scissor[3]);
+    glmanager->set_scissor(scissor.x, scissor.y, scissor.width, scissor.height);
 #endif
 }
 
@@ -1634,32 +1978,34 @@ void pop_scissor()
 #ifdef USE_TILE_LOCAL
     if (scissor_stack.size() > 0)
     {
-        i4 scissor = scissor_stack.top();
-        glmanager->set_scissor(scissor[0], scissor[1], scissor[2], scissor[3]);
+        Region scissor = scissor_stack.top();
+        glmanager->set_scissor(scissor.x, scissor.y, scissor.width, scissor.height);
     }
     else
         glmanager->reset_scissor();
 #endif
 }
 
-i4 get_scissor()
+Region get_scissor()
 {
-    return scissor_stack.top();
+    if (scissor_stack.size() > 0)
+        return scissor_stack.top();
+    return {0, 0, INT_MAX, INT_MAX};
 }
 
 #ifndef USE_TILE_LOCAL
-static void clear_text_region(i4 region)
+static void clear_text_region(Region region, COLOURS bg)
 {
     if (scissor_stack.size() > 0)
         region = aabb_intersect(region, scissor_stack.top());
-    if (region[2] <= 0 || region[3] <= 0)
+    if (region.width <= 0 || region.height <= 0)
         return;
     textcolour(LIGHTGREY);
-    textbackground(BLACK);
-    for (int y=region[1]; y < region[1]+region[3]; y++)
+    textbackground(bg);
+    for (int y=region.y; y < region.y+region.height; y++)
     {
-        cgotoxy(region[0]+1, y+1);
-        cprintf("%*s", region[2], "");
+        cgotoxy(region.x+1, y+1);
+        cprintf("%*s", region.width, "");
     }
 }
 #endif
@@ -1720,7 +2066,14 @@ static void remap_key(wm_event &event)
     ASSERT(event.key.keysym.sym != -1);
 }
 
-void ui_force_render()
+void force_render()
+{
+    ui_root.layout();
+    ui_root.needs_paint = true;
+    ui_root.render();
+}
+
+void render()
 {
     ui_root.layout();
     ui_root.render();
@@ -1881,6 +2234,11 @@ bool has_layout()
     return ui_root.num_children() > 0;
 }
 
+NORETURN void restart_layout()
+{
+    throw UIRoot::RestartAllocation();
+}
+
 int getch(KeymapContext km)
 {
     // getch() can be called when there are no widget layouts, i.e.
@@ -1910,7 +2268,7 @@ int getch(KeymapContext km)
     return key;
 }
 
-void ui_delay(unsigned int ms)
+void delay(unsigned int ms)
 {
     if (crawl_state.disables[DIS_DELAY])
         ms = 0;
@@ -1971,7 +2329,14 @@ progress_popup::progress_popup(string title, int width)
     : position(0), bar_width(width), no_more(crawl_state.show_more_prompt, false)
 {
     auto container = make_shared<Box>(Widget::VERT);
-    container->align_items = Widget::CENTER;
+    container->align_cross = Widget::CENTER;
+#ifndef USE_TILE_LOCAL
+    // Center the popup in console.
+    // if webtiles browser ever uses this property, then this will probably
+    // look bad there and need another solution. But right now, webtiles ignores
+    // expand_h.
+    container->expand_h = true;
+#endif
     formatted_string bar_string = get_progress_string(bar_width);
     progress_bar = make_shared<Text>(bar_string);
     auto title_text = make_shared<Text>(title);
@@ -2052,6 +2417,54 @@ formatted_string progress_popup::get_progress_string(unsigned int len)
     bar[(center_pos + 1) % len] = marker[2];
     bar = string("<lightmagenta>") + bar + "</lightmagenta>";
     return formatted_string::parse_string(bar);
+}
+
+void set_focused_widget(Widget* w)
+{
+    static bool sent_focusout;
+    static Widget* new_focus;
+
+    const auto top = top_layout();
+
+    if (!top)
+        return;
+
+    if (w && !top->is_ancestor_of(w->get_shared()))
+        return;
+
+    auto current_focus = ui_root.focus_stack.back();
+
+    if (w == current_focus)
+        return;
+
+    new_focus = w;
+
+    if (current_focus && !sent_focusout)
+    {
+        sent_focusout = true;
+        wm_event ev = {0};
+        ev.type = WME_FOCUSOUT;
+        current_focus->on_event(ev);
+    }
+
+    if (new_focus != w)
+        return;
+
+    ui_root.focus_stack.back() = new_focus;
+
+    sent_focusout = false;
+
+    if (new_focus)
+    {
+        wm_event ev = {0};
+        ev.type = WME_FOCUSIN;
+        new_focus->on_event(ev);
+    }
+}
+
+Widget* get_focused_widget()
+{
+    return ui_root.focus_stack.empty() ? nullptr : ui_root.focus_stack.back();
 }
 
 }

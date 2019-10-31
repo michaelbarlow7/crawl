@@ -169,10 +169,8 @@ bool player::can_pass_through_feat(dungeon_feature_type grid) const
 
 bool player::is_habitable_feat(dungeon_feature_type actual_grid) const
 {
-    if (!can_pass_through_feat(actual_grid))
-        return false;
-
-    return !is_feat_dangerous(actual_grid);
+    return can_pass_through_feat(actual_grid)
+           && !is_feat_dangerous(actual_grid);
 }
 
 size_type player::body_size(size_part_type psize, bool base) const
@@ -256,7 +254,7 @@ random_var player::attack_delay(const item_def *projectile, bool rescale) const
         attk_delay = rv::max(attk_delay,
                 random_var(FASTEST_PLAYER_THROWING_SPEED));
     }
-    else if (!weap)
+    else if (!projectile && !weap)
     {
         int sk = form_uses_xl() ? experience_level * 10 :
                                   skill(SK_UNARMED_COMBAT, 10);

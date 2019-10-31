@@ -10,12 +10,14 @@
 #include "artefact.h"
 #include "directn.h"
 #include "dungeon.h"
+#include "format.h"
 #include "item-name.h"
 #include "libutil.h"
 #include "macro.h"
 #include "message.h"
 #include "options.h"
 #include "religion.h"
+#include "scroller.h"
 #include "shopping.h"
 #include "skills.h"
 #include "spl-util.h"
@@ -115,6 +117,29 @@ void debug_dump_levgen()
             mprf("    %s", vname.c_str());
     }
     mpr("");
+}
+
+void debug_show_builder_logs()
+{
+    if (!you.props.exists("debug_builder_logs"))
+    {
+        mprf("This save was not generated on a build that stores logs.");
+        return;
+    }
+    const string cur_level = level_id::current().describe();
+    CrawlHashTable &log_table = you.props["debug_builder_logs"].get_table();
+    if (!log_table.exists(cur_level)
+        || log_table[cur_level].get_string().size() == 0)
+    {
+        mprf("No builder logs are saved for %s.", cur_level.c_str());
+        return;
+    }
+    string props_text = log_table[cur_level].get_string();
+    auto log = formatted_string::parse_string(trim_string_right(props_text));
+    formatted_scroller log_scroller;
+    log_scroller.set_more();
+    log_scroller.add_formatted_string(log, false);
+    log_scroller.show();
 }
 
 string debug_coord_str(const coord_def &pos)
@@ -472,7 +497,7 @@ void debug_list_vacant_keys()
     {
         check(base, string(1, base));
 
-        char lower = tolower(base);
+        char lower = tolower_safe(base);
         check(lower, string(1, lower));
 
         char ctrl = CONTROL(base);

@@ -631,7 +631,7 @@ static const mon_spellbook mspell_list[] =
        { SPELL_BOLT_OF_MAGMA, 13, MON_SPELL_WIZARD },
        { SPELL_FIREBALL, 13, MON_SPELL_WIZARD },
        { SPELL_HURL_DAMNATION, 13, MON_SPELL_WIZARD },
-       { SPELL_CALL_DOWN_DAMNATION, 13, MON_SPELL_WIZARD | MON_SPELL_EMERGENCY },
+       { SPELL_CALL_DOWN_DAMNATION, 13, MON_SPELL_WIZARD },
       }
     },
 
@@ -1202,6 +1202,12 @@ static const mon_spellbook mspell_list[] =
     {  MST_OKLOB_SAPLING,
       {
        { SPELL_SPIT_ACID, 50, MON_SPELL_NATURAL },
+      }
+    },
+
+    {  MST_BALLISTOMYCETE,
+      {
+       { SPELL_SPORULATE, 67, MON_SPELL_NATURAL },
       }
     },
 
@@ -1968,7 +1974,7 @@ static const mon_spellbook mspell_list[] =
        { SPELL_STICKY_FLAME_RANGE, 13, MON_SPELL_MAGICAL },
        { SPELL_FIREBALL, 13, MON_SPELL_MAGICAL },
        { SPELL_HURL_DAMNATION, 13, MON_SPELL_MAGICAL },
-       { SPELL_CALL_DOWN_DAMNATION, 13, MON_SPELL_MAGICAL | MON_SPELL_EMERGENCY },
+       { SPELL_CALL_DOWN_DAMNATION, 13, MON_SPELL_MAGICAL },
       }
     },
 

@@ -225,9 +225,11 @@ static const char *divine_title[][8] =
     {"Sleeper",           "Questioner",             "Initiate",                 "Seeker of Truth",
         "@Walker@ of the Path","Lifter of the Veil",     "Transcendent",     "Drop of Water"},
 
+#if TAG_MAJOR_VERSION == 34
     // Pakellas -- inventor theme
     {"Reactionary",       "Apprentice",             "Inquisitive",              "Experimenter",
         "Inventor",           "Pioneer",               "Brilliant",                "Grand Gadgeteer"},
+#endif
 
     // Uskayaw -- reveler theme
     {"Prude",             "Wallflower",             "Party-goer",              "Dancer",
@@ -966,6 +968,7 @@ static formatted_string _describe_god_powers(god_type which_god)
         desc.cprintf("Your life essence is reduced. (-10%% HP)\n");
         break;
 
+#if TAG_MAJOR_VERSION == 34
     case GOD_PAKELLAS:
     {
         have_any = true;
@@ -986,6 +989,7 @@ static formatted_string _describe_god_powers(god_type which_god)
         }
         break;
     }
+#endif
 
     case GOD_LUGONU:
         have_any = true;
@@ -1086,6 +1090,7 @@ static void build_partial_god_ui(god_type which_god, shared_ptr<ui::Popup>& popu
     topline += formatted_string(uppercase_first(god_name(which_god, true)));
 
     auto vbox = make_shared<Box>(Widget::VERT);
+    vbox->align_cross = Widget::STRETCH;
     auto title_hbox = make_shared<Box>(Widget::HORZ);
 
 #ifdef USE_TILE
@@ -1096,12 +1101,11 @@ static void build_partial_god_ui(god_type which_god, shared_ptr<ui::Popup>& popu
 #endif
 
     auto title = make_shared<Text>(topline.trim());
-    title->set_margin_for_crt({0, 0, 0, 0});
-    title->set_margin_for_sdl({0, 0, 0, 16});
+    title->set_margin_for_sdl(0, 0, 0, 16);
     title_hbox->add_child(move(title));
 
-    title_hbox->align_items = Widget::CENTER;
-    title_hbox->align_self = Widget::CENTER;
+    title_hbox->align_main = Widget::CENTER;
+    title_hbox->align_cross = Widget::CENTER;
     vbox->add_child(move(title_hbox));
 
     desc_sw = make_shared<Switcher>();
@@ -1147,7 +1151,7 @@ static void build_partial_god_ui(god_type which_god, shared_ptr<ui::Popup>& popu
 
         auto scroller = make_shared<Scroller>();
         auto text = make_shared<Text>(desc.trim());
-        text->wrap_text = true;
+        text->set_wrap_text(true);
         scroller->set_child(text);
         desc_sw->add_child(move(scroller));
 
@@ -1155,11 +1159,11 @@ static void build_partial_god_ui(god_type which_god, shared_ptr<ui::Popup>& popu
                 formatted_string::parse_string(mores[mores_index][i])));
     }
 
-    desc_sw->set_margin_for_sdl({20, 0, 20, 0});
-    desc_sw->set_margin_for_crt({1, 0, 1, 0});
+    desc_sw->set_margin_for_sdl(20, 0);
+    desc_sw->set_margin_for_crt(1, 0);
     desc_sw->expand_h = false;
 #ifdef USE_TILE_LOCAL
-    desc_sw->max_size()[0] = tiles.get_crt_font()->char_width()*80;
+    desc_sw->max_size().width = tiles.get_crt_font()->char_width()*80;
 #endif
     vbox->add_child(desc_sw);
 
@@ -1235,7 +1239,7 @@ void describe_god(god_type which_god)
 #endif
             return true;
         }
-        return done = !popup->get_child()->on_event(ev);
+        return done = !desc_sw->current_widget()->on_event(ev);
     });
 
 #ifdef USE_TILE_WEB
@@ -1347,7 +1351,7 @@ bool describe_god_with_join(god_type which_god)
 
         // Next, allow child widgets to handle scrolling keys
         if (keyin != ' ' && keyin != CK_ENTER)
-        if (popup->get_child()->on_event(ev))
+        if (desc_sw->current_widget()->on_event(ev))
             return true;
 
         if (step == SHOW)
@@ -1356,14 +1360,14 @@ bool describe_god_with_join(god_type which_god)
             goto update_ui;
         }
 
-        if (keyin != 'Y' && toupper(keyin) != 'N')
+        if (keyin != 'Y' && toupper_safe(keyin) != 'N')
         {
             yesno_only = true;
             goto update_ui;
         }
         yesno_only = false;
 
-        if (toupper(keyin) == 'N')
+        if (toupper_safe(keyin) == 'N')
         {
             canned_msg(MSG_OK);
             return done = true;

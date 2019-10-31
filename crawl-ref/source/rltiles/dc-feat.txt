@@ -461,7 +461,10 @@ makhleb_flame5
 makhleb_flame6
 makhleb_flame7
 makhleb_flame8
-sif_muna DNGN_ALTAR_SIF_MUNA
+sif_muna1 DNGN_ALTAR_SIF_MUNA
+sif_muna2
+sif_muna3
+sif_muna4
 trog DNGN_ALTAR_TROG
 nemelex1 DNGN_ALTAR_NEMELEX_XOBEH
 nemelex2
@@ -669,6 +672,7 @@ effect/heataura2
 halo_friendly HALO_FRIENDLY
 halo_gd_neutral HALO_GD_NEUTRAL
 halo_neutral HALO_NEUTRAL
+halo_summoner HALO_SUMMONER
 ray RAY
 ray_multi RAY_MULTI
 ray_out_of_range RAY_OUT_OF_RANGE

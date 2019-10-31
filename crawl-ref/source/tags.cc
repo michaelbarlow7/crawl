@@ -37,6 +37,8 @@
 #if TAG_MAJOR_VERSION == 34
  #include "cloud.h"
  #include "decks.h"
+ #include "food.h"
+ #include "hunger-state-t.h"
 #endif
 #include "colour.h"
 #include "coordit.h"
@@ -304,7 +306,9 @@ static void tag_read_you(reader &th);
 static void tag_read_you_items(reader &th);
 static void tag_read_you_dungeon(reader &th);
 static void tag_read_lost_monsters(reader &th);
+#if TAG_MAJOR_VERSION == 34
 static void tag_read_lost_items(reader &th);
+#endif
 static void tag_read_companions(reader &th);
 
 static void tag_construct_level(writer &th);
@@ -372,6 +376,7 @@ uint8_t unmarshallUByte(reader &th)
 // Marshall 2 byte short in network order.
 void marshallShort(writer &th, short data)
 {
+    // TODO: why does this use `short` and `char` when unmarshall uses int16_t??
     CHECK_INITIALIZED(data);
     const char b2 = (char)(data & 0x00FF);
     const char b1 = (char)((data & 0xFF00) >> 8);
@@ -826,7 +831,7 @@ float unmarshallFloat(reader &th)
 void marshallString(writer &th, const string &data)
 {
     size_t len = data.length();
-    // A limit of 32K.
+    // A limit of 32K. TODO: why doesn't this use int16_t?
     if (len > SHRT_MAX)
         die("trying to marshall too long a string (len=%ld)", (long int)len);
     marshallShort(th, len);
@@ -836,7 +841,7 @@ void marshallString(writer &th, const string &data)
 
 string unmarshallString(reader &th)
 {
-    char buffer[SHRT_MAX];
+    char buffer[SHRT_MAX]; // TODO: why doesn't this use int16_t?
 
     short len = unmarshallShort(th);
     ASSERT(len >= 0);
@@ -862,14 +867,20 @@ static string unmarshallString2(reader &th)
 // string -- 4 byte length, non-terminated string data.
 void marshallString4(writer &th, const string &data)
 {
-    marshallInt(th, data.length());
-    th.write(data.c_str(), data.length());
+    const size_t len = data.length();
+    if (len > static_cast<size_t>(numeric_limits<int32_t>::max()))
+        die("trying to marshall too long a string (len=%ld)", (long int) len);
+    marshallInt(th, len);
+    th.write(data.c_str(), len);
 }
+
 void unmarshallString4(reader &th, string& s)
 {
     const int len = unmarshallInt(th);
+    ASSERT(len >= 0);
     s.resize(len);
-    if (len) th.read(&s.at(0), len);
+    if (len)
+        th.read(&s.at(0), len);
 }
 
 // boolean (to avoid system-dependent bool implementations)
@@ -1256,10 +1267,10 @@ void tag_read(reader &inf, tag_type tag_id)
 #endif
         tag_read_companions(th);
 
-        // If somebody SIGHUP'ed out of the skill menu with all skills disabled.
-        // Doing this here rather in tag_read_you() because you.can_train()
-        // requires the player's equipment be loaded.
-        init_can_train();
+        // If somebody SIGHUP'ed out of the skill menu with every skill
+        // disabled. Doing this here rather in tag_read_you() because
+        // you.can_currently_train() requires the player's equipment be loaded.
+        init_can_currently_train();
         check_selected_skills();
         break;
     case TAG_LEVEL:
@@ -1392,6 +1403,7 @@ static void tag_construct_you(writer &th)
 
     marshallShort(th, you.hunger);
     marshallBoolean(th, you.fishtail);
+    marshallBoolean(th, you.vampire_alive);
     _marshall_as_int(th, you.form);
     CANARY;
 
@@ -1658,8 +1670,9 @@ static void tag_construct_you(writer &th)
 
     marshallUByte(th, 1); // number of seeds, for historical reasons: always 1
     marshallUnsigned(th, you.game_seed);
-    marshallBoolean(th, you.game_is_seeded);
-    CrawlVector rng_states = generators_to_vector();
+    marshallBoolean(th, you.fully_seeded); // TODO: remove on major version inc?
+    marshallBoolean(th, you.deterministic_levelgen);
+    CrawlVector rng_states = rng::generators_to_vector();
     rng_states.write(th);
 
     CANARY;
@@ -1826,6 +1839,10 @@ static void tag_construct_you_dungeon(writer &th)
                       marshallString);
     marshall_iterator(th, you.uniq_map_names.begin(), you.uniq_map_names.end(),
                       marshallString);
+    marshall_iterator(th, you.uniq_map_tags_abyss.begin(),
+                        you.uniq_map_tags_abyss.end(), marshallString);
+    marshall_iterator(th, you.uniq_map_names_abyss.begin(),
+                        you.uniq_map_names_abyss.end(), marshallString);
     marshallMap(th, you.vault_list, marshall_level_id, marshallStringVector);
 
     write_level_connectivity(th);
@@ -2272,6 +2289,7 @@ void tag_read_char(reader &th, uint8_t format, uint8_t major, uint8_t minor)
         you.explore = unmarshallBoolean(th);
 }
 
+#if TAG_MAJOR_VERSION == 34
 static void _cap_mutation_at(mutation_type mut, int cap)
 {
     if (you.mutation[mut] > cap)
@@ -2285,6 +2303,7 @@ static void _cap_mutation_at(mutation_type mut, int cap)
     if (you.innate_mutation[mut] > cap)
         you.innate_mutation[mut] = cap;
 }
+#endif
 
 static void tag_read_you(reader &th)
 {
@@ -2346,6 +2365,14 @@ static void tag_read_you(reader &th)
     you.hp              = unmarshallShort(th);
     you.hunger          = unmarshallShort(th);
     you.fishtail        = unmarshallBoolean(th);
+#if TAG_MAJOR_VERSION == 34
+    if (th.getMinorVersion() >= TAG_MINOR_VAMPIRE_NO_EAT)
+        you.vampire_alive = unmarshallBoolean(th);
+    else
+        you.vampire_alive = calc_hunger_state() > HS_STARVING;
+#else
+    you.vampire_alive   = unmarshallBoolean(th);
+#endif
 #if TAG_MAJOR_VERSION == 34
     if (th.getMinorVersion() < TAG_MINOR_NOME_NO_MORE)
         unmarshallInt(th);
@@ -3587,7 +3614,7 @@ static void tag_read_you(reader &th)
         if (th.getMinorVersion() >= TAG_MINOR_REMOVE_ABYSS_SEED
             && th.getMinorVersion() < TAG_MINOR_ADD_ABYSS_SEED)
         {
-            abyssal_state.seed = get_uint32();
+            abyssal_state.seed = rng::get_uint32();
         }
         else
 #endif
@@ -3601,7 +3628,7 @@ static void tag_read_you(reader &th)
         unmarshallFloat(th); // converted abyssal_state.depth to int.
         abyssal_state.depth = 0;
         abyssal_state.destroy_all_terrain = true;
-        abyssal_state.seed = get_uint32();
+        abyssal_state.seed = rng::get_uint32();
     }
 #endif
     abyssal_state.phase = unmarshallFloat(th);
@@ -3666,10 +3693,10 @@ static void tag_read_you(reader &th)
     ASSERT(th.getMinorVersion() < TAG_MINOR_GAMESEEDS || count == 1);
     if (th.getMinorVersion() < TAG_MINOR_GAMESEEDS)
     {
-        you.game_seed = count > 0 ? unmarshallInt(th) : get_uint64();
+        you.game_seed = count > 0 ? unmarshallInt(th) : rng::get_uint64();
         dprf("Upgrading from unseeded game.");
         crawl_state.seed = you.game_seed;
-        you.game_is_seeded = false;
+        you.fully_seeded = false;
         for (int i = 1; i < count; i++)
             unmarshallInt(th);
     }
@@ -3682,10 +3709,19 @@ static void tag_read_you(reader &th)
         you.game_seed = unmarshallUnsigned(th);
         dprf("Unmarshalling seed %" PRIu64, you.game_seed);
         crawl_state.seed = you.game_seed;
-        you.game_is_seeded = unmarshallBoolean(th);
+        you.fully_seeded = unmarshallBoolean(th);
+#if TAG_MAJOR_VERSION == 34
+        // there is no way to tell the levelgen method for games before this
+        // tag, unfortunately. Though if there are unvisited generated levels,
+        // that guarantees some form of deterministic pregen.
+        if (th.getMinorVersion() < TAG_MINOR_INCREMENTAL_PREGEN)
+            you.deterministic_levelgen = false;
+        else
+#endif
+        you.deterministic_levelgen = unmarshallBoolean(th);
         CrawlVector rng_states;
         rng_states.read(th);
-        load_generators(rng_states);
+        rng::load_generators(rng_states);
 #if TAG_MAJOR_VERSION == 34
     }
 #endif
@@ -3734,6 +3770,12 @@ static void tag_read_you(reader &th)
     {
         for (int i = 0; i < you.props[THUNDERBOLT_CHARGES_KEY].get_int(); i++)
             expend_xp_evoker(MISC_LIGHTNING_ROD);
+    }
+    if (th.getMinorVersion() < TAG_MINOR_SINGULAR_THEY
+        && you.props.exists(HEPLIAKLQANA_ALLY_GENDER_KEY))
+    {
+        if (you.props[HEPLIAKLQANA_ALLY_GENDER_KEY].get_int() == GENDER_NEUTER)
+            you.props[HEPLIAKLQANA_ALLY_GENDER_KEY] = GENDER_NEUTRAL;
     }
 #endif
 }
@@ -3954,7 +3996,7 @@ static void tag_read_you_items(reader &th)
 
         // If fruit pickup was not set explicitly during the time between
         // FOOD_PURGE and FOOD_PURGE_AP_FIX, copy the old exemplar FOOD_PEAR.
-        if (food_pickups[FOOD_FRUIT] == 0)
+        if (food_pickups[FOOD_FRUIT] == AP_FORCE_NONE)
             food_pickups[FOOD_FRUIT] = food_pickups[FOOD_PEAR];
     }
     if (you.species == SP_FORMICID)
@@ -4269,6 +4311,19 @@ static void tag_read_you_dungeon(reader &th)
                          &string_set::insert,
                          unmarshallString);
 #if TAG_MAJOR_VERSION == 34
+    if (th.getMinorVersion() >= TAG_MINOR_ABYSS_UNIQUE_VAULTS)
+    {
+#endif
+    unmarshall_container(th, you.uniq_map_tags_abyss,
+                         (ssipair (string_set::*)(const string &))
+                         &string_set::insert,
+                         unmarshallString);
+    unmarshall_container(th, you.uniq_map_names_abyss,
+                         (ssipair (string_set::*)(const string &))
+                         &string_set::insert,
+                         unmarshallString);
+#if TAG_MAJOR_VERSION == 34
+    }
     if (th.getMinorVersion() >= TAG_MINOR_VAULT_LIST) // 33:17 has it
 #endif
     unmarshallMap(th, you.vault_list, unmarshall_level_id,
@@ -4402,13 +4457,6 @@ static void tag_construct_level(writer &th)
     marshallInt(th, env.forest_awoken_until);
     marshall_level_vault_data(th);
     marshallInt(th, env.density);
-
-    marshallShort(th, env.sunlight.size());
-    for (const auto &sunspot : env.sunlight)
-    {
-        marshallCoord(th, sunspot.first);
-        marshallInt(th, sunspot.second);
-    }
 }
 
 void marshallItem(writer &th, const item_def &item, bool iinfo)
@@ -4507,13 +4555,13 @@ void unmarshallItem(reader &th, item_def &item)
     item.quantity    = unmarshallShort(th);
 #if TAG_MAJOR_VERSION == 34
     // These used to come in stacks in monster inventory as throwing weapons.
-    // Replace said stacks (but not single items) with tomahawks.
+    // Replace said stacks (but not single items) with boomerangs.
     if (item.quantity > 1 && item.base_type == OBJ_WEAPONS
         && (item.sub_type == WPN_CLUB || item.sub_type == WPN_HAND_AXE
             || item.sub_type == WPN_DAGGER || item.sub_type == WPN_SPEAR))
     {
         item.base_type = OBJ_MISSILES;
-        item.sub_type = MI_TOMAHAWK;
+        item.sub_type = MI_BOOMERANG;
         item.plus = item.plus2 = 0;
         item.brand = SPMSL_NORMAL;
     }
@@ -4995,6 +5043,42 @@ void unmarshallItem(reader &th, item_def &item)
     {
         item.props["item_tile_name"] = "food_ration_inventory";
         bind_item_tile(item);
+    }
+
+    if (th.getMinorVersion() < TAG_MINOR_THROW_CONSOLIDATION
+        && item.base_type == OBJ_MISSILES)
+    {
+        if (item.sub_type == MI_NEEDLE)
+        {
+            item.sub_type = MI_DART;
+
+            switch (item.brand)
+            {
+                case SPMSL_PARALYSIS:
+                case SPMSL_SLOW:
+                case SPMSL_SLEEP:
+                case SPMSL_CONFUSION:
+                case SPMSL_SICKNESS:
+                    item.brand = SPMSL_BLINDING;
+                    break;
+                default: break;
+            }
+        }
+        else if (item.sub_type == MI_BOOMERANG || item.sub_type == MI_JAVELIN)
+        {
+            switch (item.brand)
+            {
+                case SPMSL_RETURNING:
+                case SPMSL_EXPLODING:
+                case SPMSL_POISONED:
+                case SPMSL_PENETRATION:
+                    item.brand = SPMSL_NORMAL;
+                    break;
+                case SPMSL_STEEL:
+                    item.brand = SPMSL_SILVER;
+                    break;
+            }
+        }
     }
 
 #endif
@@ -5964,15 +6048,19 @@ static void tag_read_level(reader &th)
     env.forest_awoken_until = unmarshallInt(th);
     unmarshall_level_vault_data(th);
     env.density = unmarshallInt(th);
+#if TAG_MAJOR_VERSION == 34
 
-    int num_lights = unmarshallShort(th);
-    ASSERT(num_lights >= 0);
-    env.sunlight.clear();
-    while (num_lights-- > 0)
+    if (th.getMinorVersion() < TAG_MINOR_NO_SUNLIGHT)
     {
-        coord_def c = unmarshallCoord(th);
-        env.sunlight.emplace_back(c, unmarshallInt(th));
+        int num_lights = unmarshallShort(th);
+        ASSERT(num_lights >= 0);
+        while (num_lights-- > 0)
+        {
+            unmarshallCoord(th);
+            unmarshallInt(th);
+        }
     }
+#endif
 }
 
 #if TAG_MAJOR_VERSION == 34

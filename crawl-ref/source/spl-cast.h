@@ -35,7 +35,7 @@ enum class spflag
     needs_tracer       = 0x00080000,      // monster casting needs tracer
     noisy              = 0x00100000,      // makes noise, even if innate
     testing            = 0x00200000,      // a testing/debugging spell
-    corpse_violating   = 0x00400000,      // Conduct violation for Fedhas
+                     //  0x00400000,      // was spflag::corpse_violating
                      //  0x00800000,      // was SPFLAG_ALLOW_SELF
     utility            = 0x01000000,      // usable no matter what foe is
     no_ghost           = 0x02000000,      // ghosts can't get this spell
@@ -103,7 +103,7 @@ class targeter;
 vector<string> desc_success_chance(const monster_info& mi, int pow, bool evoked,
                                    targeter* hitfunc);
 spret your_spells(spell_type spell, int powc = 0, bool allow_fail = true,
-                       const item_def* const evoked_item = nullptr);
+                  const item_def* const evoked_item = nullptr);
 
 extern const char *fail_severity_adjs[];
 

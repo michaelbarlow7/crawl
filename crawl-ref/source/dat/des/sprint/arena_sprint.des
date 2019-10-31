@@ -437,7 +437,7 @@ function arena_sprint_get_monster_set(round, boss)
                 "moth of wrath / w:20 stone giant", "ball lightning",
                 "orb spider", "hungry ghost / harpy", "shining eye",
                 "tormentor",
-                "skeletal warrior / w:5 skeletal warrior ; blowgun . needle ego:confusion"
+                "skeletal warrior / w:5 skeletal warrior ; dart ego:atropa"
             }
         elseif round <= 26 then
             mon_set = {
@@ -503,7 +503,7 @@ function arena_sprint_get_monster_set(round, boss)
                 "neqoxec", "smoke demon", "catoblepas",
                 "moth of wrath / w:20 ettin", "orb spider", "fire crab",
                 "shining eye", "tormentor", "tentacled monstrosity",
-                "skeletal warrior / skeletal warrior ; blowgun . needle ego:confusion",
+                "skeletal warrior / skeletal warrior ; dart ego:atropa",
                 "unseen horror / lorocyproca / shadow wraith / ghost moth",
                 "curse toe / w:20 wandering mushroom / w:4 murray",
                 "reaper / hell beast / geryon w:1",
@@ -1096,8 +1096,7 @@ KFEAT:  R = general shop type:Premium suffix:Goods use_all count:11 greed:20 ; \
             potion of haste q:5 | potion of haste q:5 |\
             crystal ball of energy
 KFEAT:  J = general shop type:Miscellaneous suffix:Merchandise count:14 greed:15 use_all ; \
-            ration q:20 | potion of blood q:5 | potion of blood q:5 |\
-            potion of blood q:5 | potion of blood q:5 | ring of poison resistance |\
+            ration q:20 | ring of poison resistance |\
             ring of protection from fire | ring of protection from cold |\
             ring of protection from magic | amulet of regeneration |\
             amulet of the gourmand | amulet of harm | amulet of reflection |\

@@ -392,7 +392,7 @@ void wizard_tweak_object()
     char specs[50];
     int keyin;
 
-    int item = prompt_invent_item("Tweak which item? ", MT_INVLIST, -1);
+    int item = prompt_invent_item("Tweak which item? ", menu_type::invlist, OSEL_ANY);
 
     if (prompt_failed(item))
         return;
@@ -521,7 +521,8 @@ static bool _make_book_randart(item_def &book)
 /// Prompt for an item in inventory & print its base shop value.
 void wizard_value_item()
 {
-    const int i = prompt_invent_item("Value of which item?", MT_INVLIST, -1);
+    const int i = prompt_invent_item("Value of which item?",
+                                     menu_type::invlist, OSEL_ANY);
 
     if (prompt_failed(i))
         return;
@@ -535,7 +536,14 @@ void wizard_value_item()
         mprf("Value: %d", real_value);
 }
 
-void wizard_create_all_artefacts()
+/**
+ * Generate every unrand (including removed ones).
+ *
+ * @param override_unique if true, will generate unrands that have alread
+ * placed in the game. If false, will generate fallback randarts for any
+ * unrands that have already placed.
+ */
+void wizard_create_all_artefacts(bool override_unique)
 {
     you.octopus_king_rings = 0x00;
     int octorings = 8;
@@ -550,18 +558,50 @@ void wizard_create_all_artefacts()
         if (entry->base_type == OBJ_UNASSIGNED)
             continue;
 
-        int islot = get_mitm_slot();
-        if (islot == NON_ITEM)
-            break;
+        int islot;
 
-        item_def& item = mitm[islot];
-        make_item_unrandart(item, index);
-        item.quantity = 1;
+        if (override_unique)
+        {
+            // force create: use make_item_unrandart to override a bunch of the
+            // usual checks on getting randarts.
+            islot = get_mitm_slot();
+            if (islot == NON_ITEM)
+                break;
+
+            item_def &tmp_item = mitm[islot];
+            make_item_unrandart(tmp_item, index);
+            tmp_item.quantity = 1;
+        }
+        else
+        {
+            // mimic the way unrands are created normally, and respect
+            // uniqueness. If an unrand has already generated, this will place
+            // a relevant fallback randart instead. Useful for testing fallback
+            // properties, since various error conditions will print.
+            islot = items(true, entry->base_type, 0, 0, -index, -1);
+            if (islot == NON_ITEM)
+            {
+                mprf(MSGCH_ERROR, "Failed to generate item for '%s'",
+                    entry->name);
+                continue;
+            }
+        }
+        item_def &item = mitm[islot];
         set_ident_flags(item, ISFLAG_IDENT_MASK);
 
-        msg::streams(MSGCH_DIAGNOSTICS) << "Made " << item.name(DESC_A)
-                                        << " (" << debug_art_val_str(item)
-                                        << ")" << endl;
+        if (!is_artefact(item))
+        {
+            // for now, staves are ok...
+            mprf(item.base_type == OBJ_STAVES ? MSGCH_DIAGNOSTICS : MSGCH_ERROR,
+                "Made non-artefact '%s' when trying to make '%s'",
+                item.name(DESC_A).c_str(), entry->name);
+        }
+        else
+        {
+            msg::streams(MSGCH_DIAGNOSTICS) << "Made " << item.name(DESC_A)
+                                            << " (" << debug_art_val_str(item)
+                                            << ")" << endl;
+        }
         move_item_to_grid(&islot, you.pos());
 
         // Make all eight.
@@ -591,7 +631,7 @@ void wizard_create_all_artefacts()
 void wizard_make_object_randart()
 {
     int i = prompt_invent_item("Make an artefact out of which item?",
-                                MT_INVLIST, -1);
+                                menu_type::invlist, OSEL_ANY);
 
     if (prompt_failed(i))
         return;
@@ -681,7 +721,8 @@ static bool _item_type_can_be_cursed(int type)
 
 void wizard_uncurse_item()
 {
-    const int i = prompt_invent_item("(Un)curse which item?", MT_INVLIST, -1);
+    const int i = prompt_invent_item("(Un)curse which item?",
+                                     menu_type::invlist, OSEL_ANY);
 
     if (!prompt_failed(i))
     {
@@ -1098,8 +1139,8 @@ static void _debug_acquirement_stats(FILE *ostat)
             "returning",
 #endif
             "chaos",
-            "evasion",
 #if TAG_MAJOR_VERSION == 34
+            "evasion",
             "confusion",
 #endif
             "penetration",
@@ -1300,7 +1341,7 @@ static void _debug_rap_stats(FILE *ostat)
 {
     const int inv_index
         = prompt_invent_item("Generate randart stats on which item?",
-                             MT_INVLIST, -1);
+                             menu_type::invlist, OSEL_ANY);
 
     if (prompt_failed(inv_index))
         return;
@@ -1461,6 +1502,9 @@ static void _debug_rap_stats(FILE *ostat)
         "ARTP_SEE_INVISIBLE",
         "ARTP_INVISIBLE",
         "ARTP_FLY",
+#if TAG_MAJOR_VERSION > 34
+        "ARTP_FOG",
+#endif
         "ARTP_BLINK",
         "ARTP_BERSERK",
         "ARTP_NOISE",
@@ -1600,6 +1644,9 @@ void wizard_identify_all_items()
     for (auto &item : mitm)
         if (item.defined())
             set_ident_flags(item, ISFLAG_IDENT_MASK);
+    for (auto& entry : env.shop)
+        for (auto &item : entry.second.stock)
+            set_ident_flags(item, ISFLAG_IDENT_MASK);
     for (int ii = 0; ii < NUM_OBJECT_CLASSES; ii++)
     {
         object_class_type i = (object_class_type)ii;
@@ -1615,6 +1662,9 @@ void wizard_unidentify_all_items()
     wizard_unidentify_pack();
     for (auto &item : mitm)
         if (item.defined())
+            _forget_item(item);
+    for (auto& entry : env.shop)
+        for (auto &item : entry.second.stock)
             _forget_item(item);
     for (int ii = 0; ii < NUM_OBJECT_CLASSES; ii++)
     {

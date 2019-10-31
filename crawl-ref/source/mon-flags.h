@@ -113,8 +113,7 @@ enum monclass_flag_type : uint64_t
     /// An ancestor granted by Hepliaklqana
     M_ANCESTOR          = BIT(35),
 
-    /// always leaves a corpse
-    M_ALWAYS_CORPSE     = BIT(36),
+                        //BIT(36), // was M_ALWAYS_CORPSE
 
     /// mostly doesn't try to melee
     M_DONT_MELEE        = BIT(37),
@@ -170,6 +169,9 @@ enum monclass_flag_type : uint64_t
 
     /// monster always receives a wand
     M_ALWAYS_WAND       = BIT(56),
+
+    /// uses they/them pronouns
+    M_GENDER_NEUTRAL    = BIT(57),
 };
 DEF_BITFIELD(monclass_flags_t, monclass_flag_type);
 

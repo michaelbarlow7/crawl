@@ -10,6 +10,7 @@
 #include "cio.h"
 #include "delay.h"
 #include "describe.h"
+#include "english.h"
 #include "externs.h"
 #include "invent.h"
 #include "libutil.h"
@@ -124,16 +125,18 @@ static string _describe_spell_filtering(mon_spell_slot_flag type, const char* pr
  *                          "possesses the following natural abilities:"
  */
 static string _booktype_header(mon_spell_slot_flag type, size_t num_books,
-                               bool has_silencable, bool has_filtered, const char* pronoun)
+                               bool has_silencable, bool has_filtered,
+                               const char* pronoun, bool pronoun_plural)
 {
     const string vulnerabilities =
         _ability_type_vulnerabilities(type, has_silencable);
-    const string spell_filter_desc = has_filtered ? _describe_spell_filtering(type, pronoun)
-                                                  : "";
+    const string spell_filter_desc =
+        has_filtered ? _describe_spell_filtering(type, pronoun) : "";
 
     if (type == MON_SPELL_WIZARD)
     {
-        return make_stringf("has mastered %s%s%s:",
+        return make_stringf("%s mastered %s%s%s:",
+                            conjugate_verb("have", pronoun_plural).c_str(),
                             num_books > 1 ? "one of the following spellbooks"
                                           : "the following spells",
                             spell_filter_desc.c_str(),
@@ -142,7 +145,8 @@ static string _booktype_header(mon_spell_slot_flag type, size_t num_books,
 
     const string descriptor = _ability_type_descriptor(type);
 
-    return make_stringf("possesses the following %s abilities%s%s:",
+    return make_stringf("%s the following %s abilities%s%s:",
+                        conjugate_verb("possess", pronoun_plural).c_str(),
                         descriptor.c_str(),
                         spell_filter_desc.c_str(),
                         vulnerabilities.c_str());
@@ -261,7 +265,8 @@ static void _monster_spellbooks(const monster_info &mi,
                 uppercase_first(mi.pronoun(PRONOUN_SUBJECTIVE)) +
                 " " +
                 _booktype_header(type, valid_books.size(), has_silencable,
-                                 filtered_books, mi.pronoun(PRONOUN_OBJECTIVE));
+                                 filtered_books, mi.pronoun(PRONOUN_OBJECTIVE),
+                                 mi.pronoun_plurality());
         }
         else
         {
@@ -464,7 +469,7 @@ vector<pair<spell_type,char>> map_chars_to_spells(const spellset &spells,
 static string _range_string(const spell_type &spell, const monster_info *mon_owner, int hd)
 {
     auto flags = get_spell_flags(spell);
-    int pow = mons_power_for_hd(spell, hd, false);
+    int pow = mons_power_for_hd(spell, hd);
     int range = spell_range(spell, pow, false);
     const bool has_range = mon_owner
                         && range > 0
@@ -505,7 +510,7 @@ static void _describe_book(const spellbook_contents &book,
     if (source_item)
     {
         description.cprintf(
-            "\n Spells                           Type                      Level");
+            "\n Spells                           Type                      Level       Known");
     }
     description.cprintf("\n");
 
@@ -570,11 +575,21 @@ static void _describe_book(const spellbook_contents &book,
         }
 
         string schools =
+#if TAG_MAJOR_VERSION == 34
             source_item->base_type == OBJ_RODS ? "Evocations"
-                                               : _spell_schools(spell);
-        description.cprintf("%s%d\n",
+                                               :
+#endif
+                         _spell_schools(spell);
+
+        string known = "";
+        if (!mon_owner) {
+            known = you.spell_library[spell] ? "         yes" : "          no";
+        }
+
+        description.cprintf("%s%d%s\n",
                             chop_string(schools, 30).c_str(),
-                            spell_difficulty(spell));
+                            spell_difficulty(spell),
+                            known.c_str());
     }
 
     // are we halfway through a column?

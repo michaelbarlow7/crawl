@@ -511,8 +511,7 @@ static bool _boosted_ev()
 static bool _boosted_sh()
 {
     return you.duration[DUR_DIVINE_SHIELD]
-           || qazlal_sh_boost() > 0
-           || you.attribute[ATTR_BONE_ARMOUR] > 0;
+           || qazlal_sh_boost() > 0;
 }
 
 #ifdef DGL_SIMPLE_MESSAGING
@@ -550,14 +549,14 @@ void update_turn_count()
     // Show the turn count starting from 1. You can still quit on turn 0.
     textcolour(HUD_VALUE_COLOUR);
     if (Options.show_game_time)
-    {
-        CPRINTF("%.1f (%.1f)%s", you.elapsed_time / 10.0,
-                (you.elapsed_time - you.elapsed_time_at_last_input) / 10.0,
-                // extra spaces to erase excess if previous output was longer
-                "    ");
-    }
+        CPRINTF("%.1f", you.elapsed_time / 10.0);
     else
         CPRINTF("%d", you.num_turns);
+
+    CPRINTF(" (%.1f)%s",
+            (you.elapsed_time - you.elapsed_time_at_last_input) / 10.0,
+            // extra spaces to erase excess if previous output was longer
+            "    ");
     textcolour(LIGHTGREY);
 }
 
@@ -1418,7 +1417,6 @@ void print_stats()
         you.redraw_status_lights = false;
         _print_status_lights(11 + yhack);
     }
-    textcolour(LIGHTGREY);
 
 #ifdef USE_TILE_LOCAL
     if (has_changed)
@@ -2504,7 +2502,8 @@ private:
         if (find(equip_chars.begin(), equip_chars.end(), ch) != equip_chars.end())
         {
             item_def& item = you.inv[letter_to_index(ch)];
-            describe_item(item);
+            if (!describe_item(item))
+                return false;
             return true;
         }
         return formatted_scroller::process_key(ch);

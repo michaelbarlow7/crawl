@@ -165,7 +165,7 @@ static void _CURSES_world_reacts(item_def *item)
 {
     // don't spam messages for ash worshippers
     if (one_chance_in(30) && !have_passive(passive_t::want_curses))
-        curse_an_item(true);
+        curse_an_item();
 }
 
 static void _CURSES_melee_effects(item_def* weapon, actor* attacker,
@@ -371,19 +371,19 @@ static void _SINGING_SWORD_melee_effects(item_def* weapon, actor* attacker,
                                          actor* defender, bool mondied,
                                          int dam)
 {
-    int tension = get_tension(GOD_NO_GOD);
     int tier;
 
     if (attacker->is_player())
-        tier = max(1, min(4, 1 + tension / 20));
+        tier = max(1, min(4, 1 + get_tension(GOD_NO_GOD) / 20));
     // Don't base the sword on player state when the player isn't wielding it.
     else
         tier = 1;
 
-    dprf(DIAG_COMBAT, "Singing sword tension: %d, tier: %d", tension, tier);
-
     if (silenced(attacker->pos()))
         tier = 0;
+
+    dprf(DIAG_COMBAT, "Singing sword tension: %d, tier: %d",
+                attacker->is_player() ? get_tension(GOD_NO_GOD) : -1, tier);
 
     // Not as spammy at low tension. Max chance reached at tier 3, allowing
     // tier 0 to have a high chance so that the sword is likely to express its
@@ -398,7 +398,7 @@ static void _SINGING_SWORD_melee_effects(item_def* weapon, actor* attacker,
 
     const int loudness[] = {0, 0, 20, 30, 40};
 
-    item_noise(*weapon, msg, loudness[tier]);
+    item_noise(*weapon, *attacker, msg, loudness[tier]);
 
     if (tier < 1)
         return; // Can't cast when silenced.
@@ -522,7 +522,8 @@ static bool _WUCAD_MU_evoke(item_def *item, bool* did_work, bool* unevokable)
 
 static void _VAMPIRES_TOOTH_equip(item_def *item, bool *show_msgs, bool unmeld)
 {
-    if (you.undead_state() == US_ALIVE && !you_foodless())
+    if (you.undead_state() == US_ALIVE
+        && (you.species == SP_VAMPIRE || !you_foodless()))
     {
         _equip_mpr(show_msgs,
                    "You feel a strange hunger, and smell blood in the air...");
@@ -558,10 +559,7 @@ static void _ZONGULDROK_melee_effects(item_def* weapon, actor* attacker,
                                       actor* defender, bool mondied, int dam)
 {
     if (attacker->is_player())
-    {
         did_god_conduct(DID_EVIL, 3);
-        did_god_conduct(DID_CORPSE_VIOLATION, 3);
-    }
 }
 
 ///////////////////////////////////////////////////
@@ -1066,6 +1064,8 @@ static void _ORDER_melee_effects(item_def* item, actor* attacker,
                 mpr(msg);
             defender->hurt(attacker, silver_dam);
         }
+        else if (dam > 0)
+            defender->hurt(attacker, 1 + random2(dam) / 3);
     }
 }
 
@@ -1101,6 +1101,7 @@ static void _FIRESTARTER_melee_effects(item_def* weapon, actor* attacker,
 
 ///////////////////////////////////////////////////
 
+#if TAG_MAJOR_VERSION == 34
 static void _CHILLY_DEATH_equip(item_def *item, bool *show_msgs, bool unmeld)
 {
     _equip_mpr(show_msgs, "The dagger glows with an icy blue light!");
@@ -1134,9 +1135,11 @@ static void _CHILLY_DEATH_melee_effects(item_def* weapon, actor* attacker,
         }
     }
 }
+#endif
 
 ///////////////////////////////////////////////////
 
+#if TAG_MAJOR_VERSION == 34
 static void _FLAMING_DEATH_equip(item_def *item, bool *show_msgs, bool unmeld)
 {
     _equip_mpr(show_msgs, "The scimitar bursts into red hot flame!");
@@ -1163,6 +1166,7 @@ static void _FLAMING_DEATH_melee_effects(item_def* weapon, actor* attacker,
         }
     }
 }
+#endif
 
 ///////////////////////////////////////////////////
 
@@ -1281,6 +1285,7 @@ static void _ETHERIC_CAGE_world_reacts(item_def *item)
 
 ///////////////////////////////////////////////////
 
+#if TAG_MAJOR_VERSION == 34
 static void _ETERNAL_TORMENT_equip(item_def *item, bool *show_msgs, bool unmeld)
 {
     calc_hp();
@@ -1297,6 +1302,7 @@ static void _ETERNAL_TORMENT_unequip(item_def *item, bool *show_msgs)
 {
     calc_hp();
 }
+#endif
 
 ///////////////////////////////////////////////////
 
@@ -1342,8 +1348,11 @@ static void _FROSTBITE_melee_effects(item_def* weapon, actor* attacker,
 
 static void _LEECH_equip(item_def *item, bool *show_msgs, bool unmeld)
 {
-    if (you.undead_state() == US_ALIVE && !you_foodless())
+    if (you.undead_state() == US_ALIVE
+        && (you.species == SP_VAMPIRE || !you_foodless()))
+    {
         _equip_mpr(show_msgs, "You feel a powerful hunger.");
+    }
     else if (you.species != SP_VAMPIRE)
         _equip_mpr(show_msgs, "You feel very empty.");
     // else let player-equip.cc handle message
@@ -1418,5 +1427,24 @@ static void _ZHOR_world_reacts(item_def *item)
         && one_chance_in(7 * div_rand_round(BASELINE_DELAY, you.time_taken)))
     {
         cast_englaciation(30, false);
+    }
+}
+
+////////////////////////////////////////////////////
+
+// XXX: Staff of Battle giving a boost to conjuration spells is hardcoded in
+// player_spec_conj().
+
+static void _BATTLE_unequip(item_def *item, bool *show_msgs)
+{
+    end_battlesphere(find_battlesphere(&you), false);
+}
+
+static void _BATTLE_world_reacts(item_def *item)
+{
+    if (!find_battlesphere(&you) && there_are_monsters_nearby(true, true, false))
+    {
+        your_spells(SPELL_BATTLESPHERE, 0, false);
+        did_god_conduct(DID_SPELL_CASTING, 1);
     }
 }

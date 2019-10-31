@@ -431,6 +431,8 @@ struct timed_effect
     bool              arena;
 };
 
+// If you add an entry to this list, remember to add a matching entry
+// to timed_effect_type in timef-effect-type.h!
 static struct timed_effect timed_effects[] =
 {
     { rot_floor_items,               200,   200, true  },
@@ -694,10 +696,6 @@ static void _catchup_monster_moves(monster* mon, int turns)
     {
         return;
     }
-
-    // Don't shift ballistomycete spores since that would disrupt their trail.
-    if (mon->type == MONS_BALLISTOMYCETE_SPORE)
-        return;
 
     // special movement code for ioods
     if (mons_is_projectile(*mon))

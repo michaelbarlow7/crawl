@@ -27,7 +27,7 @@ void flay(const monster &caster, actor &defender, int damage);
 bool handle_mon_spell(monster* mons);
 
 static const int ENCH_POW_FACTOR = 3;
-int mons_power_for_hd(spell_type spell, int hd, bool random = true);
+int mons_power_for_hd(spell_type spell, int hd);
 int mons_spellpower(const monster &mons, spell_type spell);
 int mons_spell_range_for_hd(spell_type spell, int hd);
 bolt mons_spell_beam(const monster* mons, spell_type spell_cast, int power,
@@ -37,6 +37,7 @@ void mons_cast(monster* mons, bolt pbolt, spell_type spell_cast,
 void mons_cast_noise(monster* mons, const bolt &pbolt,
                      spell_type spell_cast, mon_spell_slot_flags slot_flags);
 bool setup_mons_cast(const monster* mons, bolt &pbolt, spell_type spell_cast,
+                     bool evoke = false,
                      bool check_validity = false);
 
 void mons_cast_haunt(monster* mons);

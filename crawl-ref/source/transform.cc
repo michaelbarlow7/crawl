@@ -980,7 +980,9 @@ static const Form* forms[] =
     &FormPig::instance(),
     &FormAppendage::instance(),
     &FormTree::instance(),
+#if TAG_MAJOR_VERSION == 34
     &FormPorcupine::instance(),
+#endif
 
     &FormWisp::instance(),
 #if TAG_MAJOR_VERSION == 34
@@ -1545,16 +1547,16 @@ undead_form_reason lifeless_prevents_form(transformation which_trans,
     if (which_trans == transformation::lich)
         return UFR_TOO_DEAD; // vampires can never lichform
 
-    if (which_trans == transformation::bat) // can batform on satiated or below
+    if (which_trans == transformation::bat) // can batform bloodless
     {
         if (involuntary)
             return UFR_TOO_DEAD; // but not as a forced polymorph effect
 
-        return you.hunger_state <= HS_SATIATED ? UFR_GOOD : UFR_TOO_ALIVE;
+        return !you.vampire_alive ? UFR_GOOD : UFR_TOO_ALIVE;
     }
 
-    // other forms can only be entered when satiated or above.
-    return you.hunger_state >= HS_SATIATED ? UFR_GOOD : UFR_TOO_DEAD;
+    // other forms can only be entered when alive
+    return you.vampire_alive ? UFR_GOOD : UFR_TOO_DEAD;
 }
 
 /**
@@ -1663,7 +1665,7 @@ bool transform(int pow, transformation which_trans, bool involuntary,
     else if (which_trans == transformation::lich
              && you.duration[DUR_DEATHS_DOOR])
     {
-        msg = "You cannot become a lich while in Death's Door.";
+        msg = "You cannot become a lich while in death's door.";
         success = false;
     }
 
@@ -1878,6 +1880,14 @@ bool transform(int pow, transformation which_trans, bool involuntary,
     if (was_flying && !you.airborne())
         move_player_to_grid(you.pos(), false);
 
+    // Stop emergency flight if it's activated and this form can fly
+    if (you.props[EMERGENCY_FLIGHT_KEY]
+        && form_can_fly()
+        && you.airborne())
+    {
+        you.props.erase(EMERGENCY_FLIGHT_KEY);
+    }
+
     // Update merfolk swimming for the form change.
     if (you.species == SP_MERFOLK)
         merfolk_check_swimming(false);
@@ -2090,4 +2100,17 @@ void merfolk_stop_swimming()
 #ifdef USE_TILE
     init_player_doll();
 #endif
+}
+
+void vampire_update_transformations()
+{
+    const undead_form_reason form_reason = lifeless_prevents_form();
+    if (form_reason != UFR_GOOD && you.duration[DUR_TRANSFORMATION])
+    {
+        print_stats();
+        mprf(MSGCH_WARN,
+             "Your blood-%s body can't sustain your transformation.",
+             form_reason == UFR_TOO_DEAD ? "deprived" : "filled");
+        untransform();
+    }
 }

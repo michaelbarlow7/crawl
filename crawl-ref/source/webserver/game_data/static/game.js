@@ -137,13 +137,16 @@ function ($, comm, client, dungeon_renderer, display, minimap, enums, messages,
             messages.show();
         }
         minimap.stop_minimap_farview();
+        minimap.update_overlay();
         display.invalidate(true);
         display.display();
     }
 
     function set_ui_state(state)
     {
+        dungeon_renderer.set_ui_state(state);
         if (state == ui_state) return;
+
         var old_state = ui_state;
         ui_state = state;
         switch (ui_state)
@@ -222,8 +225,9 @@ function ($, comm, client, dungeon_renderer, display, minimap, enums, messages,
         document.title = data.text;
     }
 
+    var device_ratio = window.devicePixelRatio;
     var renderer_settings = {
-        glyph_mode_font_size: 24,
+        glyph_mode_font_size: 24 * device_ratio,
         glyph_mode_font: "monospace"
     };
 
