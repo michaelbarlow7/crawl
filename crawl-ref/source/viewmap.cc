@@ -641,7 +641,6 @@ bool show_map(level_pos &lpos,
             lpos.id = level_id::current();
 
         cursor_control ccon(!Options.use_fake_cursor);
-        int i, j;
 
         int move_x = 0, move_y = 0, scroll_y = 0;
 
@@ -702,29 +701,11 @@ bool show_map(level_pos &lpos,
 
                 feats.init();
 
-                min_x = GXM, max_x = 0, min_y = 0, max_y = 0;
-                bool found_y = false;
-
-                for (j = 0; j < GYM; j++)
-                    for (i = 0; i < GXM; i++)
-                    {
-                        if (env.map_knowledge[i][j].known())
-                        {
-                            if (!found_y)
-                            {
-                                found_y = true;
-                                min_y = j;
-                            }
-
-                            max_y = j;
-
-                            if (i < min_x)
-                                min_x = i;
-
-                            if (i > max_x)
-                                max_x = i;
-                        }
-                    }
+                std::pair<coord_def, coord_def> bounds = known_map_bounds();
+                min_x = bounds.first.x;
+                min_y = bounds.first.y;
+                max_x = bounds.second.x;
+                max_y = bounds.second.y;
 
                 map_lines = max_y - min_y + 1;
 
@@ -1028,26 +1009,29 @@ bool show_map(level_pos &lpos,
             }
 
             case CMD_MAP_GOTO_LEVEL:
-            {
                 if (!allow_offlevel)
                     break;
 
-                string name;
-                const level_pos pos
-                    = prompt_translevel_target(TPF_DEFAULT_OPTIONS, name);
-
-                if (pos.id.depth < 1
-                    || pos.id.depth > brdepth[pos.id.branch]
-                    || !you.level_visited(pos.id))
                 {
-                    canned_msg(MSG_OK);
-                    redraw_map = true;
-                    break;
-                }
+                    string name;
+#ifdef USE_TILE_WEB
+                    tiles_ui_control msgwin(UI_NORMAL);
+#endif
+                    const level_pos pos
+                        = prompt_translevel_target(TPF_DEFAULT_OPTIONS, name);
 
-                lpos = pos;
+                    if (pos.id.depth < 1
+                        || pos.id.depth > brdepth[pos.id.branch]
+                        || !you.level_visited(pos.id))
+                    {
+                        canned_msg(MSG_OK);
+                        redraw_map = true;
+                        break;
+                    }
+
+                    lpos = pos;
+                }
                 continue;
-            }
 
             case CMD_MAP_JUMP_DOWN_LEFT:
                 move_x = -block_step;
@@ -1108,6 +1092,13 @@ bool show_map(level_pos &lpos,
                     move_y = you.pos().y - lpos.pos.y;
                 }
                 break;
+
+#ifdef USE_TILE
+            case CMD_MAP_ZOOM_IN:
+            case CMD_MAP_ZOOM_OUT:
+                tiles.zoom_dungeon(cmd == CMD_MAP_ZOOM_IN);
+                break;
+#endif
 
             case CMD_MAP_FIND_UPSTAIR:
             case CMD_MAP_FIND_DOWNSTAIR:
@@ -1188,6 +1179,7 @@ bool show_map(level_pos &lpos,
                             move_y = you.travel_y - lpos.pos.y;
                         }
                         else if (allow_offlevel && you.travel_z.is_valid()
+                                        && can_travel_to(you.travel_z)
                                         && you.level_visited(you.travel_z))
                         {
                             // previous travel target is offlevel
@@ -1213,7 +1205,12 @@ bool show_map(level_pos &lpos,
                 if (!is_map_persistent())
                     mpr("You can't annotate this level.");
                 else
+                {
+#ifdef USE_TILE_WEB
+                    tiles_ui_control msgwin(UI_NORMAL);
+#endif
                     do_annotate(lpos.id);
+                }
 
                 redraw_map = true;
                 break;

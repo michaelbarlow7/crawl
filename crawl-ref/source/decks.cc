@@ -409,16 +409,15 @@ static void _describe_cards(CrawlVector& cards)
         title_hbox->add_child(move(icon));
 #endif
         auto title = make_shared<Text>(formatted_string(name, WHITE));
-        title->set_margin_for_crt({0, 0, 0, 0});
-        title->set_margin_for_sdl({0, 0, 0, 10});
+        title->set_margin_for_sdl(0, 0, 0, 10);
         title_hbox->add_child(move(title));
-        title_hbox->align_items = Widget::CENTER;
-        title_hbox->set_margin_for_crt({first ? 0 : 1, 0, 1, 0});
-        title_hbox->set_margin_for_sdl({first ? 0 : 20, 0, 20, 0});
+        title_hbox->align_cross = Widget::CENTER;
+        title_hbox->set_margin_for_crt(first ? 0 : 1, 0);
+        title_hbox->set_margin_for_sdl(first ? 0 : 20, 0);
         vbox->add_child(move(title_hbox));
 
         auto text = make_shared<Text>(desc);
-        text->wrap_text = true;
+        text->set_wrap_text(true);
         vbox->add_child(move(text));
 
 #ifdef USE_TILE_WEB
@@ -431,7 +430,7 @@ static void _describe_cards(CrawlVector& cards)
     }
 
 #ifdef USE_TILE_LOCAL
-    vbox->max_size()[0] = tiles.get_crt_font()->char_width()*80;
+    vbox->max_size().width = tiles.get_crt_font()->char_width()*80;
 #endif
 
     scroller->set_child(move(vbox));
@@ -523,7 +522,7 @@ static char _deck_hotkey(deck_type deck)
 
 static deck_type _choose_deck(const string title = "Draw")
 {
-    ToggleableMenu deck_menu(MF_SINGLESELECT | MF_ANYPRINTABLE
+    ToggleableMenu deck_menu(MF_SINGLESELECT
             | MF_NO_WRAP_ROWS | MF_TOGGLE_ACTION | MF_ALWAYS_SHOW_MORE);
     {
         ToggleableMenuEntry* me =
@@ -532,9 +531,6 @@ static deck_type _choose_deck(const string title = "Draw")
                                     "Describe which deck?    "
                                     "Cards available",
                                     MEL_TITLE);
-#ifdef USE_TILE_LOCAL
-        me->colour = BLUE;
-#endif
         deck_menu.set_title(me, true, true);
     }
     deck_menu.set_tag("deck");
@@ -718,9 +714,6 @@ static void _draw_stack(int to_stack)
                                     "Describe which deck?    "
                                     "Cards available",
                                     MEL_TITLE);
-#ifdef USE_TILE_LOCAL
-        me->colour = BLUE;
-#endif
         deck_menu.set_title(me, true, true);
     }
     deck_menu.set_tag("deck");

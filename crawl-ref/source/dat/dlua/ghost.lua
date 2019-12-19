@@ -265,9 +265,12 @@ end
 -- Set up the chaos dancing weapon for ebering_ghost_xom and
 -- ebering_vaults_ghost_xom.
 function setup_xom_dancing_weapon(e)
-    quality = ""
-    great_weight = 1
-    great_weapons = {}
+    local quality = ""
+    local great_weight = 1
+    local base_weapons = {}
+    local good_weapons = {}
+    local great_weapons = {}
+    local variability = nil
 
     -- Progress the base type of weapons so that it's more reasonable as reward
     -- as depth increases. The very rare weapons only show up at all in later
@@ -309,12 +312,14 @@ function setup_xom_dancing_weapon(e)
         quality = crawl.coinflip() and "good_item"
                   or crawl.coinflip() and "randart"
                   or ""
-        variability = not you.unrands("mace of Variability")
-                      and crawl.one_chance_in(100) and "mace of Variability"
+
+        -- if variability has already generated, this will end up with a
+        -- chaos branded great mace as a backup.
+        variability = crawl.one_chance_in(100) and "mace of Variability"
     end
 
     -- Make one weapons table with each weapon getting weight by class.
-    weapons = {}
+    local weapons = {}
     for _, wname in ipairs(base_weapons) do
         weapons[wname] = 10
     end

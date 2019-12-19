@@ -90,11 +90,6 @@ battleaxe
 
 A large war axe with a formidable double-sided head.
 %%%%
-blowgun
-
-A long, light tube, open at both ends, through which various types of needles
-are propelled by puffs of breath at enemies. It makes very little noise.
-%%%%
 bolt
 
 A metal projectile, shorter than an arrow, intended to be shot from a crossbow.
@@ -348,6 +343,13 @@ dagger
 
 A double-edged fighting knife with a sharp point.
 %%%%
+dart
+
+A thin piece of metal, typically coated in some harmful substance. When
+thrown with skill it can deliver its toxins into the bloodstream of a
+living or demonic being. In addition to throwing skill, stealth skill improves
+the chance for a dart to affect its target.
+%%%%
 decaying skeleton
 
 A decaying skeleton.
@@ -524,7 +526,9 @@ inedible chunk of flesh
 %%%%
 javelin
 
-A lightweight spear, designed for throwing.
+A lightweight spear, designed for throwing. It will pass through the targets it
+hits, potentially hitting all targets in its path until it reaches maximum
+range.
 {{
     if you.race() == "Halfling"
         or you.race() == "Kobold"
@@ -607,12 +611,6 @@ An extremely rare book, powerful and sinister. Many foolhardy magicians have
 tried to study this tome, only to find themselves entangled within necromantic
 forces they could not hope to control.
 %%%%
-needle
-
-A thin piece of metal, typically coated in some harmful substance. When
-launched from a blowgun it can deliver its toxins into the bloodstream of a
-living or demonic being.
-%%%%
 orb of zot
 
 An invaluable artefact. Once you have escaped to the surface with it, your
@@ -666,13 +664,14 @@ potion of berserk rage
 
 A potion which can send one into an incoherent rage.
 %%%%
+# TAG_MAJOR_VERSION == 34
 potion of blood
 
 A potion containing the essence of life.
 %%%%
 potion of brilliance
 
-A potion which greatly increases the intelligence and magical power of one who
+A potion which greatly increases the intelligence and spell power of one who
 drinks it.
 %%%%
 potion of cancellation
@@ -927,8 +926,8 @@ contaminated with magical energy.
 scroll of brand weapon
 
 A scroll that imbues a weapon with a random brand, such as flame, freezing, or
-venom. Any existing brand will be replaced. Blowguns and artefacts cannot be
-branded in this way.
+venom. Any existing brand will be replaced. Artefacts cannot be branded in this
+way.
 %%%%
 scroll of enchant armour
 
@@ -1140,9 +1139,9 @@ A mesh of ropes knotted together with weights around the edge, used to entangle
 and entrap targets. Struggling victims can eventually destroy the net and break
 free, if they live long enough.
 %%%%
-tomahawk
+boomerang
 
-A small axe, designed for throwing.
+A curved, flat, throwing baton designed to return to its user.
 %%%%
 trident
 
@@ -1201,8 +1200,8 @@ A magical device which throws little puffs of flame.
 %%%%
 wand of iceblast
 
-A magical device which throws exploding shards of ice, partially harming even
-creatures resistant to cold.
+A magical device which creates a loud explosion of ice shards, partially
+harming even creatures resistant to cold.
 %%%%
 wand of paralysis
 

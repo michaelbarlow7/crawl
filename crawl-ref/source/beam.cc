@@ -2555,43 +2555,6 @@ void bolt::affect_ground()
     if (is_tracer)
         return;
 
-    // Spore explosions might spawn a fungus. The spore explosion
-    // covers 21 tiles in open space, so the expected number of spores
-    // produced is the x in x_chance_in_y() in the conditional below.
-    if (is_explosion && flavour == BEAM_SPORE
-        && agent() && !agent()->is_summoned())
-    {
-        if (env.grid(pos()) == DNGN_FLOOR)
-            env.pgrid(pos()) |= FPROP_MOLD;
-
-        if (x_chance_in_y(2, 21)
-           && mons_class_can_pass(MONS_BALLISTOMYCETE, env.grid(pos()))
-           && !actor_at(pos()))
-        {
-            beh_type beh = attitude_creation_behavior(attitude);
-            // A friendly spore or hyperactive can exist only with Fedhas
-            // in which case the inactive ballistos spawned should be
-            // good_neutral to avoid hidden piety costs of Fedhas abilities
-            if (beh == BEH_FRIENDLY)
-                beh = BEH_GOOD_NEUTRAL;
-
-            const god_type god = agent()->deity();
-
-            if (create_monster(mgen_data(MONS_BALLISTOMYCETE,
-                                         beh,
-                                         pos(),
-                                         MHITNOT,
-                                         MG_FORCE_PLACE,
-                                         god)))
-            {
-                remove_mold(pos());
-                if (you.see_cell(pos()))
-                    mpr("A fungus suddenly grows.");
-
-            }
-        }
-    }
-
     affect_place_clouds();
 }
 
@@ -2622,7 +2585,7 @@ bool bolt::can_affect_wall(const coord_def& p, bool map_knowledge) const
         return true;
     }
 
-    // Temporary trees (from Summon Forest) can't be burned/distintegrated.
+    // Temporary trees (from Summon Forest) can't be burned.
     if (feat_is_tree(wall) && is_temp_terrain(p))
         return false;
 
@@ -3761,9 +3724,12 @@ void bolt::affect_player()
     if (!YOU_KILL(thrower))
     {
         if (agent() && agent()->is_monster())
-            interrupt_activity(AI_MONSTER_ATTACKS, agent()->as_monster());
+        {
+            interrupt_activity(activity_interrupt::monster_attacks,
+                               agent()->as_monster());
+        }
         else
-            interrupt_activity(AI_MONSTER_ATTACKS);
+            interrupt_activity(activity_interrupt::monster_attacks);
     }
 
     if (flavour == BEAM_MISSILE && item)
@@ -4017,11 +3983,11 @@ int bolt::apply_AC(const actor *victim, int hurted)
     switch (flavour)
     {
     case BEAM_DAMNATION:
-        ac_rule = AC_NONE; break;
+        ac_rule = ac_type::none; break;
     case BEAM_ELECTRICITY:
-        ac_rule = AC_HALF; break;
+        ac_rule = ac_type::half; break;
     case BEAM_FRAG:
-        ac_rule = AC_TRIPLE; break;
+        ac_rule = ac_type::triple; break;
     default: ;
     }
 
@@ -4185,6 +4151,19 @@ void bolt::handle_stop_attack_prompt(monster* mon)
     {
         beam_cancelled = true;
         finish_beam();
+    }
+    // Handle enslaving monsters when OTR is up: give a prompt for attempting
+    // to enslave monsters that don't have rPois with Toxic status.
+    else if (flavour == BEAM_ENSLAVE && you.duration[DUR_TOXIC_RADIANCE]
+             && mon->res_poison() <= 0)
+    {
+        string verb = make_stringf("enslave %s", mon->name(DESC_THE).c_str());
+        if (otr_stop_summoning_prompt(verb))
+        {
+            beam_cancelled = true;
+            finish_beam();
+            prompted = true;
+        }
     }
 
     if (prompted)
@@ -4420,7 +4399,6 @@ void bolt::monster_post_hit(monster* mon, int dmg)
     // did no damage. Hostiles will still take umbrage.
     if (dmg > 0 || !mon->wont_attack() || !YOU_KILL(thrower))
     {
-        bool was_asleep = mon->asleep();
         special_missile_type m_brand = SPMSL_FORBID_BRAND;
         if (item && item->base_type == OBJ_MISSILES)
             m_brand = get_ammo_brand(*item);
@@ -4433,11 +4411,6 @@ void bolt::monster_post_hit(monster* mon, int dmg)
             if (!mon->alive())
                 return;
         }
-
-
-        // Don't allow needles of sleeping to awaken monsters.
-        if (m_brand == SPMSL_SLEEP && was_asleep && !mon->asleep())
-            mon->put_to_sleep(agent(), 0);
     }
 
     if (YOU_KILL(thrower) && !mon->wont_attack() && !mons_is_firewood(*mon))

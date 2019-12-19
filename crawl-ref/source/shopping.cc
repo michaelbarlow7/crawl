@@ -295,10 +295,13 @@ unsigned int item_value(item_def item, bool ident)
                 break;
 
             case SPMSL_CURARE:
+            case SPMSL_BLINDING:
+            case SPMSL_SILVER:
+#if TAG_MAJOR_VERSION == 34
             case SPMSL_PARALYSIS:
             case SPMSL_PENETRATION:
-            case SPMSL_SILVER:
             case SPMSL_STEEL:
+#endif
             case SPMSL_DISPERSAL:
                 valued *= 30;
                 break;
@@ -306,16 +309,16 @@ unsigned int item_value(item_def item, bool ident)
 #if TAG_MAJOR_VERSION == 34
             case SPMSL_FLAME:
             case SPMSL_FROST:
-#endif
             case SPMSL_SLEEP:
             case SPMSL_CONFUSION:
                 valued *= 25;
                 break;
+#endif
 
-            case SPMSL_EXPLODING:
             case SPMSL_POISONED:
-            case SPMSL_RETURNING:
 #if TAG_MAJOR_VERSION == 34
+            case SPMSL_RETURNING:
+            case SPMSL_EXPLODING:
             case SPMSL_SLOW:
             case SPMSL_SICKNESS:
 #endif
@@ -510,8 +513,8 @@ unsigned int item_value(item_def item, bool ident)
             case POT_PORRIDGE:
             case POT_SLOWING:
             case POT_DECAY:
-#endif
             case POT_BLOOD:
+#endif
             case POT_DEGENERATION:
                 valued += 10;
                 break;
@@ -820,8 +823,8 @@ bool is_worthless_consumable(const item_def &item)
         switch (item.sub_type)
         {
         // Blood potions are worthless because they are easy to make.
-        case POT_BLOOD:
 #if TAG_MAJOR_VERSION == 34
+        case POT_BLOOD:
         case POT_BLOOD_COAGULATED:
         case POT_SLOWING:
         case POT_DECAY:

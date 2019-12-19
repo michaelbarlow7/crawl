@@ -88,7 +88,8 @@ function beast_lair_populate_mons_large(e)
 end
 
 function beast_lair_populate_mons_small(e)
-    if crawl.one_chance_in(25) then
+    -- don't do this while validating because this call changes the tags
+    if not e.is_validating() and crawl.one_chance_in(25) then
         beast_lair_populate_mons_large(e)
     else
         local monster_list = {}
@@ -2378,13 +2379,7 @@ NAME:    minmay_guarded_unrand_snakebite
 TAGS:    ruin
 DEPTH:   Lair
 ORIENT:  southeast
-: if you.unrands("snakebite") then
-# A randart venom demon whip is unlikely to be useful
-# for someone with snakebite, so just do this
-ITEM:    demon whip good_item
-: else
 ITEM:    snakebite no_pickup
-: end
 KMONS:   A = adder
 KMONS:   B = water moccasin
 KMONS:   C = black mamba

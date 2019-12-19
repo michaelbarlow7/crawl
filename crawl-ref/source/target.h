@@ -225,13 +225,13 @@ private:
     int _range;
 };
 
-enum shadow_step_block_reason
+enum class shadow_step_blocked
 {
-    BLOCKED_NONE,
-    BLOCKED_OCCUPIED,
-    BLOCKED_MOVE,
-    BLOCKED_PATH,
-    BLOCKED_NO_TARGET,
+    none,
+    occupied,
+    move,
+    path,
+    no_target,
 };
 
 class targeter_shadow_step : public targeter
@@ -250,8 +250,8 @@ private:
     void set_additional_sites(coord_def a);
     void get_additional_sites(coord_def a);
     bool valid_landing(coord_def a, bool check_invis = true);
-    shadow_step_block_reason no_landing_reason;
-    shadow_step_block_reason blocked_landing_reason;
+    shadow_step_blocked no_landing_reason;
+    shadow_step_blocked blocked_landing_reason;
     set<coord_def> temp_sites;
     int range;
 };
@@ -323,4 +323,16 @@ public:
     bool affects_monster(const monster_info& mon) override;
 private:
     map<coord_def, int> aim_test_cache;
+};
+
+class targeter_overgrow: public targeter
+{
+public:
+    targeter_overgrow();
+    bool valid_aim(coord_def a) override;
+    aff_type is_affected(coord_def loc) override;
+    bool set_aim(coord_def a) override;
+    set<coord_def> affected_positions;
+private:
+    bool overgrow_affects_pos(const coord_def &p);
 };

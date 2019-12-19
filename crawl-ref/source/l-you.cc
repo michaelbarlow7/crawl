@@ -188,7 +188,7 @@ LUARET1(you_skill_progress, number,
  * @function can_train_skill
  */
 LUARET1(you_can_train_skill, boolean,
-        lua_isstring(ls, 1) ? you.can_train[str_to_skill(lua_tostring(ls, 1))]
+        lua_isstring(ls, 1) ? you.can_currently_train[str_to_skill(lua_tostring(ls, 1))]
                             : false)
 /*** Best skill.
  * @treturn string
@@ -475,7 +475,7 @@ LUARET1(you_turns_on_level, number, env.turns_on_level)
 /*** Interrupt the current multi-turn activity or macro sequence.
  * @function stop_activity
  */
-LUAWRAP(you_stop_activity, interrupt_activity(AI_FORCE_INTERRUPT))
+LUAWRAP(you_stop_activity, interrupt_activity(activity_interrupt::force))
 /*** Are you taking the stairs?
  * @treturn boolean
  * @function taking_stairs
@@ -1524,6 +1524,12 @@ LUAFN(you_init)
     PLUARET(string, skill_name(item_attack_skill(OBJ_WEAPONS, ng.weapon)));
 }
 
+LUAFN(you_enter_wizard_mode)
+{
+    you.wizard = true;
+    return 0;
+}
+
 LUARET1(you_exp_needed, number, exp_needed(luaL_safe_checkint(ls, 1)))
 LUAWRAP(you_exercise, exercise(str_to_skill(luaL_checkstring(ls, 1)), 1))
 LUARET1(you_skill_cost_level, number, you.skill_cost_level)
@@ -1565,6 +1571,7 @@ static const struct luaL_reg you_dlib[] =
 { "delete_all_mutations", you_delete_all_mutations },
 { "change_species",     you_change_species },
 #ifdef WIZARD
+{ "enter_wizard_mode",  you_enter_wizard_mode },
 { "set_xl",             you_set_xl },
 #endif
 

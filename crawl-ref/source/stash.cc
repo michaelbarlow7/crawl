@@ -225,7 +225,8 @@ bool Stash::needs_stop() const
 bool Stash::is_boring_feature(dungeon_feature_type feature)
 {
     // Count shops as boring features, because they are handled separately.
-    return !is_notable_terrain(feature) || feature == DNGN_ENTER_SHOP;
+    return !is_notable_terrain(feature) && !feat_is_trap(feature)
+        || feature == DNGN_ENTER_SHOP;
 }
 
 static bool _grid_has_perceived_item(const coord_def& pos)
@@ -460,6 +461,7 @@ vector<stash_search_result> Stash::matches_search(
             || is_dumpable_artefact(item) && search.matches(chardump_desc(item)))
         {
             stash_search_result res;
+            res.match_type = MATCH_ITEM;
             res.match = s;
             res.primary_sort = item.name(DESC_QUALNAME);
             res.item = item;
@@ -467,14 +469,17 @@ vector<stash_search_result> Stash::matches_search(
         }
     }
 
-    if (results.empty() && feat != DNGN_FLOOR)
+    if (feat != DNGN_FLOOR)
     {
         const string fdesc = feature_description();
-        if (!fdesc.empty() && search.matches(fdesc))
+        if (!fdesc.empty() && search.matches(prefix + " " + fdesc))
         {
             stash_search_result res;
+            res.match_type = MATCH_FEATURE;
             res.match = fdesc;
             res.primary_sort = fdesc;
+            res.feat = feat;
+            res.trap = trap;
             results.push_back(res);
         }
     }
@@ -707,6 +712,7 @@ vector<stash_search_result> ShopInfo::matches_search(
         stash_search_result res;
         res.match = shoptitle;
         res.primary_sort = shoptitle;
+        res.match_type = MATCH_SHOP;
         res.shop = this;
         res.pos.pos = shop.pos;
         results.push_back(res);
@@ -729,6 +735,7 @@ vector<stash_search_result> ShopInfo::matches_search(
             || search.matches(shop_item_desc(item)))
         {
             stash_search_result res;
+            res.match_type = MATCH_ITEM;
             res.match = sname;
             res.primary_sort = item.name(DESC_QUALNAME);
             res.item = item;
@@ -1244,14 +1251,18 @@ protected:
 
 static bool _is_potentially_boring(stash_search_result res)
 {
-    return res.item.defined() && !res.in_inventory && !res.shop
-           && (res.item.base_type == OBJ_WEAPONS
-               || res.item.base_type == OBJ_ARMOUR
-               || res.item.base_type == OBJ_MISSILES)
-           && (item_type_known(res.item) || !item_is_branded(res.item));
+    return res.match_type == MATCH_ITEM && res.item.defined()
+        && !res.in_inventory
+        && (res.item.base_type == OBJ_WEAPONS
+            || res.item.base_type == OBJ_ARMOUR
+            || res.item.base_type == OBJ_MISSILES)
+        && (item_type_known(res.item) || !item_is_branded(res.item))
+        || res.match_type == MATCH_FEATURE && feat_is_trap(res.feat);
 }
 
-static bool _is_duplicate_for_search(stash_search_result l, stash_search_result r, bool ignore_missile_stacks=true)
+static bool _is_duplicate_for_search(stash_search_result l,
+                                     stash_search_result r,
+                                     bool ignore_missile_stacks=true)
 {
     if (l.in_inventory || r.in_inventory)
         return false;
@@ -1387,11 +1398,31 @@ static vector<stash_search_result> _stash_filter_duplicates(vector<stash_search_
     for (const stash_search_result &res : in)
     {
         if (out.size() && !out.back().in_inventory &&
-            _is_potentially_boring(res) && _is_duplicate_for_search(out.back(), res))
+            _is_potentially_boring(res) && _is_duplicate_for_search(out.back(),
+                                                                    res))
+        // don't push_back duplicates
         {
-            // don't push_back the duplicate
-            out.back().duplicate_piles++;
-            out.back().duplicates += res.item.quantity;
+            stash_match_type mtype = out.back().match_type;
+            switch (mtype)
+            {
+            case MATCH_ITEM:
+                out.back().duplicate_piles++;
+                out.back().duplicates += res.item.quantity;
+                break;
+            case MATCH_FEATURE:
+                // number of piles is meaningless for features; just keep track
+                // of how many we've found
+                out.back().duplicates++;
+                break;
+                // We shouldn't get here (shops aren't boring enough to
+                // deduplicate). But in case it becomes possible we won't
+                // collapse entries.
+            default:
+                out.push_back(res);
+                out.back().duplicate_piles = 0;
+                out.back().duplicates = 0;
+                break;
+            }
         }
         else
         {
@@ -1403,43 +1434,45 @@ static vector<stash_search_result> _stash_filter_duplicates(vector<stash_search_
     return out;
 }
 
-void StashTracker::search_stashes()
+void StashTracker::search_stashes(string search_term)
 {
     char buf[400];
 
     update_corpses();
     update_identification();
 
-    stash_search_reader reader(buf, sizeof buf);
-
-    bool validline = false;
-    msgwin_prompt(stash_search_prompt());
-    while (true)
+    if (search_term.empty())
     {
-        int ret = reader.read_line();
-        if (!ret)
-        {
-            validline = true;
-            break;
-        }
-        else if (ret == '?')
-        {
-            show_stash_search_help();
-            redraw_screen();
-        }
-        else
-            break;
-    }
-    msgwin_reply(validline ? buf : "");
+        stash_search_reader reader(buf, sizeof buf);
 
-    clear_messages();
-    if (!validline || (!*buf && lastsearch.empty()))
-    {
-        canned_msg(MSG_OK);
-        return;
-    }
+        bool validline = false;
+        msgwin_prompt(stash_search_prompt());
+        while (true)
+        {
+            int ret = reader.read_line();
+            if (!ret)
+            {
+                validline = true;
+                break;
+            }
+            else if (ret == '?')
+            {
+                show_stash_search_help();
+                redraw_screen();
+            }
+            else
+                break;
+        }
+        msgwin_reply(validline ? buf : "");
 
-    string csearch_literal = *buf? buf : lastsearch;
+        clear_messages();
+        if (!validline || (!*buf && lastsearch.empty()))
+        {
+            canned_msg(MSG_OK);
+            return;
+        }
+    }
+    string csearch_literal = search_term.empty() ? (*buf? buf : lastsearch) : search_term;
     string csearch = csearch_literal;
 
     bool curr_lev = (csearch[0] == '@' || csearch == ".");
@@ -1521,24 +1554,24 @@ void StashTracker::search_stashes()
         {
             // use the deduplicated results if we are filtering useless items
             again = display_search_results(dedup_results,
-                                                      sort_by_dist,
-                                                      filter_useless,
-                                                      default_execute,
-                                                      search,
-                                                      csearch == "."
-                                                      || csearch == "..",
-                                                      results.size());
+                                           sort_by_dist,
+                                           filter_useless,
+                                           default_execute,
+                                           search,
+                                           csearch == "."
+                                           || csearch == "..",
+                                           results.size());
         }
         else
         {
             again = display_search_results(results,
-                                                      sort_by_dist,
-                                                      filter_useless,
-                                                      default_execute,
-                                                      search,
-                                                      csearch == "."
-                                                      || csearch == "..",
-                                                      dedup_results.size());
+                                           sort_by_dist,
+                                           filter_useless,
+                                           default_execute,
+                                           search,
+                                           csearch == "."
+                                           || csearch == "..",
+                                           dedup_results.size());
         }
         if (!again)
             break;
@@ -1624,7 +1657,8 @@ formatted_string StashSearchMenu::calc_title()
             menu_action == ACT_EXECUTE ? "travel" : "view  ",
             sort_style, filtered));
     }
-    fs.cprintf(string(max(0, strwidth(prefixes[!f])-strwidth(prefixes[f])), ' '));
+    fs.cprintf(string(max(0, strwidth(prefixes[!f])-strwidth(prefixes[f])),
+                      ' '));
     return fs;
 }
 
@@ -1665,7 +1699,8 @@ bool StashTracker::display_search_results(
                               filter_useless ? "hide" : "show");
     stashmenu.set_tag("stash");
     stashmenu.action_cycle = Menu::CYCLE_TOGGLE;
-    stashmenu.menu_action  = default_execute ? Menu::ACT_EXECUTE : Menu::ACT_EXAMINE;
+    stashmenu.menu_action  = default_execute ? Menu::ACT_EXECUTE
+                                             : Menu::ACT_EXAMINE;
     string title = "match";
 
     MenuEntry *mtitle = new MenuEntry(title, MEL_TITLE);
@@ -1687,8 +1722,11 @@ bool StashTracker::display_search_results(
         matchtitle << res.match;
         if (res.duplicates > 0)
         {
-            matchtitle << " (" << res.duplicates << " further duplicate" << (res.duplicates == 1 ? "" : "s");
-            if (res.duplicates != res.duplicate_piles)
+            matchtitle << " (" << res.duplicates << " further duplicate" <<
+                (res.duplicates == 1 ? "" : "s");
+            if (res.duplicates != res.duplicate_piles  // piles are only
+                                                       // meaningful for items
+                && res.match_type == MATCH_ITEM)
             {
                 matchtitle << " in " << res.duplicate_piles
                            << " pile" << (res.duplicate_piles == 1 ? "" : "s");
@@ -1722,6 +1760,17 @@ bool StashTracker::display_search_results(
         }
         else if (res.shop)
             me->add_tile(tile_def(tileidx_shop(&res.shop->shop), TEX_FEAT));
+        else if (feat_is_trap(res.feat))
+        {
+            const tileidx_t idx = tileidx_trap(res.trap);
+            me->add_tile(tile_def(idx, get_dngn_tex(idx)));
+        }
+        else if (feat_is_runed(res.feat))
+        {
+            // Handle large doors and huge gates
+            const tileidx_t idx = tileidx_feature_base(res.feat);
+            me->add_tile(tile_def(idx, get_dngn_tex(idx)));
+        }
         else
         {
             const dungeon_feature_type feat = feat_by_desc(res.match);

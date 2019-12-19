@@ -105,6 +105,7 @@
     Matthew Boeh
     Mike Boutin
     John Boyle
+    Josh Braden
     Daniel Mark Brownrigg
     Andre Bubel
     Trent W. Buck
@@ -119,11 +120,13 @@
     Thom Chiovoloni
     Anthony Chuah
     Henry Cipolla
+    CollinJ
     Nicholas Connelly
     Tom Conrad
     Vitor 'Baconkid' Costa
     Aaron Curtis
     Simon Curtis
+    cut1less
     Paul Dejean
     Denzi
     Lothar Dierkes
@@ -140,6 +143,7 @@
     Micha Elsner
     Carl-Oscar Erneholm
     Erich Erstu
+    Higor Eurípedes
     Christopher Evenstar
     Floodkiller
     floraline
@@ -188,6 +192,7 @@
     Vesa Kivimäki
     Daniel Klein
     Jon Knapp
+    Quinten Konyn
     Ilkka Koskela
     infiniplex
     Vambola Kotkas
@@ -197,6 +202,7 @@
     Lorenzo Lami
     Lantier
     Maciej Lapinski
+    Nikolai Lavsky
     Lamil Lerran
     Jordan Lewis
     Sami Liedes
@@ -215,6 +221,7 @@
     Paul Maloney
     Pablo Mansanet
     Wille Mäntylä
+    Gabriel Marks
     Jean Martel
     James 'Eronarn' Meickle
     Jacob Meigs
@@ -231,9 +238,9 @@
     Naruni
     neofelis
     nicolae
-    Nikolai Lavsky
     Jonathon Nooner
     NormalPerson7
+    Michael Nowack
     Erkki Nurmi
     Mattias Nyberg
     nyra
@@ -257,14 +264,17 @@
     Iago Porto
     psywombats
     pubby
+    Ashley Elizabeth Raine
     Edward Randtke
     Derek Ray
     RealzHS
     Terence Reeves
     Tobias Rehbein
     Remsleep
+    Chris Rendle-Short
     Ryan Riegel
     RjY
+    rmcneive
     Andy Roche
     rockygargoyle
     Will Rogers
@@ -274,6 +284,7 @@
     Sebastian Salman
     Sandman25
     Brett Scarborough
+    sdynet
     Roman Sêk
     Brennan Shacklett
     ShadyAmish
@@ -284,7 +295,6 @@
     Robert Shimmin
     Sigurd
     Edgar Simo
-    Skrybe
     Alex Smith
     Keanan Smith
     Richard Soderberg
@@ -297,6 +307,7 @@
     Jan 'heftig' Steffens
     Stenella
     Timothy Stiles
+    John Stilley
     Johan Strandell
     Ben Striegel
     Derrick Sund
@@ -309,8 +320,10 @@
     Jared 'Twinge' Tinney
     Matt Titus
     Tommy
+    Sean VanMeter
     Mikko Vepsäläinen
     WanderingBlade
+    Richard Wardin
     waylon531
     Steven Wheeler
     Thomas Willem
@@ -335,7 +348,7 @@ The Dungeon Crawl Stone Soup development team is:
     Corin Buchanan-Howland
     James Bulgin
     Robert Burnham
-    Chris Campbell
+    Kate Campbell
     Matthew Cline
     Florian Diebold
     Rax E. Dillon

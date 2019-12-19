@@ -541,7 +541,9 @@ static const pair<god_type, dungeon_feature_type> _god_altars[] =
     { GOD_GOZAG, DNGN_ALTAR_GOZAG },
     { GOD_QAZLAL, DNGN_ALTAR_QAZLAL },
     { GOD_RU, DNGN_ALTAR_RU },
+#if TAG_MAJOR_VERSION == 34
     { GOD_PAKELLAS, DNGN_ALTAR_PAKELLAS },
+#endif
     { GOD_USKAYAW, DNGN_ALTAR_USKAYAW },
     { GOD_HEPLIAKLQANA, DNGN_ALTAR_HEPLIAKLQANA },
     { GOD_WU_JIAN, DNGN_ALTAR_WU_JIAN },
@@ -1075,7 +1077,10 @@ void dgn_move_entities_at(coord_def src, coord_def dst,
         move_item_stack_to_grid(src, dst);
 
     if (cell_is_solid(dst))
+    {
         delete_cloud(src);
+        delete_cloud(dst); // in case there was already a clear there
+    }
     else
         move_cloud(src, dst);
 
@@ -1142,34 +1147,33 @@ static void _dgn_check_terrain_items(const coord_def &pos, bool preserve_items)
     }
 }
 
-static void _dgn_check_terrain_monsters(const coord_def &pos)
+static bool _dgn_check_terrain_monsters(const coord_def &pos)
 {
     if (monster* m = monster_at(pos))
+    {
         m->apply_location_effects(pos);
+        return true;
+    }
+    else
+        return false;
 }
 
-// Clear blood or mold off of terrain that shouldn't have it. Also clear
-// of blood if a bloody wall has been dug out and replaced by a floor,
-// or if a bloody floor has been replaced by a wall.
+// Clear blood or off of terrain that shouldn't have it. Also clear of blood if
+// a bloody wall has been dug out and replaced by a floor, or if a bloody floor
+// has been replaced by a wall.
 static void _dgn_check_terrain_covering(const coord_def &pos,
                                      dungeon_feature_type old_feat,
                                      dungeon_feature_type new_feat)
 {
-    if (!testbits(env.pgrid(pos), FPROP_BLOODY)
-        && !is_moldy(pos))
-    {
+    if (!testbits(env.pgrid(pos), FPROP_BLOODY))
         return;
-    }
 
     if (new_feat == DNGN_UNSEEN)
     {
         // Caller has already changed the grid, and old_feat is actually
         // the new feat.
         if (old_feat != DNGN_FLOOR && !feat_is_solid(old_feat))
-        {
             env.pgrid(pos) &= ~(FPROP_BLOODY);
-            remove_mold(pos);
-        }
     }
     else
     {
@@ -1178,7 +1182,6 @@ static void _dgn_check_terrain_covering(const coord_def &pos,
             || feat_is_critical(new_feat))
         {
             env.pgrid(pos) &= ~(FPROP_BLOODY);
-            remove_mold(pos);
         }
     }
 }
@@ -1221,6 +1224,8 @@ void dungeon_terrain_changed(const coord_def &pos,
 {
     if (grd(pos) == nfeat)
         return;
+    if (_dgn_check_terrain_monsters(pos) && feat_is_wall(nfeat))
+        return;
 
     _dgn_check_terrain_covering(pos, grd(pos), nfeat);
 
@@ -1246,7 +1251,6 @@ void dungeon_terrain_changed(const coord_def &pos,
     }
 
     _dgn_check_terrain_items(pos, preserve_items);
-    _dgn_check_terrain_monsters(pos);
     if (!wizmode)
         _dgn_check_terrain_player(pos);
     if (!temporary && feature_mimic_at(pos))
@@ -1847,8 +1851,6 @@ void destroy_wall(const coord_def& p)
     if (is_bloodcovered(p))
         env.pgrid(p) &= ~(FPROP_BLOODY);
 
-    remove_mold(p);
-
     _revert_terrain_to_floor(p);
     env.level_map_mask(p) |= MMT_TURNED_TO_FLOOR;
 }
@@ -2103,12 +2105,10 @@ static dungeon_feature_type _destroyed_feat_type()
 static bool _revert_terrain_to_floor(coord_def pos)
 {
     dungeon_feature_type newfeat = _destroyed_feat_type();
-    bool found_marker = false;
     for (map_marker *marker : env.markers.get_markers_at(pos))
     {
         if (marker->get_type() == MAT_TERRAIN_CHANGE)
         {
-            found_marker = true;
             map_terrain_change_marker* tmarker =
                     dynamic_cast<map_terrain_change_marker*>(marker);
 
@@ -2140,11 +2140,8 @@ static bool _revert_terrain_to_floor(coord_def pos)
     grd(pos) = newfeat;
     set_terrain_changed(pos);
 
-    if (found_marker)
-    {
-        tile_clear_flavour(pos);
-        tile_init_flavour(pos);
-    }
+    tile_clear_flavour(pos);
+    tile_init_flavour(pos);
 
     return true;
 }

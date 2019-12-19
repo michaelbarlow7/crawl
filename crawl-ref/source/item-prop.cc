@@ -610,9 +610,11 @@ static const weapon_def Weapon_prop[] =
         }},
 
     // Range weapons
+#if TAG_MAJOR_VERSION == 34
     { WPN_BLOWGUN,           "blowgun",             0,  2, 10,
         SK_THROWING,     SIZE_LITTLE, SIZE_LITTLE, MI_NEEDLE,
-        DAMV_NON_MELEE, 5, 0, 25, {}, },
+        DAMV_NON_MELEE, 0, 0, 0, {}, },
+#endif
 
     { WPN_HUNTING_SLING,     "hunting sling",       5,  2, 12,
         SK_SLINGS,       SIZE_LITTLE, SIZE_LITTLE, MI_STONE,
@@ -652,10 +654,10 @@ struct missile_def
 static int Missile_index[NUM_MISSILES];
 static const missile_def Missile_prop[] =
 {
+    { MI_DART,          "dart",          0, 12, 2,  true  },
 #if TAG_MAJOR_VERSION == 34
-    { MI_DART,          "dart",          2, 1,  1,  true  },
-#endif
     { MI_NEEDLE,        "needle",        0, 12, 2,  false },
+#endif
     { MI_STONE,         "stone",         2, 8,  1,  true  },
     { MI_ARROW,         "arrow",         0, 8,  2,  false },
     { MI_BOLT,          "bolt",          0, 8,  2,  false },
@@ -663,7 +665,7 @@ static const missile_def Missile_prop[] =
     { MI_SLING_BULLET,  "sling bullet",  4, 8,  5,  false },
     { MI_JAVELIN,       "javelin",      10, 20, 8,  true  },
     { MI_THROWING_NET,  "throwing net",  0, 0,  30, true  },
-    { MI_TOMAHAWK,      "tomahawk",      6, 20, 5,  true  },
+    { MI_BOOMERANG,     "boomerang",     6, 20, 5,  true  },
 };
 
 struct food_def
@@ -748,6 +750,7 @@ const set<pair<object_class_type, int> > removed_items =
     { OBJ_POTIONS,   POT_WATER },
     { OBJ_POTIONS,   POT_STRONG_POISON },
     { OBJ_POTIONS,   POT_BLOOD_COAGULATED },
+    { OBJ_POTIONS,   POT_BLOOD },
     { OBJ_POTIONS,   POT_PORRIDGE },
     { OBJ_POTIONS,   POT_SLOWING },
     { OBJ_POTIONS,   POT_DECAY },
@@ -830,34 +833,22 @@ static bool _maybe_note_found_unrand(const item_def &item)
 }
 
 /**
- * Is the provided item cursable? Note: this function would leak
- * information about unidentified holy wrath weapons, which is alright
- * because only Ashenzari worshippers can deliberately curse items and
- * they see all weapon egos anyway.
+ * Is the provided item cursable?
  *
  * @param item  The item under consideration.
- * @return      Whether the given item is a blessed weapon.
+ * @return      Whether the given item is cursable.
  */
-bool item_is_cursable(const item_def &item, bool ignore_holy_wrath)
+bool item_is_cursable(const item_def &item)
 {
     if (!item_type_has_curses(item.base_type))
         return false;
     if (item_known_cursed(item))
         return false;
-    if (!ignore_holy_wrath
-        && item.base_type == OBJ_WEAPONS
-        && (get_weapon_brand(item) == SPWPN_HOLY_WRATH
-            || you.duration[DUR_EXCRUCIATING_WOUNDS]
-               && item_is_equipped(item)
-               && you.props[ORIGINAL_BRAND_KEY].get_int() == SPWPN_HOLY_WRATH))
-    {
-        return false;
-    }
     return true;
 }
 
 // Curses a random player inventory item.
-bool curse_an_item(bool ignore_holy_wrath)
+bool curse_an_item()
 {
     // allowing these would enable mummy scumming
     if (have_passive(passive_t::want_curses))
@@ -875,7 +866,7 @@ bool curse_an_item(bool ignore_holy_wrath)
         if (!item.defined())
             continue;
 
-        if (!item_is_cursable(item, ignore_holy_wrath))
+        if (!item_is_cursable(item))
             continue;
 
         // Item is valid for cursing, so we'll give it a chance.
@@ -909,28 +900,6 @@ void do_curse_item(item_def &item, bool quiet)
     if (!is_weapon(item) && item.base_type != OBJ_ARMOUR
         && item.base_type != OBJ_JEWELLERY)
     {
-        return;
-    }
-
-    // Holy wrath weapons cannot be cursed.
-    if (item.base_type == OBJ_WEAPONS
-        && (get_weapon_brand(item) == SPWPN_HOLY_WRATH
-            || you.duration[DUR_EXCRUCIATING_WOUNDS]
-               && item_is_equipped(item)
-               && you.props[ORIGINAL_BRAND_KEY].get_int() == SPWPN_HOLY_WRATH))
-    {
-        if (!quiet)
-        {
-            mprf("Your %s glows black briefly, but repels the curse.",
-                 item.name(DESC_PLAIN).c_str());
-            if (is_artefact(item))
-                artefact_learn_prop(item, ARTP_BRAND);
-            else
-                set_ident_flags(item, ISFLAG_KNOW_TYPE);
-
-            if (!item_brand_known(item))
-                mprf_nocap("%s", item.name(DESC_INVENTORY_EQUIP).c_str());
-        }
         return;
     }
 
@@ -1885,8 +1854,14 @@ bool is_brandable_weapon(const item_def &wpn, bool allow_ranged, bool divine)
     if (is_artefact(wpn))
         return false;
 
-    if (!allow_ranged && is_range_weapon(wpn) || wpn.sub_type == WPN_BLOWGUN)
+    if (!allow_ranged && is_range_weapon(wpn)
+#if TAG_MAJOR_VERSION == 34
+        || wpn.sub_type == WPN_BLOWGUN
+#endif
+       )
+    {
         return false;
+    }
 
     // Only gods can rebrand blessed weapons, and they revert back to their
     // old base type in the process.
@@ -2066,7 +2041,7 @@ bool has_launcher(const item_def &ammo)
            && ammo.sub_type != MI_DART
 #endif
            && ammo.sub_type != MI_JAVELIN
-           && ammo.sub_type != MI_TOMAHAWK
+           && ammo.sub_type != MI_BOOMERANG
            && ammo.sub_type != MI_THROWING_NET;
 }
 
@@ -2268,18 +2243,16 @@ bool is_real_food(food_type food)
     return food < NUM_FOODS && Food_index[food] < Food_index[FOOD_UNUSED];
 }
 
-#endif
 bool is_blood_potion(const item_def &item)
 {
     if (item.base_type != OBJ_POTIONS)
         return false;
 
     return item.sub_type == POT_BLOOD
-#if TAG_MAJOR_VERSION == 34
            || item.sub_type == POT_BLOOD_COAGULATED
-#endif
             ;
 }
+#endif
 
 bool food_is_meaty(int food_type)
 {

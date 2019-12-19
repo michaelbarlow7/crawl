@@ -27,6 +27,7 @@
 #include "libutil.h"
 #include "map-knowledge.h"
 #include "menu.h"
+#include "outer-menu.h"
 #include "message.h"
 #include "mon-util.h"
 #include "notes.h"
@@ -75,6 +76,8 @@ TilesFramework::TilesFramework() :
       _send_lock(false),
       m_last_ui_state(UI_INIT),
       m_view_loaded(false),
+      m_current_view(coord_def(GXM, GYM)),
+      m_next_view(coord_def(GXM, GYM)),
       m_next_view_tl(0, 0),
       m_next_view_br(-1, -1),
       m_current_flash_colour(BLACK),
@@ -85,8 +88,8 @@ TilesFramework::TilesFramework() :
 {
     screen_cell_t default_cell;
     default_cell.tile.bg = TILE_FLAG_UNSEEN;
-    m_next_view.init(default_cell);
-    m_current_view.init(default_cell);
+    m_current_view.fill(default_cell);
+    m_next_view.fill(default_cell);
 }
 
 TilesFramework::~TilesFramework()
@@ -429,6 +432,14 @@ wint_t TilesFramework::_handle_control_message(sockaddr_un addr, string data)
         scroll.check(JSON_NUMBER);
         recv_formatted_scroller_scroll((int)scroll->number_);
     }
+    else if (msgtype == "outer_menu_focus")
+    {
+        JsonWrapper menu_id = json_find_member(obj.node, "menu_id");
+        JsonWrapper hotkey = json_find_member(obj.node, "hotkey");
+        menu_id.check(JSON_STRING);
+        hotkey.check(JSON_NUMBER);
+        OuterMenu::recv_outer_menu_focus(menu_id->string_, (int)hotkey->number_);
+    }
 
     return c;
 }
@@ -548,6 +559,39 @@ void TilesFramework::_send_options()
     Options.write_webtiles_options("options");
     json_close_object();
     finish_message();
+}
+
+#define ZOOM_INC 10
+
+static void _set_option_int(string name, int value)
+{
+    tiles.json_open_object();
+    tiles.json_write_string("msg", "set_option");
+    tiles.json_write_string("name", name);
+    tiles.json_write_int("value", value);
+    tiles.json_close_object();
+    tiles.finish_message();
+}
+
+void TilesFramework::zoom_dungeon(bool in)
+{
+    if (m_ui_state == UI_VIEW_MAP)
+    {
+        Options.tile_map_scale = min(300, max(20,
+                    Options.tile_map_scale + (in ? ZOOM_INC : -ZOOM_INC)));
+        _set_option_int("tile_map_scale", Options.tile_map_scale);
+        dprf("Zooming map to %d", Options.tile_map_scale);
+    }
+    else
+    {
+        Options.tile_viewport_scale = min(300, max(20,
+                    Options.tile_viewport_scale + (in ? ZOOM_INC : -ZOOM_INC)));
+        _set_option_int("tile_viewport_scale", Options.tile_viewport_scale);
+        dprf("Zooming to %d", Options.tile_viewport_scale);
+    }
+    // calling redraw explicitly is not needed here: it triggers from a
+    // listener on the webtiles side.
+    // TODO: how to implement dynamic max zoom that reacts to the webtiles side?
 }
 
 void TilesFramework::_send_layout()
@@ -675,7 +719,7 @@ void TilesFramework::push_ui_cutoff()
 void TilesFramework::pop_ui_cutoff()
 {
     m_ui_cutoff_stack.pop_back();
-    int cutoff = m_ui_cutoff_stack.empty() ? 0 : m_ui_cutoff_stack.back();
+    int cutoff = m_ui_cutoff_stack.empty() ? -1 : m_ui_cutoff_stack.back();
     send_message("{\"msg\":\"ui_cutoff\",\"cutoff\":%d}", cutoff);
 }
 
@@ -1063,7 +1107,7 @@ void TilesFramework::_send_item(item_info& current, const item_info& next,
     }
 }
 
-static void _send_doll(const dolls_data &doll, bool submerged, bool ghost)
+void TilesFramework::send_doll(const dolls_data &doll, bool submerged, bool ghost)
 {
     // Ordered from back to front.
     // FIXME: Implement this logic in one place in e.g. pack_doll_buf().
@@ -1097,6 +1141,17 @@ static void _send_doll(const dolls_data &doll, bool submerged, bool ghost)
     {
         p_order[7] = TILEP_PART_BOOTS;
         p_order[6] = TILEP_PART_LEG;
+    }
+
+    // Draw scarves above other clothing.
+    if (doll.parts[TILEP_PART_CLOAK] >= TILEP_CLOAK_SCARF_FIRST_NORM)
+    {
+        p_order[4] = p_order[5];
+        p_order[5] = p_order[6];
+        p_order[6] = p_order[7];
+        p_order[7] = p_order[8];
+        p_order[8] = p_order[9];
+        p_order[9] = TILEP_PART_CLOAK;
     }
 
     // Special case bardings from being cut off.
@@ -1146,17 +1201,17 @@ static void _send_doll(const dolls_data &doll, bool submerged, bool ghost)
     tiles.json_close_array();
 }
 
-void TilesFramework::send_mcache(mcache_entry *entry, bool submerged, bool send_doll)
+void TilesFramework::send_mcache(mcache_entry *entry, bool submerged, bool send)
 {
     bool trans = entry->transparent();
-    if (trans && send_doll)
+    if (trans && send)
         tiles.json_write_int("trans", 1);
 
     const dolls_data *doll = entry->doll();
-    if (send_doll)
+    if (send)
     {
         if (doll)
-            _send_doll(*doll, submerged, trans);
+            send_doll(*doll, submerged, trans);
         else
         {
             tiles.json_write_comma();
@@ -1188,12 +1243,10 @@ static bool _needs_flavour(const packed_cell &cell)
     tileidx_t bg_idx = cell.bg & TILE_FLAG_MASK;
     if (bg_idx >= TILE_DNGN_FIRST_TRANSPARENT)
         return true; // Needs flv.floor
-    if (cell.is_liquefied || cell.is_bloody ||
-        cell.is_moldy || cell.glowing_mold)
-    {
+    if (cell.is_liquefied || cell.is_bloody)
         return true; // Needs flv.special
-    }
     return false;
+
 }
 
 static inline unsigned _get_brand(int col)
@@ -1299,11 +1352,12 @@ void TilesFramework::_send_cell(const coord_def &gc,
         if (next_pc.halo != current_pc.halo)
             json_write_int("halo", next_pc.halo);
 
-        if (next_pc.is_moldy != current_pc.is_moldy)
-            json_write_bool("moldy", next_pc.is_moldy);
-
-        if (next_pc.glowing_mold != current_pc.glowing_mold)
-            json_write_bool("glowing_mold", next_pc.glowing_mold);
+        if (next_pc.is_highlighted_summoner
+            != current_pc.is_highlighted_summoner)
+        {
+            json_write_bool("highlighted_summoner",
+                            next_pc.is_highlighted_summoner);
+        }
 
         if (next_pc.is_sanctuary != current_pc.is_sanctuary)
             json_write_bool("sanctuary", next_pc.is_sanctuary);
@@ -1372,7 +1426,7 @@ void TilesFramework::_send_cell(const coord_def &gc,
             }
             if (fg_changed || player_doll_changed)
             {
-                _send_doll(last_player_doll, in_water, false);
+                send_doll(last_player_doll, in_water, false);
                 if (Options.tile_use_monster != MONS_0)
                 {
                     monster_info minfo(MONS_PLAYER, MONS_PLAYER);
@@ -1543,7 +1597,7 @@ void TilesFramework::_send_map(bool force_full)
 
                 draw_cell(cell, gc, false, m_current_flash_colour);
                 cell->tile.flv = env.tile_flv(gc);
-                pack_cell_overlays(gc, &(cell->tile));
+                pack_cell_overlays(gc, m_next_view);
             }
 
             mark_clean(gc);
@@ -1691,6 +1745,16 @@ void TilesFramework::load_dungeon(const crawl_view_buffer &vbuf,
                 mark_for_redraw(coord_def(x, y));
         }
 
+    // re-cache the map knowledge for the whole map, not just the updated portion
+    // fixes render bugs for out-of-LOS when transitioning levels in shoals/slime
+    for (int y = 0; y < GYM; y++)
+        for (int x = 0; x < GXM; x++)
+        {
+            const coord_def cache_gc(x, y);
+            screen_cell_t *cell = &m_next_view(cache_gc);
+            cell->tile.map_knowledge = map_bounds(cache_gc) ? env.map_knowledge(cache_gc) : map_cell();
+        }
+
     m_next_view_tl = view2grid(coord_def(1, 1));
     m_next_view_br = view2grid(crawl_view.viewsz);
 
@@ -1708,7 +1772,7 @@ void TilesFramework::load_dungeon(const crawl_view_buffer &vbuf,
 
             *cell = ((const screen_cell_t *) vbuf)[x + vbuf.size().x * y];
             cell->tile.flv = env.tile_flv(grid);
-            pack_cell_overlays(grid, &(cell->tile));
+            pack_cell_overlays(grid, m_next_view);
 
             mark_clean(grid); // Remove redraw flag
             mark_dirty(grid);
@@ -1778,6 +1842,7 @@ void TilesFramework::_send_everything()
     json_open_array("items");
     for (UIStackFrame &frame : m_menu_stack)
     {
+        json_write_comma(); // noop immediately following open
         if (frame.type == UIStackFrame::MENU)
             frame.menu->webtiles_write_menu();
         else if (frame.type == UIStackFrame::CRT)
@@ -1799,7 +1864,6 @@ void TilesFramework::_send_everything()
                 }
             continue;
         }
-        json_write_comma();
     }
     json_close_array();
     json_close_object();
@@ -1830,11 +1894,6 @@ void TilesFramework::cgotoxy(int x, int y, GotoRegion region)
 {
     m_print_x = x - 1;
     m_print_y = y - 1;
-
-    // XXX: an ugly hack necessary for webtiles X to work properly
-    // when showing message prompts (e.g. X!, XG)
-    if (region == GOTO_STAT || region == GOTO_MSG)
-        set_ui_state(UI_NORMAL);
 
     bool crt_popup = region == GOTO_CRT && !m_menu_stack.empty() &&
             m_menu_stack.back().type == UIStackFrame::CRT;

@@ -397,6 +397,13 @@ static bool _is_portal_place(const coord_def &c)
     return _marker_is_portal(env.markers.find(c, MAT_LUA_MARKER));
 }
 
+static bool _is_transporter_place(const coord_def &c)
+{
+    auto m = env.markers.find(c, MAT_LUA_MARKER);
+    return m && (!m->property(TRANSPORTER_NAME_PROP).empty()
+                 || !m->property(TRANSPORTER_DEST_NAME_PROP).empty());
+}
+
 static bool _map_safe_vault_place(const map_def &map,
                                   const coord_def &c,
                                   const coord_def &size)
@@ -440,12 +447,14 @@ static bool _map_safe_vault_place(const map_def &map,
                     return false;
             }
         }
-        else if (grd(cp) != DNGN_FLOOR || env.pgrid(cp) & FPROP_NO_TELE_INTO)
+        else if (grd(cp) != DNGN_FLOOR || env.pgrid(cp) & FPROP_NO_TELE_INTO
+                                       || _is_transporter_place(cp))
         {
             // Don't place overwrite_floor_cell vaults on anything but floor or
             // on squares that can't be teleported into, because
             // overwrite_floor_cell is used for things that are expected to be
-            // connected.
+            // connected. Don't place on transporter markers, because these will
+            // later themselves overwrite whatever feature this vault places.
             return false;
         }
 
@@ -721,10 +730,11 @@ mapref_vector find_maps_for_tag(const string &tag,
 {
     mapref_vector maps;
     level_id place = level_id::current();
+    unordered_set<string> tag_set = parse_tags(tag);
 
     for (const map_def &mapdef : vdefs)
     {
-        if (mapdef.has_tag(tag)
+        if (mapdef.has_all_tags(tag_set.begin(), tag_set.end())
             && !mapdef.has_tag("dummy")
             && (!check_depth || !mapdef.has_depth()
                 || mapdef.is_usable_in(place))
@@ -851,7 +861,7 @@ bool map_selector::accept(const map_def &mapdef) const
             return false;
         }
         return mapdef.is_minivault() == mini
-               && _is_extra_compatible(extra, mapdef.has_tag("extra"))
+               && _is_extra_compatible(extra, mapdef.is_extra_vault())
                && mapdef.place.is_usable_in(place)
                && _map_matches_layout_type(mapdef)
                && !mapdef.map_already_used();
@@ -860,7 +870,7 @@ bool map_selector::accept(const map_def &mapdef) const
     {
         const map_chance chance(mapdef.chance(place));
         return mapdef.is_minivault() == mini
-               && _is_extra_compatible(extra, mapdef.has_tag("extra"))
+               && _is_extra_compatible(extra, mapdef.is_extra_vault())
                && (!chance.valid() || mapdef.has_tag("dummy"))
                && depth_selectable(mapdef)
                && !mapdef.map_already_used();
@@ -873,12 +883,12 @@ bool map_selector::accept(const map_def &mapdef) const
         return chance.valid()
                && !mapdef.has_tag("dummy")
                && depth_selectable(mapdef)
-               && _is_extra_compatible(extra, mapdef.has_tag("extra"))
+               && _is_extra_compatible(extra, mapdef.is_extra_vault())
                && !mapdef.map_already_used();
     }
 
     case TAG:
-        return mapdef.has_tag(tag)
+        return mapdef.has_all_tags(tag) // allow multiple tags, for temple overflow vaults
                && (!check_depth
                    || !mapdef.has_depth()
                    || mapdef.is_usable_in(place))

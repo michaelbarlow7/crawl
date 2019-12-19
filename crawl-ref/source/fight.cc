@@ -158,7 +158,8 @@ bool fight_melee(actor *attacker, actor *defender, bool *did_hit, bool simu)
             attk.simu = true;
 
         // We're trying to hit a monster, break out of travel/explore now.
-        interrupt_activity(AI_HIT_MONSTER, defender->as_monster());
+        interrupt_activity(activity_interrupt::hit_monster,
+                           defender->as_monster());
 
         // Check if the player is fighting with something unsuitable,
         // or someone unsuitable.
@@ -598,7 +599,7 @@ int apply_chunked_AC(int dam, int ac)
 
     int hurt = 0;
     for (int i = 0; i < dam; i++)
-        if (get_uint32() < cr)
+        if (rng::get_uint32() < cr)
             hurt++;
 
     return hurt;
@@ -618,10 +619,11 @@ bool wielded_weapon_check(item_def *weapon)
         return true;
     }
 
-    // Don't pester the player if they're using UC or if they don't have any
-    // melee weapons yet.
+    // Don't pester the player if they're using UC, in treeform,
+    // or if they don't have any melee weapons yet.
     if (!weapon
         && (you.skill(SK_UNARMED_COMBAT) > 0
+            || you.form == transformation::tree
             || !any_of(you.inv.begin(), you.inv.end(),
                        [](item_def &it)
                        { return is_melee_weapon(it) && can_wield(&it); })))
@@ -633,7 +635,7 @@ bool wielded_weapon_check(item_def *weapon)
     if (weapon)
         prompt = "Really attack while wielding " + weapon->name(DESC_YOUR) + "?";
     else
-        prompt = "Really attack barehanded?";
+        prompt = "Really attack unarmed?";
     if (penance)
         prompt += " This could place you under penance!";
 
@@ -872,8 +874,6 @@ int mons_usable_missile(monster* mons, item_def **launcher)
     }
 }
 
-
-
 bool bad_attack(const monster *mon, string& adj, string& suffix,
                 bool& would_cause_penance, coord_def attack_pos)
 {
@@ -1069,6 +1069,39 @@ bool stop_attack_prompt(targeter &hitfunc, const char* verb,
 
     if (prompted)
         *prompted = true;
+
+    if (yesno(prompt.c_str(), false, 'n'))
+        return false;
+    else
+    {
+        canned_msg(MSG_OK);
+        return true;
+    }
+}
+
+/**
+ * Does the player have Olgreb's Toxic Radiance up that would/could cause
+ * a hostile summon to be created? If so, prompt the player as to whether they
+ * want to continue to create their summon. Note that this prompt is never a
+ * penance prompt, because we don't cause penance when monsters enter line of
+ * sight when OTR is active, regardless of how they entered LOS.
+ *
+ * @param verb    The verb to be used in the prompt. Defaults to "summon".
+ * @return        True if the player wants to abort.
+ */
+bool otr_stop_summoning_prompt(string verb)
+{
+    if (!you.duration[DUR_TOXIC_RADIANCE])
+        return false;
+
+    if (crawl_state.disables[DIS_CONFIRMATIONS])
+        return false;
+
+    if (crawl_state.which_god_acting() == GOD_XOM)
+        return false;
+
+    string prompt = make_stringf("Really %s while emitting a toxic aura?",
+                                 verb.c_str());
 
     if (yesno(prompt.c_str(), false, 'n'))
         return false;

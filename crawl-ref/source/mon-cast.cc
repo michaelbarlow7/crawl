@@ -14,6 +14,7 @@
 
 #include "act-iter.h"
 #include "areas.h"
+#include "attack.h"
 #include "bloodspatter.h"
 #include "branch.h"
 #include "cleansing-flame-source-type.h"
@@ -867,7 +868,7 @@ void init_mons_spells()
 #if TAG_MAJOR_VERSION == 34
             spell == SPELL_MELEE ||
 #endif
-            setup_mons_cast(&fake_mon, pbolt, spell, true))
+            setup_mons_cast(&fake_mon, pbolt, spell, false, true))
         {
             _valid_mon_spells[i] = true;
         }
@@ -1048,16 +1049,13 @@ static bool _set_hex_target(monster* caster, bolt& pbolt)
  * What value do monsters multiply their hd with to get spellpower, for the
  * given spell?
  *
- * XXX: everything except SPELL_CONFUSION_GAZE could be trivially exported to
- * data.
+ * XXX: everything could be trivially exported to data.
  *
  * @param spell     The spell in question.
- * @param random    Whether to randomize powers for weird spells.
- *                  If false, the average value is used.
  * @return          A multiplier to HD for spellpower.
  *                  Value may exceed 200.
  */
-static int _mons_power_hd_factor(spell_type spell, bool random)
+static int _mons_power_hd_factor(spell_type spell)
 {
     const mons_spell_logic* logic = map_find(spell_to_logic, spell);
     if (logic && logic->power_hd_factor)
@@ -1066,9 +1064,7 @@ static int _mons_power_hd_factor(spell_type spell, bool random)
     switch (spell)
     {
         case SPELL_CONFUSION_GAZE:
-            if (random)
-                return 5 * (2 + random2(3)) * ENCH_POW_FACTOR;
-            return 5 * (2 + 1) * ENCH_POW_FACTOR;
+            return 8 * ENCH_POW_FACTOR;
 
         case SPELL_CAUSE_FEAR:
             return 18 * ENCH_POW_FACTOR;
@@ -1077,6 +1073,7 @@ static int _mons_power_hd_factor(spell_type spell, bool random)
             return 10 * ENCH_POW_FACTOR;
 
         case SPELL_SIREN_SONG:
+        case SPELL_AVATAR_SONG:
             return 9 * ENCH_POW_FACTOR;
 
         case SPELL_MASS_CONFUSION:
@@ -1115,13 +1112,11 @@ static int _mons_power_hd_factor(spell_type spell, bool random)
  *
  * @param spell     The spell in question.
  * @param hd        The spell_hd of the given monster.
- * @param random    Whether to randomize powers for weird spells.
- *                  If false, the average value is used.
  * @return          A spellpower value for the spell.
  */
-int mons_power_for_hd(spell_type spell, int hd, bool random)
+int mons_power_for_hd(spell_type spell, int hd)
 {
-    const int power = hd * _mons_power_hd_factor(spell, random);
+    const int power = hd * _mons_power_hd_factor(spell);
     if (spell == SPELL_PAIN)
         return max(50 * ENCH_POW_FACTOR, power);
     return power;
@@ -1733,6 +1728,7 @@ bolt mons_spell_beam(const monster* mons, spell_type spell_cast, int power,
 
 // Set up bolt structure for monster spell casting.
 bool setup_mons_cast(const monster* mons, bolt &pbolt, spell_type spell_cast,
+                     bool evoke,
                      bool check_validity)
 {
     // always set these -- used by things other than fire_beam()
@@ -1881,7 +1877,9 @@ bool setup_mons_cast(const monster* mons, bolt &pbolt, spell_type spell_cast,
     case SPELL_SEAL_DOORS:
     case SPELL_BERSERK_OTHER:
     case SPELL_SPELLFORGED_SERVITOR:
+#if TAG_MAJOR_VERSION == 34
     case SPELL_THROW:
+#endif
     case SPELL_THROW_ALLY:
     case SPELL_CORRUPTING_PULSE:
     case SPELL_SIREN_SONG:
@@ -1915,6 +1913,7 @@ bool setup_mons_cast(const monster* mons, bolt &pbolt, spell_type spell_cast,
     case SPELL_GREATER_SERVANT_MAKHLEB:
     case SPELL_BIND_SOULS:
     case SPELL_DREAM_DUST:
+    case SPELL_SPORULATE:
         pbolt.range = 0;
         pbolt.glyph = 0;
         return true;
@@ -1937,7 +1936,8 @@ bool setup_mons_cast(const monster* mons, bolt &pbolt, spell_type spell_cast,
     }
     }
 
-    const int power = mons_spellpower(*mons, spell_cast);
+    const int power = evoke ? 30 + mons->get_hit_dice()
+                            : mons_spellpower(*mons, spell_cast);
 
     bolt theBeam = mons_spell_beam(mons, spell_cast, power);
 
@@ -3191,8 +3191,8 @@ monster* cast_phantom_mirror(monster* mons, monster* targ, int hp_perc, int summ
     mirror->mark_summoned(5, true, summ_type);
     mirror->add_ench(ENCH_PHANTOM_MIRROR);
     mirror->summoner = mons->mid;
-    mirror->hit_points = mirror->hit_points * 100 / hp_perc;
-    mirror->max_hit_points = mirror->max_hit_points * 100 / hp_perc;
+    mirror->hit_points = max(mirror->hit_points * hp_perc / 100, 1);
+    mirror->max_hit_points = max(mirror->max_hit_points * hp_perc / 100, 1);
 
     // Sometimes swap the two monsters, so as to disguise the original and the
     // copy.
@@ -5720,9 +5720,10 @@ void mons_cast(monster* mons, bolt pbolt, spell_type spell_cast,
                   false);
         return;
     }
+    bool evoke {slot_flags & MON_SPELL_EVOKE};
     // Always do setup. It might be done already, but it doesn't hurt
     // to do it again (cheap).
-    setup_mons_cast(mons, pbolt, spell_cast);
+    setup_mons_cast(mons, pbolt, spell_cast, evoke);
 
     // single calculation permissible {dlb}
     const spell_flags flags = get_spell_flags(spell_cast);
@@ -5770,7 +5771,8 @@ void mons_cast(monster* mons, bolt pbolt, spell_type spell_cast,
     }
 
     const god_type god = _find_god(*mons, slot_flags);
-    const int splpow = mons_spellpower(*mons, spell_cast);
+    const int splpow = evoke ? 30 + mons->get_hit_dice()
+                             : mons_spellpower(*mons, spell_cast);
 
     switch (spell_cast)
     {
@@ -5779,19 +5781,19 @@ void mons_cast(monster* mons, bolt pbolt, spell_type spell_cast,
 
     case SPELL_WATERSTRIKE:
     {
-        if (you.can_see(*foe))
-        {
-            if (foe->airborne())
-                mprf("The water rises up and strikes %s!", foe->name(DESC_THE).c_str());
-            else
-                mprf("The water swirls and strikes %s!", foe->name(DESC_THE).c_str());
-        }
-
         pbolt.flavour    = BEAM_WATER;
 
         int damage_taken = waterstrike_damage(*mons).roll();
         damage_taken = foe->beam_resists(pbolt, damage_taken, false);
         damage_taken = foe->apply_ac(damage_taken);
+
+        if (you.can_see(*foe))
+        {
+                mprf("The water %s and strikes %s%s",
+                        foe->airborne() ? "rises up" : "swirls",
+                        foe->name(DESC_THE).c_str(),
+                        attack_strength_punctuation(damage_taken).c_str());
+        }
 
         foe->hurt(mons, damage_taken, BEAM_MISSILE, KILLED_BY_BEAM,
                       "", "by the raging water");
@@ -5800,28 +5802,22 @@ void mons_cast(monster* mons, bolt pbolt, spell_type spell_cast,
 
     case SPELL_AIRSTRIKE:
     {
-        // Damage averages 14 for 5HD, 18 for 10HD, 28 for 20HD, +50% if flying.
-        if (foe->is_player())
-        {
-            if (you.airborne())
-                mpr("The air twists around and violently strikes you in flight!");
-            else
-                mpr("The air twists around and strikes you!");
-        }
-        else
-        {
-            simple_monster_message(*foe->as_monster(),
-                                   " is struck by the twisting air!");
-        }
-
         pbolt.flavour = BEAM_AIR;
 
-        int damage_taken = 10 + 2 * mons->get_hit_dice();
+        int damage_taken = 8 + random2(2 + div_rand_round(splpow, 7));
         damage_taken = foe->beam_resists(pbolt, damage_taken, false);
 
-        // Previous method of damage calculation (in line with player
-        // airstrike) had absurd variance.
-        damage_taken = foe->apply_ac(random2avg(damage_taken, 3));
+        damage_taken = foe->apply_ac(damage_taken);
+
+        if (you.can_see(*foe))
+        {
+                mprf("The air twists around and %sstrikes %s%s%s",
+                        foe->airborne() ? "violently " : "",
+                        foe->name(DESC_THE).c_str(),
+                        foe->airborne() ? " in flight" : "",
+                        attack_strength_punctuation(damage_taken).c_str());
+        }
+
         foe->hurt(mons, damage_taken, BEAM_MISSILE, KILLED_BY_BEAM,
                   "", "by the air");
         return;
@@ -6816,7 +6812,7 @@ void mons_cast(monster* mons, bolt pbolt, spell_type spell_cast,
     case SPELL_CLEANSING_FLAME:
         simple_monster_message(*mons, " channels a blast of cleansing flame!");
         cleansing_flame(5 + (5 * mons->spell_hd(spell_cast) / 12),
-                        CLEANSING_FLAME_SPELL, mons->pos(), mons);
+                        cleansing_flame_source::spell, mons->pos(), mons);
         return;
 
     case SPELL_GRAVITAS:
@@ -6878,6 +6874,22 @@ void mons_cast(monster* mons, bolt pbolt, spell_type spell_cast,
     case SPELL_UPHEAVAL:
         _mons_upheaval(*mons, *foe);
         return;
+
+    case SPELL_SPORULATE:
+    {
+        mgen_data mgen (MONS_BALLISTOMYCETE_SPORE,
+                mons->friendly() ? BEH_FRIENDLY : BEH_HOSTILE, mons->pos(),
+                mons->foe);
+        mgen.set_summoned(mons, 0, SPELL_SPORULATE);
+        // Add 1HD to the spore for each additional HD the spawner has.
+        mgen.hd = mons_class_hit_dice(MONS_BALLISTOMYCETE_SPORE) +
+            max(0, mons->spell_hd() - mons_class_hit_dice(mons->type));
+
+        if (monster* const spore = create_monster(mgen))
+            spore->add_ench(ENCH_SHORT_LIVED);
+
+        return;
+    }
 
     }
 
@@ -8091,7 +8103,8 @@ static bool _ms_waste_of_time(monster* mon, mon_spell_slot slot)
         bolt tracer;
         setup_cleansing_flame_beam(tracer,
                                    5 + (7 * mon->spell_hd(monspell)) / 12,
-                                   CLEANSING_FLAME_SPELL, mon->pos(), mon);
+                                   cleansing_flame_source::spell,
+                                   mon->pos(), mon);
         fire_tracer(mon, tracer, true);
         return !mons_should_fire(tracer);
     }

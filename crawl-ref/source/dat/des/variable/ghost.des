@@ -812,7 +812,7 @@ KITEM:  P = robe cursed plus:-8 randart ident:all
 ITEM:   quick blade good_item w:5 / rapier good_item / scimitar good_item / \
         double sword good_item w:5 / demon blade good_item w:5 / \
         triple sword good_item w:5 /  morningstar good_item / \
-        eveningstar good_item w:5 / demon whip good_item w:5 \
+        eveningstar good_item w:5 / demon whip good_item w:5 / \
         dire flail good_item / great mace good_item / broad axe good_item / \
         battleaxe good_item / executioner's axe good_item w:5 / \
         demon trident good_item w:5 / glaive good_item / \
@@ -1078,9 +1078,8 @@ ENDMAP
 
 NAME:   biasface_ghost_orc_armoury
 DEPTH:  D:3-, Orc
-ITEM:   pair of boots / helmet / hat / pair of gloves / cloak
-ITEM:   pair of boots good_item / helmet good_item / hat good_item / \
-        pair of gloves good_item / cloak good_item
+:item(dgn.aux_armour)
+:item(dgn.good_aux_armour)
 ITEM:   any armour, any armour good_item, any weapon, any weapon good_item
 ITEM:   any jewellery, any jewellery good_item
 KMONS:  O = player ghost
@@ -1550,9 +1549,9 @@ KMONS:  pq = plant / fungus
 KFEAT:  q = W
 KMONS:  O = player ghost
 MONS:   kobold, big kobold, kobold demonologist
-KMONS:  D = kobold ; blowgun . needle ego:curare | needle ego:poisoned . dagger
-KMONS:  E = big kobold ; blowgun . needle ego:curare | \
-                needle ego:poisoned w:5 . dagger | short sword | whip
+KMONS:  D = kobold ; dart ego:curare | dart ego:poisoned . dagger
+KMONS:  E = big kobold ; dart ego:curare | \
+                dart ego:poisoned w:5 . dagger | short sword | whip
 KMONS:  F = kobold ; wand of flame | wand of acid | wand of polymorph | \
                 wand of enslavement | wand of paralysis | \
                 wand of disintegration . dagger
@@ -1998,7 +1997,7 @@ NSUBST: R = R / -
 {{
 kmons("q = kobold; " .. wrathful_weapon("kobold",
                crawl.one_chance_in(3) and "randart" or "good_item") ..
-      "    . blowgun good_item . needle ego:curare | needle ego:poisoned w:5")
+      "    . dart ego:curare | dart ego:poisoned w:5")
 kmons("r = gnoll sergeant; " .. wrathful_weapon("sergeant",
                crawl.one_chance_in(3) and "randart" or "good_item") ..
       "    . leather armour good_item | ring mail good_item" ..
@@ -2090,7 +2089,7 @@ kmons("q = deep elf master archer; longbow randart " ..
 MONS:   deep elf blademaster / deep elf master archer
 SUBST:  fg = |*, h = *, i = $%, j= -
 # There aren't any good lower-tier, trog-appropriate warrior types. So use all
-# blademasters and master archers, but reduce the reduce monster count.
+# blademasters and master archers, but reduce the monster count.
 NSUBST: - = 1 / 2=1. / 2=L / q / 3=2. / .
 : elseif you.in_branch("Depths") then
 MONS:   tengu warrior / deep troll / spriggan berserker / stone giant / ettin

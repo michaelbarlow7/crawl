@@ -23,8 +23,6 @@
 
 /* these flags require more space to serialize: put infrequently used ones there */
 #define MAP_EXCLUDED_STAIRS  0x10000
-#define MAP_MOLDY            0x20000
-#define MAP_GLOWING_MOLDY    0x40000
 #define MAP_SANCTUARY_1      0x80000
 #define MAP_SANCTUARY_2     0x100000
 #define MAP_WITHHELD        0x200000
@@ -107,6 +105,16 @@ struct map_cell
         if (_item)
             _item = new item_info(*_item);
         return *this;
+    }
+
+    bool operator ==(const map_cell &other) const
+    {
+        return memcmp(this, &other, sizeof(map_cell)) == 0;
+    }
+
+    bool operator !=(const map_cell &other) const
+    {
+        return memcmp(this, &other, sizeof(map_cell)) != 0;
     }
 
     void clear()

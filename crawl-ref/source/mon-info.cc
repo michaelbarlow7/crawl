@@ -543,7 +543,7 @@ monster_info::monster_info(const monster* m, int milev)
     mintel = mons_intel(*m);
     hd = m->get_hit_dice();
     ac = m->armour_class(false);
-    ev = m->evasion(EV_IGNORE_UNIDED);
+    ev = m->evasion(ev_ignore::unided);
     base_ev = m->base_evasion();
     mr = m->res_magic(false);
     can_see_invis = m->can_see_invisible(false);
@@ -1551,7 +1551,11 @@ string monster_info::wounds_description_sentence() const
     if (wounds.empty())
         return "";
     else
-        return string(pronoun(PRONOUN_SUBJECTIVE)) + " is " + wounds + ".";
+    {
+        return string(pronoun(PRONOUN_SUBJECTIVE)) + " "
+               + conjugate_verb("are", pronoun_plurality())
+               + " " + wounds + ".";
+    }
 }
 
 string monster_info::wounds_description(bool use_colour) const
@@ -1840,4 +1844,12 @@ const char *monster_info::pronoun(pronoun_type variant) const
                                variant);
     }
     return mons_pronoun(type, variant, true);
+}
+
+const bool monster_info::pronoun_plurality() const
+{
+    if (props.exists(MON_GENDER_KEY))
+        return props[MON_GENDER_KEY].get_int() == GENDER_NEUTRAL;
+
+    return mons_class_gender(type) == GENDER_NEUTRAL;
 }

@@ -381,7 +381,8 @@ void attack::init_attack(skill_type unarmed_skill, int attack_number)
     if (attacker->is_monster())
     {
         mon_attack_def mon_attk = mons_attack_spec(*attacker->as_monster(),
-                                                   attack_number);
+                                                   attack_number,
+                                                   false);
 
         attk_type       = mon_attk.type;
         attk_flavour    = mon_attk.flavour;
@@ -440,7 +441,10 @@ void attack::alert_defender()
         && !attacker->as_monster()->wont_attack())
     {
         if (defender->is_player())
-            interrupt_activity(AI_MONSTER_ATTACKS, attacker->as_monster());
+        {
+            interrupt_activity(activity_interrupt::monster_attacks,
+                               attacker->as_monster());
+        }
         if (you.pet_target == MHITNOT && env.sanctuary_time <= 0)
             you.pet_target = attacker->mindex();
     }
@@ -1167,8 +1171,8 @@ int attack::player_apply_misc_modifiers(int damage)
 int attack::get_weapon_plus()
 {
     if (weapon->base_type == OBJ_STAVES
-        || weapon->sub_type == WPN_BLOWGUN
 #if TAG_MAJOR_VERSION == 34
+        || weapon->sub_type == WPN_BLOWGUN
         || weapon->base_type == OBJ_RODS
 #endif
        )
@@ -1348,7 +1352,7 @@ int attack::apply_defender_ac(int damage, int damage_max) const
         stab_bypass = random2(div_rand_round(stab_bypass, 100 * stab_bonus));
     }
     int after_ac = defender->apply_ac(damage, damage_max,
-                                      AC_NORMAL, stab_bypass);
+                                      ac_type::normal, stab_bypass);
     dprf(DIAG_COMBAT, "AC: att: %s, def: %s, ac: %d, gdr: %d, dam: %d -> %d",
                  attacker->name(DESC_PLAIN, true).c_str(),
                  defender->name(DESC_PLAIN, true).c_str(),

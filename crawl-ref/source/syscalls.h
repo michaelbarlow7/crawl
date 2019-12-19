@@ -24,7 +24,7 @@ int mkstemp(char *dummy);
 #endif
 
 #ifndef CRAWL_HAVE_FDATASYNC
-int fdatasync(int fd);
+//int fdatasync(int fd);
 #endif
 
 #ifdef NEED_USLEEP

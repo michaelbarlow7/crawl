@@ -273,7 +273,6 @@ static const duration_def duration_data[] =
       "You are standing in death's doorway.", D_EXPIRES,
       {{ "Your life is in your own hands again!", []() {
             you.duration[DUR_DEATHS_DOOR_COOLDOWN] = random_range(10, 30);
-            calc_hp();
       }}, { "Your time is quickly running out!", 5 }}, 10},
     { DUR_DEATHS_DOOR_COOLDOWN,
       YELLOW, "-DDoor",
@@ -596,7 +595,6 @@ static const duration_def duration_data[] =
     { DUR_VEHUMET_GIFT, 0, "", "", "vehumet gift", "", D_NO_FLAGS, {{""}}},
     { DUR_SICKENING, 0, "", "", "sickening", "", D_DISPELLABLE, {{""}}},
     { DUR_WATER_HOLD, 0, "", "", "drowning", "", D_NO_FLAGS},
-    { DUR_WATER_HOLD_IMMUNITY, 0, "", "", "drowning immunity", "", D_NO_FLAGS, {{""}}},
     { DUR_SLEEP_IMMUNITY, 0, "", "", "sleep immunity", "", D_NO_FLAGS, {{""}}},
     { DUR_ELIXIR_HEALTH, 0, "", "", "elixir health", "", D_NO_FLAGS},
     { DUR_ELIXIR_MAGIC, 0, "", "", "elixir magic", "", D_NO_FLAGS},
@@ -609,8 +607,6 @@ static const duration_def duration_data[] =
     { DUR_BRAINLESS, 0, "", "", "brainless", "", D_NO_FLAGS },
     { DUR_CLUMSY, 0, "", "", "clumsy", "", D_NO_FLAGS },
     { DUR_ANCESTOR_DELAY, 0, "", "", "ancestor delay", "", D_NO_FLAGS, {{""}}},
-    { DUR_NO_CAST, 0, "", "", "no cast", "", D_NO_FLAGS,
-      {{ "You regain access to your magic." }, {}, true }},
     { DUR_HEAVENLY_STORM, 0, "", "", "", "", D_NO_FLAGS,
       {{ "",  wu_jian_heaven_tick }}},
     { DUR_GRASPING_ROOTS, 0, "", "grasped by roots", "grasping roots",
@@ -652,6 +648,7 @@ static const duration_def duration_data[] =
     { DUR_MAGIC_ARMOUR, 0, "", "", "old magic armour", "", D_NO_FLAGS},
     { DUR_MAGIC_SHIELD, 0, "", "", "old magic shield", "", D_NO_FLAGS},
     { DUR_FORTITUDE, 0, "", "", "old fortitude", "", D_NO_FLAGS},
-
+    { DUR_WATER_HOLD_IMMUNITY, 0, "", "", "old drowning immunity", "", D_NO_FLAGS, {{""}}},
+    { DUR_NO_CAST, 0, "", "", "old no cast", "", D_NO_FLAGS},
 #endif
 };

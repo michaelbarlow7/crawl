@@ -212,13 +212,18 @@ static void _sdump_header(dump_params &par)
 #endif
     par.text += " character file.\n\n";
 
-    if (you.game_is_seeded
+    if (you.fully_seeded
 #ifdef DGAMELAUNCH
-        && par.se // for online games, only show seed for a dead char
+        && (par.se // for online games, show seed for a dead char
+            || you.wizard
+            || crawl_state.type == GAME_TYPE_CUSTOM_SEED)
 #endif
         )
     {
-        par.text += make_stringf("Game seed: %" PRIu64 "\n\n", crawl_state.seed);
+        par.text += make_stringf(
+            "Game seed: %" PRIu64 ", levelgen mode: %s\n\n",
+            crawl_state.seed, you.deterministic_levelgen
+                                                ? "deterministic" : "classic");
     }
 }
 
@@ -809,12 +814,8 @@ static void _sdump_inventory(dump_params &par)
                 if (origin_describable(item) && _dump_item_origin(item))
                     text += "\n" "   (" + origin_desc(item) + ")";
 
-                if (is_dumpable_artefact(item)
-                    || Options.dump_book_spells
-                       && item.base_type == OBJ_BOOKS)
-                {
+                if (is_dumpable_artefact(item))
                     text += chardump_desc(item);
-                }
                 else
                     text += "\n";
             }
@@ -1512,27 +1513,12 @@ static const char* hunger_names[] =
 };
 COMPILE_CHECK(ARRAYSZ(hunger_names) == HS_ENGORGED + 1);
 
-// Must match the order of hunger_state_t enums
-static const char* thirst_names[] =
-{
-    "bloodless",
-    "bloodless",
-    "near bloodless",
-    "very thirsty",
-    "thirsty",
-    "not thirsty",
-    "full",
-    "very full",
-    "almost alive",
-};
-COMPILE_CHECK(ARRAYSZ(thirst_names) == HS_ENGORGED + 1);
-
 const char *hunger_level()
 {
     ASSERT(you.hunger_state <= HS_ENGORGED);
 
     if (you.species == SP_VAMPIRE)
-        return thirst_names[you.hunger_state];
+        return you.vampire_alive ? "alive" : "bloodless";
     return hunger_names[you.hunger_state];
 }
 

@@ -97,7 +97,6 @@ function trove.get_trove_item(e, value, base_item)
   -- currently 20% armour, 15% weapon, 50% consumable, 15% miscellaneous
   local prices = {
        {base="scroll", type="acquirement", quant=2},
-       {base="scroll", type="identify", quant=12+d(4)+d(4)+d(4)},
        {base="miscellaneous", type="rune of Zot", quant=3, name="slimy rune of Zot"},
        {base="miscellaneous", type="rune of Zot", quant=11, name="abyssal rune of Zot"},
        {base="miscellaneous", type="horn of Geryon"} }
@@ -194,7 +193,10 @@ function trove.get_toll_nopiety()
 end
 
 function trove.portal(e)
-    local toll = trove.get_trove_toll(e)
+    -- dependent on player stats (skills, race, etc) so needs to be isolated
+    -- from gameplay rng.
+    local toll = crawl.rng_wrap(function () return trove.get_trove_toll(e) end,
+                                "subgenerator")
 
     local function stair ()
         return trove_marker  {

@@ -51,6 +51,7 @@ function ($, cr, map_knowledge, options, dngn, util, view_data, enums) {
 
         this.view = { x: 0, y: 0 };
         this.view_center = { x: 0, y: 0 };
+        this.ui_state = -1;
     }
 
     DungeonViewRenderer.prototype = new cr.DungeonCellRenderer();
@@ -236,24 +237,36 @@ function ($, cr, map_knowledge, options, dngn, util, view_data, enums) {
         fit_to: function(width, height, min_diameter)
         {
             var ratio = window.devicePixelRatio;
+            var scale;
+            if (this.ui_state == enums.ui.VIEW_MAP)
+                scale = options.get("tile_map_scale");
+            else
+                scale = options.get("tile_viewport_scale");
+            var tile_size = Math.floor(options.get("tile_cell_pixels")
+                                * scale / 100);
             var cell_size = {
-                w: Math.floor(options.get("tile_cell_pixels") * ratio),
-                h: Math.floor(options.get("tile_cell_pixels") * ratio)
+                w: Math.floor(tile_size * ratio),
+                h: Math.floor(tile_size * ratio)
             };
 
             if (options.get("tile_display_mode") == "glyphs")
             {
+                // font size ratio: handled in cell_renderer.js
+                var margin = 2 * ratio;
                 this.ctx.font = this.glyph_mode_font_name();
                 var metrics = this.ctx.measureText("@");
-                this.set_cell_size(metrics.width + 2, this.glyph_mode_font_size + 2);
+                this.set_cell_size(metrics.width + margin,
+                        Math.floor(this.glyph_mode_font_size * scale / 100)
+                        + margin);
             }
             else if ((min_diameter * cell_size.w / ratio > width)
                 || (min_diameter * cell_size.h / ratio > height))
             {
-                var scale = Math.min(width * ratio / (min_diameter * cell_size.w),
+                // scale down if necessary, so that los is in view
+                var rescale = Math.min(width * ratio / (min_diameter * cell_size.w),
                                      height * ratio / (min_diameter * cell_size.h));
-                this.set_cell_size(Math.floor(cell_size.w * scale),
-                                   Math.floor(cell_size.h * scale));
+                this.set_cell_size(Math.floor(cell_size.w * rescale),
+                                   Math.floor(cell_size.h * rescale));
             }
             else
                 this.set_cell_size(cell_size.w, cell_size.h);
@@ -348,6 +361,11 @@ function ($, cr, map_knowledge, options, dngn, util, view_data, enums) {
             renderer.draw_tiles(tiles);
 
             return renderer;
+        },
+
+        set_ui_state: function(s)
+        {
+            this.ui_state = s;
         }
     });
 

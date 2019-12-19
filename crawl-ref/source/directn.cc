@@ -25,6 +25,7 @@
 #include "describe.h"
 #include "dungeon.h"
 #include "english.h"
+#include "externs.h" // INVALID_COORD
 #include "fight.h" // melee_confuse_chance
 #include "food.h"
 #include "god-abil.h"
@@ -531,7 +532,7 @@ direction_chooser::direction_chooser(dist& moves_,
         needs_path = true;
 
     show_beam = !just_looking && needs_path;
-    need_beam_redraw = show_beam;
+    need_viewport_redraw = show_beam;
     have_beam = false;
 
     need_text_redraw = true;
@@ -556,7 +557,7 @@ public:
     void nextline() { cgotoxy(1, wherey() + 1); }
 };
 
-// Lists all the monsters and items currently in view by the player.
+// Lists monsters, items, and some interesting features in the player's view.
 // TODO: Allow sorting of items lists.
 void full_describe_view()
 {
@@ -569,7 +570,7 @@ void full_describe_view()
                             you.xray_vision ? LOS_NONE : LOS_DEFAULT); ri; ++ri)
     {
         if (feat_stair_direction(grd(*ri)) != CMD_NO_CMD
-            || feat_is_altar(grd(*ri)))
+            || (feat_is_trap(grd(*ri))))
         {
             list_features.push_back(*ri);
         }
@@ -627,7 +628,8 @@ void full_describe_view()
     desc_menu.set_title(new MenuEntry(title1, MEL_TITLE));
 
     desc_menu.set_tag("pickup");
-    desc_menu.set_type(MT_PICKUP); // necessary for sorting of the item submenu
+    // necessary for sorting of the item submenu
+    desc_menu.set_type(menu_type::pickup);
     desc_menu.action_cycle = Menu::CYCLE_TOGGLE;
     desc_menu.menu_action  = InvMenu::ACT_EXECUTE;
 
@@ -898,21 +900,23 @@ bool direction_chooser::move_is_ok() const
         {
             if (!targets_objects() && targets_enemies())
             {
-                if (self == CONFIRM_CANCEL
-                    || self == CONFIRM_PROMPT
-                       && Options.allow_self_target == CONFIRM_CANCEL)
+                if (self == confirm_prompt_type::cancel
+                    || self == confirm_prompt_type::prompt
+                       && Options.allow_self_target
+                              == confirm_prompt_type::cancel)
                 {
                     mprf(MSGCH_EXAMINE_FILTER, "That would be overly suicidal.");
                     return false;
                 }
-                else if (self != CONFIRM_NONE
-                         && Options.allow_self_target != CONFIRM_NONE)
+                else if (self != confirm_prompt_type::none
+                         && Options.allow_self_target
+                                != confirm_prompt_type::none)
                 {
                     return yesno("Really target yourself?", false, 'n');
                 }
             }
 
-            if (self == CONFIRM_CANCEL)
+            if (self == confirm_prompt_type::cancel)
             {
                 mprf(MSGCH_EXAMINE_FILTER, "Sorry, you can't target yourself.");
                 return false;
@@ -1074,7 +1078,7 @@ coord_def direction_chooser::find_default_target() const
                                        LS_FLIPVH);
     }
     else if ((mode != TARG_ANY && mode != TARG_FRIEND)
-             || self == CONFIRM_CANCEL)
+             || self == confirm_prompt_type::cancel)
     {
         success = find_default_monster_target(result);
     }
@@ -1122,17 +1126,12 @@ static void _draw_ray_cell(coord_def p, coord_def target, aff_type aff)
 #endif
 }
 
-void direction_chooser::draw_beam_if_needed()
+void direction_chooser::draw_beam()
 {
-    if (!need_beam_redraw)
-        return;
-
-    need_beam_redraw = false;
-
     if (!show_beam)
     {
         viewwindow(
-#ifndef USE_TILE_LOCAL
+#ifndef USE_TILE
             false
 #endif
             );
@@ -1593,7 +1592,7 @@ void direction_chooser::toggle_beam()
     }
 
     show_beam = !show_beam;
-    need_beam_redraw = true;
+    need_viewport_redraw = true;
 
     if (show_beam)
     {
@@ -1673,7 +1672,7 @@ void direction_chooser::handle_wizard_command(command_type key_command,
         show_beam = true;
         have_beam = find_ray(you.pos(), target(), beam,
                              opc_solid_see, you.current_vision, show_beam);
-        need_beam_redraw = true;
+        need_viewport_redraw = true;
         return;
 
     case CMD_TARGET_WIZARD_DEBUG_PORTAL:
@@ -1700,7 +1699,7 @@ void direction_chooser::handle_wizard_command(command_type key_command,
         if (target() != you.pos())
         {
             wizard_create_feature(target());
-            need_beam_redraw = true;
+            need_viewport_redraw = true;
         }
         return;
 
@@ -1782,13 +1781,21 @@ void direction_chooser::do_redraws()
 
     if (need_all_redraw)
     {
-        need_beam_redraw = true;
+        need_viewport_redraw = true;
         need_text_redraw = true;
         need_cursor_redraw = true;
         need_all_redraw = false;
     }
 
-    draw_beam_if_needed();
+    if (need_viewport_redraw)
+    {
+        draw_beam();
+        // draw_beam calls viewwindow(true) at least one in tiles mode, and
+        // viewwindow(false) at least once in console, so the old highlight and
+        // the old beam are both gone here.
+        highlight_summoner();
+        need_viewport_redraw = false;
+    }
 
     if (need_text_redraw)
     {
@@ -1809,6 +1816,48 @@ void direction_chooser::do_redraws()
 #endif
         need_cursor_redraw = false;
     }
+}
+
+coord_def direction_chooser::find_summoner()
+{
+    const monster* mon = monster_at(target());
+
+    // Don't leak information about rakshasa mirrored illusions.
+    if (mon && mon->is_summoned() && !mon->has_ench(ENCH_PHANTOM_MIRROR))
+        if (const monster *summ = monster_by_mid(mon->summoner))
+            return summ->pos();
+    return INVALID_COORD;
+}
+
+void direction_chooser::highlight_summoner()
+{
+    const coord_def summ_loc = find_summoner();
+
+    if (summ_loc == INVALID_COORD || !you.see_cell(summ_loc))
+        return;
+
+#ifdef USE_TILE
+    monster_info* summ_info = env.map_knowledge(summ_loc).monsterinfo();
+
+    if (!summ_info)  // Can happen, e. g. if the summoner is invisible
+        return;
+
+    summ_info->mb.set(MB_HIGHLIGHTED_SUMMONER);
+
+    // The first argument must be false, because otherwise viewwindow would
+    // wipe any beams we might have drawn, and also reset the monster_info we
+    // just altered, before it draws anything.
+    viewwindow(false, true);
+#else
+    char32_t glych  = get_cell_glyph(summ_loc).ch;
+    int col = CYAN;
+    col |= COLFLAG_REVERSE;
+
+    const coord_def vp = grid2view(summ_loc);
+    cgotoxy(vp.x, vp.y, GOTO_DNGN);
+    textcolour(real_colour(col));
+    putwch(glych);
+#endif
 }
 
 bool direction_chooser::tiles_update_target()
@@ -1888,8 +1937,7 @@ bool direction_chooser::do_main_loop()
         {
             const bool was_excluded = is_exclude_root(target());
             cycle_exclude_radius(target());
-            // XXX: abusing need_beam_redraw to force viewwindow call.
-            need_beam_redraw   = true;
+            need_viewport_redraw   = true;
             const bool is_excluded = is_exclude_root(target());
             if (!was_excluded && is_excluded)
                 mpr("Placed new exclusion.");
@@ -1987,7 +2035,7 @@ bool direction_chooser::do_main_loop()
         have_beam = show_beam && find_ray(you.pos(), target(), beam,
                                           opc_solid_see, you.current_vision);
         need_text_redraw   = true;
-        need_beam_redraw   = true;
+        need_viewport_redraw   = true;
         need_cursor_redraw = true;
     }
     do_redraws();
@@ -2040,10 +2088,10 @@ bool direction_chooser::choose_direction()
     {
         have_beam = find_ray(you.pos(), target(), beam,
                              opc_solid_see, you.current_vision);
-        need_beam_redraw = have_beam;
+        need_viewport_redraw = have_beam;
     }
     if (hitfunc)
-        need_beam_redraw = true;
+        need_viewport_redraw = true;
 
     clear_messages();
     msgwin_set_temporary(true);
@@ -2223,11 +2271,8 @@ static bool _mons_is_valid_target(const monster* mon, targ_mode_type mode,
                                   int range)
 {
     // Monsters that are no threat to you don't count as monsters.
-    if (mode != TARG_EVOLVABLE_PLANTS
-        && !mons_is_threatening(*mon))
-    {
+    if (!mons_is_threatening(*mon))
         return false;
-    }
 
     // Don't target submerged monsters.
     if (mode != TARG_HOSTILE_SUBMERGED && mon->submerged())
@@ -2265,8 +2310,6 @@ static bool _want_target_monster(const monster *mon, targ_mode_type mode,
             return true;
         return !mon->wont_attack() && !mon->neutral()
             && unpacifiable_reason(*mon).empty();
-    case TARG_EVOLVABLE_PLANTS:
-        return mons_is_evolvable(mon);
     case TARG_BEOGH_GIFTABLE:
         return beogh_can_gift_items_to(mon);
     case TARG_MOVABLE_OBJECT:
@@ -2835,15 +2878,8 @@ string feature_description_at(const coord_def& where, bool covering,
 
     string covering_description = "";
 
-    if (covering && you.see_cell(where))
-    {
-        if (is_bloodcovered(where))
-            covering_description = ", spattered with blood";
-        else if (glowing_mold(where))
-            covering_description = ", covered with glowing mould";
-        else if (is_moldy(where))
-            covering_description = ", covered with mould";
-    }
+    if (covering && you.see_cell(where) && is_bloodcovered(where))
+        covering_description = ", spattered with blood";
 
     // FIXME: remove desc markers completely; only Zin walls are left.
     // They suffer, among other problems, from an information leak.
@@ -2943,6 +2979,8 @@ string feature_description_at(const coord_def& where, bool covering,
             desc += "awoken ";
         desc += grid == grd(where) ? raw_feature_description(where)
                                    : _base_feature_desc(grid, trap);
+        if (is_temp_terrain(where))
+            desc += " (summoned)";
         desc += covering_description;
         return thing_do_grammar(dtype, add_stop, false, desc);
     }
@@ -3038,7 +3076,9 @@ static string _mon_enchantments_string(const monster_info& mi)
     if (!enchant_descriptors.empty())
     {
         return uppercase_first(mi.pronoun(PRONOUN_SUBJECTIVE))
-            + " is "
+            + " "
+            + conjugate_verb("are", mi.pronoun_plurality())
+            + " "
             + comma_separated_line(enchant_descriptors.begin(),
                                    enchant_descriptors.end())
             + ".";
@@ -3135,59 +3175,91 @@ static string _get_monster_desc(const monster_info& mi)
     string pronoun = uppercase_first(mi.pronoun(PRONOUN_SUBJECTIVE));
 
     if (mi.is(MB_CLINGING))
-        text += pronoun + " is clinging to the wall.\n";
+    {
+        text += pronoun + " " + conjugate_verb("are", mi.pronoun_plurality())
+                + " clinging to the wall.\n";
+    }
 
     if (mi.is(MB_MESMERIZING))
     {
         text += string("You are mesmerised by ")
-              + mi.pronoun(PRONOUN_POSSESSIVE) + " song.\n";
+                + mi.pronoun(PRONOUN_POSSESSIVE) + " song.\n";
     }
 
     if (mi.is(MB_SLEEPING) || mi.is(MB_DORMANT))
     {
-        text += pronoun + " appears to be "
-                + (mi.is(MB_CONFUSED) ? "sleepwalking"
-                        : "resting")
-                          + ".\n";
+        text += pronoun + " "
+                + conjugate_verb("appear", mi.pronoun_plurality()) + " to be "
+                + (mi.is(MB_CONFUSED) ? "sleepwalking" : "resting") + ".\n";
     }
     // Applies to both friendlies and hostiles
     else if (mi.is(MB_FLEEING))
-        text += pronoun + " is fleeing.\n";
+    {
+        text += pronoun + " " + conjugate_verb("are", mi.pronoun_plurality())
+                + " fleeing.\n";
+    }
     // hostile with target != you
-    else if (mi.attitude == ATT_HOSTILE && (mi.is(MB_UNAWARE) || mi.is(MB_WANDERING)))
-        text += pronoun + " doesn't appear to have noticed you.\n";
+    else if (mi.attitude == ATT_HOSTILE
+             && (mi.is(MB_UNAWARE) || mi.is(MB_WANDERING)))
+    {
+        text += pronoun + " " + conjugate_verb("have", mi.pronoun_plurality())
+                + " not noticed you.\n";
+    }
 
     if (mi.attitude == ATT_FRIENDLY)
-        text += pronoun + " is friendly.\n";
+    {
+        text += pronoun + " " + conjugate_verb("are", mi.pronoun_plurality())
+                + " friendly.\n";
+    }
     else if (mi.attitude == ATT_GOOD_NEUTRAL)
-        text += pronoun + " seems to be peaceful towards you.\n";
+    {
+        text += pronoun + " " + conjugate_verb("seem", mi.pronoun_plurality())
+                + " to be peaceful towards you.\n";
+    }
     else if (mi.attitude != ATT_HOSTILE && !mi.is(MB_INSANE))
     {
         // don't differentiate between permanent or not
-        text += pronoun + " is indifferent to you.\n";
+        text += pronoun + " " + conjugate_verb("are", mi.pronoun_plurality())
+                + " indifferent to you.\n";
     }
 
     if (mi.is(MB_SUMMONED) || mi.is(MB_PERM_SUMMON))
     {
-        text += pronoun + " has been summoned";
+        text += pronoun + " " + conjugate_verb("have", mi.pronoun_plurality())
+                + " been summoned";
         if (mi.is(MB_SUMMONED_CAPPED))
-            text += ", and is expiring";
+        {
+            text += ", and " + conjugate_verb("are", mi.pronoun_plurality())
+                    + " expiring";
+        }
         else if (mi.is(MB_PERM_SUMMON))
             text += " but will not time out";
         text += ".\n";
     }
 
     if (mi.is(MB_HALOED))
-        text += pronoun + " is illuminated by a divine halo.\n";
+    {
+        text += pronoun + " " + conjugate_verb("are", mi.pronoun_plurality())
+                + " illuminated by a divine halo.\n";
+    }
 
     if (mi.is(MB_UMBRAED))
-        text += pronoun + " is wreathed by an umbra.\n";
+    {
+        text += pronoun + " " + conjugate_verb("are", mi.pronoun_plurality())
+                + " wreathed by an umbra.\n";
+    }
 
     if (mi.intel() <= I_BRAINLESS)
-        text += pronoun + " is mindless.\n";
+    {
+        text += pronoun + " " + conjugate_verb("are", mi.pronoun_plurality())
+                + " mindless.\n";
+    }
 
     if (mi.is(MB_CHAOTIC))
-        text += pronoun + " is chaotic.\n";
+    {
+        text += pronoun + " " + conjugate_verb("are", mi.pronoun_plurality())
+                + " chaotic.\n";
+    }
 
     if (mi.is(MB_POSSESSABLE))
     {
@@ -3195,21 +3267,30 @@ static string _get_monster_desc(const monster_info& mi)
                 + " soul is ripe for the taking.\n";
     }
     else if (mi.is(MB_ENSLAVED))
-        text += pronoun + " is a disembodied soul.\n";
+    {
+        text += pronoun + " " + conjugate_verb("are", mi.pronoun_plurality())
+                + " a disembodied soul.\n";
+    }
 
     if (mi.is(MB_MIRROR_DAMAGE))
-        text += pronoun + " is reflecting injuries back at attackers.\n";
+    {
+        text += pronoun + " " + conjugate_verb("are", mi.pronoun_plurality())
+                + " reflecting injuries back at attackers.\n";
+    }
 
     if (mi.is(MB_INNER_FLAME))
-        text += pronoun + " is filled with an inner flame.\n";
+    {
+        text += pronoun + " " + conjugate_verb("are", mi.pronoun_plurality())
+                + " filled with an inner flame.\n";
+    }
 
     if (mi.fire_blocker)
     {
         text += string("Your line of fire to ") + mi.pronoun(PRONOUN_OBJECTIVE)
-              + " is blocked by " // FIXME: renamed features
-              + feature_description(mi.fire_blocker, NUM_TRAPS, "",
-                                    DESC_A)
-              + "\n";
+                + " is blocked by " // FIXME: renamed features
+                + feature_description(mi.fire_blocker, NUM_TRAPS, "",
+                                      DESC_A)
+                + "\n";
     }
 
     text += _mon_enchantments_string(mi);
@@ -3532,8 +3613,9 @@ static void _describe_cell(const coord_def& where, bool in_range)
 
         if (!in_range)
         {
-            mprf(MSGCH_EXAMINE_FILTER, "%s is out of range.",
-                 mon->pronoun(PRONOUN_SUBJECTIVE).c_str());
+            mprf(MSGCH_EXAMINE_FILTER, "%s %s out of range.",
+                 mon->pronoun(PRONOUN_SUBJECTIVE).c_str(),
+                 conjugate_verb("are", mi.pronoun_plurality()).c_str());
         }
 #ifndef DEBUG_DIAGNOSTICS
         monster_described = true;

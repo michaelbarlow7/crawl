@@ -68,9 +68,6 @@ static const int MR_PIP = 40;
 /// The standard unit of stealth; one level in %/@ screens
 static const int STEALTH_PIP = 50;
 
-/// The rough number of aut getting hit takes off your bone armour
-static const int BONE_ARMOUR_HIT_RATIO = 50;
-
 /// The minimum aut cost for a player move (before haste)
 static const int FASTEST_PLAYER_MOVE_SPEED = 6;
 // relevant for swiftness, etc
@@ -187,6 +184,7 @@ public:
     bool royal_jelly_dead;
     bool transform_uncancellable;
     bool fishtail; // Merfolk fishtail transformation
+    bool vampire_alive;
 
     unsigned short pet_target;
 
@@ -209,7 +207,7 @@ public:
     FixedVector<training_status, NUM_SKILLS> train; ///< see enum def
     FixedVector<training_status, NUM_SKILLS> train_alt; ///< config of other mode
     FixedVector<unsigned int, NUM_SKILLS>  training; ///< percentage of XP used
-    FixedBitVector<NUM_SKILLS> can_train; ///< Is training this skill allowed?
+    FixedBitVector<NUM_SKILLS> can_currently_train; ///< Is training this skill allowed?
     FixedVector<unsigned int, NUM_SKILLS> skill_points;
     FixedVector<unsigned int, NUM_SKILLS> training_targets; ///< Training targets, scaled by 10 (so [0,270]).  0 means no target.
 
@@ -311,6 +309,8 @@ public:
     // Maps without allow_dup that have been already used.
     set<string> uniq_map_tags;
     set<string> uniq_map_names;
+    set<string> uniq_map_tags_abyss;
+    set<string> uniq_map_names_abyss;
     // All maps, by level.
     map<level_id, vector<string> > vault_list;
 
@@ -361,13 +361,17 @@ public:
 
     // Hash seed for deterministic stuff.
     uint64_t game_seed;
-    bool game_is_seeded;
+    bool fully_seeded; // true on all games started since 0.23 seeding changes
+    bool deterministic_levelgen; // true if a game was started with incremental
+                                 // or full pregen.
 
     // -------------------
     // Non-saved UI state:
     // -------------------
     unsigned short prev_targ;
     coord_def      prev_grd_targ;
+    // Examining spell library spells for Sif Muna's ability
+    bool           divine_exegesis;
 
     // Coordinates of last travel target; note that this is never used by
     // travel itself, only by the level-map to remember the last travel target.
@@ -396,7 +400,7 @@ public:
     // The last spell cast by the player.
     spell_type last_cast_spell;
     map<int,int> last_pickup;
-
+    int last_unequip;
 
     // ---------------------------
     // Volatile (same-turn) state:
@@ -816,7 +820,7 @@ public:
     int base_ac(int scale) const;
     int armour_class(bool /*calc_unid*/ = true) const override;
     int gdr_perc() const override;
-    int evasion(ev_ignore_type evit = EV_IGNORE_NONE,
+    int evasion(ev_ignore_type evit = ev_ignore::none,
                 const actor *attacker = nullptr) const override;
 
     int stat_hp() const override     { return hp; }

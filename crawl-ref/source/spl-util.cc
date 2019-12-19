@@ -957,7 +957,8 @@ int spell_range(spell_type spell, int pow, bool allow_bonus)
         && vehumet_supports_spell(spell)
         && have_passive(passive_t::spells_range)
         && maxrange > 1
-        && spell != SPELL_GLACIATE)
+        && spell != SPELL_GLACIATE
+        && spell != SPELL_THUNDERBOLT) // lightning rod only
     {
         maxrange++;
         minrange++;
@@ -1218,7 +1219,7 @@ string spell_uselessness_reason(spell_type spell, bool temp, bool prevent,
             return "you're too dead.";
         break;
     case SPELL_NECROMUTATION:
-        // only prohibted to actual undead, not lichformed players
+        // only prohibited to actual undead, not lichformed players
         if (you.undead_state(false))
             return "you're too dead.";
         break;

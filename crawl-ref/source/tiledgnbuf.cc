@@ -2,8 +2,6 @@
 #ifdef USE_TILE_LOCAL
 #include "tiledgnbuf.h"
 
-#include "env.h"
-#include "player.h"
 #include "tile-flags.h"
 #include "tiledef-dngn.h"
 #include "tiledef-icons.h"
@@ -40,7 +38,11 @@ void DungeonCellBuffer::add(const packed_cell &cell, int x, int y)
     const tileidx_t fg_idx = cell.fg & TILE_FLAG_MASK;
     const bool in_water = _in_water(cell);
 
-    const tileidx_t cloud_idx = cell.cloud & TILE_FLAG_MASK;
+    tileidx_t cloud_idx = cell.cloud & TILE_FLAG_MASK;
+
+    // in the shoals, ink is handled in pack_cell_overlays(): don't overdraw
+    if (cloud_idx == TILE_CLOUD_INK && player_in_branch(BRANCH_SHOALS))
+        cloud_idx = 0;
 
     if (fg_idx >= TILEP_MCACHE_START)
     {
@@ -228,16 +230,6 @@ void DungeonCellBuffer::add_blood_overlay(int x, int y, const packed_cell &cell,
         const int offset = cell.flv.special % tile_dngn_count(basetile);
         m_buf_feat.add(basetile + offset, x, y);
     }
-    else if (cell.is_moldy)
-    {
-        int offset = cell.flv.special % tile_dngn_count(TILE_MOLD);
-        m_buf_feat.add(TILE_MOLD + offset, x, y);
-    }
-    else if (cell.glowing_mold)
-    {
-        int offset = cell.flv.special % tile_dngn_count(TILE_GLOWING_MOLD);
-        m_buf_feat.add(TILE_GLOWING_MOLD + offset, x, y);
-    }
 }
 
 void DungeonCellBuffer::pack_background(int x, int y, const packed_cell &cell)
@@ -369,6 +361,9 @@ void DungeonCellBuffer::pack_background(int x, int y, const packed_cell &cell)
                     m_buf_feat.add(TILE_HALO_GD_NEUTRAL, x, y);
                 else if (att_flag == TILE_FLAG_NEUTRAL)
                     m_buf_feat.add(TILE_HALO_NEUTRAL, x, y);
+
+                if (cell.is_highlighted_summoner)
+                    m_buf_feat.add(TILE_HALO_SUMMONER, x, y);
             }
 
             // Apply the travel exclusion under the foreground if the cell is

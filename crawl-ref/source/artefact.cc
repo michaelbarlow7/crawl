@@ -162,12 +162,6 @@ static bool _god_fits_artefact(const god_type which_god, const item_def &item,
         }
         break;
 
-    case GOD_ASHENZARI:
-        // Cursed god: no holy wrath (since that brand repels curses).
-        if (brand == SPWPN_HOLY_WRATH)
-            return false;
-        break;
-
     case GOD_DITHMENOS:
         // No reducing stealth.
         if (artefact_property(item, ARTP_STEALTH) < 0)
@@ -380,6 +374,7 @@ static map<jewellery_type, vector<jewellery_fake_artp>> jewellery_artps = {
     { RING_POISON_RESISTANCE, { { ARTP_POISON, 1 } } },
     { RING_LIFE_PROTECTION, { { ARTP_NEGATIVE_ENERGY, 1 } } },
     { RING_PROTECTION_FROM_MAGIC, { { ARTP_MAGIC_RESISTANCE, 1 } } },
+    { RING_RESIST_CORROSION, { { ARTP_RCORR, 1 } } },
 
     { RING_FIRE, { { ARTP_FIRE, 1 }, { ARTP_COLD, -1 } } },
     { RING_ICE, { { ARTP_COLD, 1 }, { ARTP_FIRE, -1 } } },
@@ -409,7 +404,7 @@ static void _populate_jewel_intrinsic_artps(const item_def &item,
         return;
 
     const bool id_props = item_ident(item, ISFLAG_KNOW_PROPERTIES)
-                            || item_ident(item, ISFLAG_KNOW_TYPE);
+                          || item_ident(item, ISFLAG_KNOW_TYPE);
 
     for (const auto &fake_artp : *props)
     {
@@ -464,6 +459,12 @@ static void _add_randart_weapon_brand(const item_def &item,
                                     artefact_properties_t &item_props)
 {
     const int item_type = item.sub_type;
+
+    if (!is_weapon_brand_ok(item_type, item_props[ARTP_BRAND], true))
+        item_props[ARTP_BRAND] = SPWPN_NORMAL;
+
+    if (item_props[ARTP_BRAND] != SPWPN_NORMAL)
+        return;
 
     if (is_range_weapon(item))
     {
@@ -660,6 +661,9 @@ static const artefact_prop_data artp_data[] =
         []() { return 1; }, nullptr, 0, 0 },
     { "+Fly", ARTP_VAL_BOOL, 15,    // ARTP_FLY,
         []() { return 1; }, nullptr, 0, 0 },
+#if TAG_MAJOR_VERSION > 34
+    { "+Fog", ARTP_VAL_BOOL, 0, nullptr, nullptr, 0, 0 }, // ARTP_FOG,
+#endif
     { "+Blink", ARTP_VAL_BOOL, 15,  // ARTP_BLINK,
         []() { return 1; }, nullptr, 0, 0 },
     { "+Rage", ARTP_VAL_BOOL, 15,   // ARTP_BERSERK,
@@ -1436,7 +1440,7 @@ static bool _randart_is_redundant(const item_def &item,
         break;
 
     case RING_SLAYING:
-        provides  = ARTP_SLAYING;
+        provides = ARTP_SLAYING;
         break;
 
     case RING_SEE_INVISIBLE:
@@ -1479,6 +1483,10 @@ static bool _randart_is_redundant(const item_def &item,
         provides = ARTP_MAGIC_RESISTANCE;
         break;
 
+    case RING_RESIST_CORROSION:
+        provides = ARTP_RCORR;
+        break;
+
     case AMU_RAGE:
         provides = ARTP_BERSERK;
         break;
@@ -1514,8 +1522,7 @@ static bool _randart_is_conflicting(const item_def &item,
 {
     if (item.base_type == OBJ_WEAPONS
         && get_weapon_brand(item) == SPWPN_HOLY_WRATH
-        && (is_demonic(item)
-            || proprt[ARTP_CURSE]))
+        && is_demonic(item))
     {
         return true;
     }
@@ -1541,8 +1548,14 @@ static bool _randart_is_conflicting(const item_def &item,
         conflicts = ARTP_PREVENT_SPELLCASTING;
         break;
 
+    case RING_RESIST_CORROSION:
+        conflicts = ARTP_CORRODE;
+        break;
+
     case RING_TELEPORTATION:
+#if TAG_MAJOR_VERSION == 34
     case RING_TELEPORT_CONTROL:
+#endif
         conflicts = ARTP_PREVENT_TELEPORTATION;
         break;
 

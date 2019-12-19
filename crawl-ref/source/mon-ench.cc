@@ -632,7 +632,7 @@ void monster::remove_enchantment_effect(const mon_enchant &me, bool quiet)
         if (you.can_see(*this))
         {
             // and fire activity interrupts
-            interrupt_activity(AI_SEE_MONSTER,
+            interrupt_activity(activity_interrupt::see_monster,
                                activity_interrupt_data(this, SC_UNCHARM));
         }
 
@@ -752,7 +752,7 @@ void monster::remove_enchantment_effect(const mon_enchant &me, bool quiet)
         else if (you.see_cell(pos()) && feat_is_watery(grd(pos())))
         {
             mpr("Something invisible bursts forth from the water.");
-            interrupt_activity(AI_FORCE_INTERRUPT);
+            interrupt_activity(activity_interrupt::force);
         }
         break;
 
@@ -1541,69 +1541,6 @@ void monster::apply_enchantment(const mon_enchant &me)
         }
         break;
 
-    case ENCH_SPORE_PRODUCTION:
-        // Reduce the timer, if that means we lose the enchantment then
-        // spawn a spore and re-add the enchantment.
-        if (decay_enchantment(en))
-        {
-            bool re_add = true;
-
-            for (fair_adjacent_iterator ai(pos()); ai; ++ai)
-            {
-                if (mons_class_can_pass(MONS_BALLISTOMYCETE_SPORE, grd(*ai))
-                    && !actor_at(*ai))
-                {
-                    beh_type plant_attitude = SAME_ATTITUDE(this);
-
-                    if (monster *plant = create_monster(mgen_data(MONS_BALLISTOMYCETE_SPORE,
-                                                            plant_attitude,
-                                                            *ai,
-                                                            MHITNOT,
-                                                            MG_FORCE_PLACE)))
-                    {
-                        if (mons_is_god_gift(*this, GOD_FEDHAS))
-                        {
-                            plant->flags |= MF_NO_REWARD;
-
-                            if (plant_attitude == BEH_FRIENDLY)
-                            {
-                                plant->flags |= MF_ATT_CHANGE_ATTEMPT;
-
-                                mons_make_god_gift(*plant, GOD_FEDHAS);
-                            }
-                        }
-
-                        plant->behaviour = BEH_WANDER;
-                        plant->spore_cooldown = 20;
-
-                        if (you.see_cell(*ai) && you.see_cell(pos()))
-                            mpr("A ballistomycete spawns a ballistomycete spore.");
-
-                        // Decrease the count and maybe become inactive
-                        // again.
-                        if (ballisto_activity)
-                        {
-                            ballisto_activity--;
-                            if (ballisto_activity == 0)
-                            {
-                                colour = MAGENTA;
-                                del_ench(ENCH_SPORE_PRODUCTION);
-                                re_add = false;
-                            }
-                        }
-
-                    }
-                    break;
-                }
-            }
-            // Re-add the enchantment (this resets the spore production
-            // timer).
-            if (re_add)
-                add_ench(ENCH_SPORE_PRODUCTION);
-        }
-
-        break;
-
     case ENCH_EXPLODING:
     {
         // Reduce the timer, if that means we lose the enchantment then
@@ -1648,10 +1585,12 @@ void monster::apply_enchantment(const mon_enchant &me)
             maybe_bloodify_square(base_position);
             add_ench(ENCH_SEVERED);
 
-            // Severed tentacles immediately become "hostile" to everyone (or insane)
+            // Severed tentacles immediately become "hostile" to everyone
+            // (or insane)
             attitude = ATT_NEUTRAL;
             mons_att_changed(this);
-            behaviour_event(this, ME_ALERT);
+            if (!crawl_state.game_is_arena())
+                behaviour_event(this, ME_ALERT);
         }
     }
     break;
@@ -1676,7 +1615,8 @@ void monster::apply_enchantment(const mon_enchant &me)
 
             attitude = ATT_HOSTILE;
             mons_att_changed(this);
-            behaviour_event(this, ME_ALERT, &you);
+            if (!crawl_state.game_is_arena())
+                behaviour_event(this, ME_ALERT, &you);
         }
     }
     break;
@@ -1808,8 +1748,9 @@ void monster::apply_enchantment(const mon_enchant &me)
             if (res_water_drowning() <= 0)
             {
                 lose_ench_duration(me, -speed_to_duration(speed));
+                int dur = speed_to_duration(speed); // sequence point for randomness
                 int dam = div_rand_round((50 + stepdown((float)me.duration, 30.0))
-                                          * speed_to_duration(speed),
+                                          * dur,
                             BASELINE_DELAY * 10);
                 if (res_water_drowning() < 0)
                     dam = dam * 3 / 2;
@@ -1842,7 +1783,7 @@ void monster::apply_enchantment(const mon_enchant &me)
         break;
 
     case ENCH_TOXIC_RADIANCE:
-        toxic_radiance_effect(this, 1);
+        toxic_radiance_effect(this, 10);
         decay_enchantment(en);
         break;
 
@@ -2069,7 +2010,11 @@ static const char *enchant_names[] =
     "control_winds", "wind_aided",
 #endif
     "summon_capped",
-    "toxic_radiance", "grasping_roots_source", "grasping_roots",
+    "toxic_radiance",
+#if TAG_MAJOR_VERSION == 34
+    "grasping_roots_source",
+#endif
+    "grasping_roots",
     "iood_charged", "fire_vuln", "tornado_cooldown", "merfolk_avatar_song",
     "barbs",
 #if TAG_MAJOR_VERSION == 34
@@ -2292,15 +2237,13 @@ int mon_enchant::calc_duration(const monster* mons,
         cturn = 1200 / _mod_speed(200, mons->speed);
         break;
     case ENCH_SLOWLY_DYING:
+    {
         // This may be a little too direct but the randomization at the end
         // of this function is excessive for toadstools. -cao
+        int dur = speed_to_duration(mons->speed); // uses div_rand_round, so we need a sequence point
         return (2 * FRESHEST_CORPSE + random2(10))
-                  * speed_to_duration(mons->speed);
-    case ENCH_SPORE_PRODUCTION:
-        // This is used as a simple timer, when the enchantment runs out
-        // the monster will create a ballistomycete spore.
-        return random_range(475, 525) * 10;
-
+                  * dur;
+    }
     case ENCH_EXPLODING:
         return random_range(3, 7) * 10;
 

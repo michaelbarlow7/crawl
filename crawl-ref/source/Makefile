@@ -109,6 +109,13 @@ include Makefile.obj
 STDFLAG = -std=c++11
 
 CFOTHERS := -pipe $(EXTERNAL_FLAGS)
+# Build with FORCE_SSE=y to get better seed stability on 32 bit x86 builds. It
+# is not recommended to do this unless you are building with contrib lua.
+# On any 64bit  builds where the arch supports it, (at least) sse2 is implied.
+ifdef FORCE_SSE
+CFOTHERS += -mfpmath=sse -msse2
+endif
+
 CFWARN := 
 CFWARN_L := -Wall -Wformat-security -Wundef
 
@@ -167,7 +174,7 @@ ARCH := $(HOST)
 
 ifdef CROSSHOST
 	ARCH := $(CROSSHOST)
-	ifneq (,$($shell which $(ARCH)-pkg-config 2>/dev/null))
+	ifneq (,$(shell which $(ARCH)-pkg-config 2>/dev/null))
 	  PKGCONFIG = $(ARCH)-pkg-config
 	else
 	  ifneq (,$(wildcard /usr/$(ARCH)/lib/pkgconfig))
@@ -254,10 +261,17 @@ ifneq (,$(findstring CYGWIN,$(uname_S)))
 endif
 
 ifdef BUILD_ALL
-	BUILD_FREETYPE = YesPlease
+	ifdef TILES
+		BUILD_FREETYPE = YesPlease
+		BUILD_SDL2 = YesPlease
+		BUILD_SDL2IMAGE = YesPlease
+		BUILD_LIBPNG = YesPlease
+	endif
+	ifdef WEBTILES
+		BUILD_LIBPNG = YesPlease
+	endif
+
 	BUILD_PCRE = YesPlease
-	BUILD_SDL2 = YesPlease
-	BUILD_SDL2IMAGE = YesPlease
 	ifdef SOUND
 		ifndef WIN32 
 			BUILD_SDL2MIXER = YesPlease
@@ -265,7 +279,6 @@ ifdef BUILD_ALL
 	endif
 	BUILD_SQLITE = YesPlease
 	BUILD_LUA = YesPlease
-	BUILD_LIBPNG = YesPlease
 	BUILD_ZLIB = YesPlease
 endif
 
@@ -1189,7 +1202,10 @@ TITLEIMGS = denzi_dragon denzi_kitchen_duty denzi_summoner \
             psiweapon_kiku white_noise_entering_the_dungeon \
             white_noise_grabbing_the_orb pooryurik_knight \
             psiweapon_roxanne baconkid_gastronok baconkid_mnoleg \
-            peileppe_bloax_eye baconkid_duvessa_dowan
+            peileppe_bloax_eye baconkid_duvessa_dowan ploomutoo_ijyb \
+	    froggy_thunder_fist_nikola froggy_rune_and_run_failed_on_dis \
+	    froggy_natasha_and_boris froggy_jiyva_felid \
+	    froggy_goodgod_tengu_gold Cws_Minotauros
 
 STATICFILES = $(TILEIMAGEFILES:%=webserver/game_data/static/%.png) \
               webserver/static/stone_soup_icon-32x32.png \
@@ -1749,9 +1765,9 @@ ifneq ($(GAME),crawl.exe)
 	@echo "This is only for Windows; please specify CROSSHOST.";false
 endif
 	+$(MAKE) clean
-	+$(MAKE) TILES=y DESTDIR=build-win SAVEDIR='~/crawl' install
+	+$(MAKE) TILES=y DESTDIR=build-win FORCE_SSE=y SAVEDIR='~/crawl' install
 	mv build-win/crawl.exe build-win/crawl-tiles.exe
-	+$(MAKE) TILES=  DESTDIR=build-win SAVEDIR='~/crawl' install
+	+$(MAKE) TILES=  DESTDIR=build-win FORCE_SSE=y SAVEDIR='~/crawl' install
 	mv build-win/crawl.exe build-win/crawl-console.exe
 	mv build-win/docs/CREDITS.txt build-win/
 	echo $(SRC_VERSION) >build-win/version.txt
@@ -1762,11 +1778,11 @@ ifneq ($(GAME),crawl.exe)
 	@echo "This is only for Windows; please specify CROSSHOST.";false
 endif
 	+$(MAKE) clean
-	+$(MAKE) TILES=y DESTDIR=build-win/stone_soup-tiles-$(MAJOR_VERSION) install
+	+$(MAKE) TILES=y DESTDIR=build-win/stone_soup-tiles-$(MAJOR_VERSION) FORCE_SSE=y install
 	cp -p $(ZIP_DOCS) build-win/stone_soup-tiles-$(MAJOR_VERSION)/
 	cd build-win && zip -9r ../stone_soup-$(SRC_VERSION)-tiles-win32.zip *
 	rm -rf build-win
-	+$(MAKE) DESTDIR=build-win/stone_soup-$(MAJOR_VERSION) install
+	+$(MAKE) DESTDIR=build-win/stone_soup-$(MAJOR_VERSION) FORCE_SSE=y install
 	cp -p $(ZIP_DOCS) build-win/stone_soup-$(MAJOR_VERSION)/
 	cd build-win && zip -9r ../stone_soup-$(SRC_VERSION)-win32.zip *
 	rm -rf build-win

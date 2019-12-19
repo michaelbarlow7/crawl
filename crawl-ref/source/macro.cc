@@ -31,6 +31,10 @@
 #include <string>
 #include <vector>
 
+#ifdef USE_TILE_LOCAL
+#include <SDL_keycode.h>
+#endif
+
 #include "cio.h"
 #include "command.h"
 #include "files.h"
@@ -261,7 +265,7 @@ static int read_key_code(string s)
     else if (s[0] == '^')
     {
         // ^A = 1, etc.
-        return 1 + toupper(s[1]) - 'A';
+        return 1 + toupper_safe(s[1]) - 'A';
     }
 
     char *tail;
@@ -812,6 +816,24 @@ int getch_with_command_macros()
     return macro_buf_get();
 }
 
+static string _buffer_to_string()
+{
+    string s;
+    for (const int k : Buffer)
+    {
+        if (k > 0 && k <= numeric_limits<unsigned char>::max())
+        {
+            char c = static_cast<unsigned char>(k);
+            if (c == '[' || c == ']')
+                s += "\\";
+            s += c;
+        }
+        else
+            s += make_stringf("[%d]", k);
+    }
+    return s;
+}
+
 /*
  * Flush the buffer. Later we'll probably want to give the player options
  * as to when this happens (ex. always before command input, casting failed).
@@ -841,11 +863,16 @@ void flush_input_buffer(int reason)
         || reason == FLUSH_REPLAY_SETUP_FAILURE
         || reason == FLUSH_REPEAT_SETUP_DONE)
     {
-        if (crawl_state.nonempty_buffer_flush_errors)
+        if (crawl_state.nonempty_buffer_flush_errors && !Buffer.empty())
         {
             if (you.wizard) // crash -- intended for tests
+            {
+                mprf(MSGCH_ERROR,
+                    "Flushing non-empty key buffer (Buffer is '%s')",
+                    _buffer_to_string().c_str());
                 ASSERT(Buffer.empty());
-            else if (!Buffer.empty())
+            }
+            else
                 mprf(MSGCH_ERROR, "Flushing non-empty key buffer");
         }
         while (!Buffer.empty())
@@ -1504,6 +1531,11 @@ string command_to_string(command_type cmd, bool tutorial)
         const int numpad = (key - 1000);
         result = make_stringf("Numpad %d", numpad);
     }
+#ifdef USE_TILE_LOCAL
+    // SDL allows control modifiers for some extra punctuation
+    else if (key < 0 && key > SDLK_EXCLAIM - SDLK_a + 1)
+        result = make_stringf("Ctrl-%c", (char) (key + SDLK_a - 1));
+#endif
     else
     {
         const int ch = key + 'A' - 1;

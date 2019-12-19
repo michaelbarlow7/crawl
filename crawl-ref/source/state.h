@@ -266,5 +266,5 @@ private:
     monster* mon;
 };
 
-bool interrupt_cmd_repeat(activity_interrupt_type ai,
+bool interrupt_cmd_repeat(activity_interrupt ai,
                           const activity_interrupt_data &at);

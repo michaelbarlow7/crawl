@@ -156,7 +156,7 @@ bool attribute_increase()
         {
             string result;
             clua.fnreturns(">s", &result);
-            keyin = toupper(result[0]);
+            keyin = toupper_safe(result[0]);
         }
         else
         {
@@ -326,7 +326,7 @@ void modify_stat(stat_type which_stat, int amount, bool suppress_msg)
 
     // Stop delays if a stat drops.
     if (amount < 0)
-        interrupt_activity(AI_STAT_CHANGE);
+        interrupt_activity(activity_interrupt::stat_change);
 
     if (which_stat == STAT_RANDOM)
         which_stat = static_cast<stat_type>(random2(NUM_STATS));
@@ -353,7 +353,7 @@ void notify_stat_change(stat_type which_stat, int amount, bool suppress_msg)
 
     // Stop delays if a stat drops.
     if (amount < 0)
-        interrupt_activity(AI_STAT_CHANGE);
+        interrupt_activity(activity_interrupt::stat_change);
 
     if (which_stat == STAT_RANDOM)
         which_stat = static_cast<stat_type>(random2(NUM_STATS));

@@ -64,10 +64,10 @@ bool trap_def::type_has_ammo() const
     switch (type)
     {
 #if TAG_MAJOR_VERSION == 34
-    case TRAP_DART:
+    case TRAP_NEEDLE:
 #endif
     case TRAP_ARROW:  case TRAP_BOLT:
-    case TRAP_NEEDLE: case TRAP_SPEAR:
+    case TRAP_DART: case TRAP_SPEAR:
         return true;
     default:
         break;
@@ -102,7 +102,7 @@ void trap_def::prepare_ammo(int charges)
     {
     case TRAP_ARROW:
     case TRAP_BOLT:
-    case TRAP_NEEDLE:
+    case TRAP_DART:
         ammo_qty = 3 + random2avg(9, 3);
         break;
     case TRAP_SPEAR:
@@ -188,7 +188,7 @@ bool trap_def::is_safe(actor* act) const
         return true;
 #endif
 
-    if (type == TRAP_NEEDLE)
+    if (type == TRAP_DART)
         return you.hp > 15;
     else if (type == TRAP_ARROW)
         return you.hp > 35;
@@ -420,9 +420,11 @@ vector<coord_def> find_golubria_on_level()
     return ret;
 }
 
-enum passage_type
+enum class passage_type
 {
-    PASSAGE_FREE, PASSAGE_BLOCKED, PASSAGE_NONE
+    free,
+    blocked,
+    none,
 };
 
 static passage_type _find_other_passage_side(coord_def& to)
@@ -441,9 +443,9 @@ static passage_type _find_other_passage_side(coord_def& to)
     }
     const int choices = clear_passages.size();
     if (choices < 1)
-        return has_blocks ? PASSAGE_BLOCKED : PASSAGE_NONE;
+        return has_blocks ? passage_type::blocked : passage_type::none;
     to = clear_passages[random2(choices)];
-    return PASSAGE_FREE;
+    return passage_type::free;
 }
 
 void trap_def::trigger(actor& triggerer)
@@ -494,7 +496,7 @@ void trap_def::trigger(actor& triggerer)
     {
         coord_def to = p;
         passage_type search_result = _find_other_passage_side(to);
-        if (search_result == PASSAGE_FREE)
+        if (search_result == passage_type::free)
         {
             if (you_trigger)
                 mpr("You enter the passage of Golubria.");
@@ -511,7 +513,7 @@ void trap_def::trigger(actor& triggerer)
         }
         else if (you_trigger)
         {
-            mprf("This passage %s!", search_result == PASSAGE_BLOCKED ?
+            mprf("This passage %s!", search_result == passage_type::blocked ?
                  "seems to be blocked by something" : "doesn't lead anywhere");
         }
         break;
@@ -636,15 +638,8 @@ void trap_def::trigger(actor& triggerer)
         // Nets need LOF to hit the player, no netting through glass.
         if (!you.see_cell_no_trans(pos))
             break;
-        bool triggered = false;
-        if (you_trigger)
-        {
-            if (one_chance_in(3))
-                mpr("A net swings high above you.");
-            else
-                triggered = true;
-        }
-        else if (m)
+        bool triggered = you_trigger;
+        if (m)
         {
             if (mons_intel(*m) < I_HUMAN)
             {
@@ -848,7 +843,7 @@ int trap_def::max_damage(const actor& act)
 
     switch (type)
     {
-        case TRAP_NEEDLE: return 0;
+        case TRAP_DART: return 0;
         case TRAP_ARROW:  return mon ?  7 : 15;
         case TRAP_SPEAR:  return mon ? 10 : 26;
         case TRAP_BOLT:   return mon ? 18 : 40;
@@ -881,7 +876,7 @@ int trap_def::to_hit_bonus()
         return 15;
     case TRAP_NET:
         return 5;
-    case TRAP_NEEDLE:
+    case TRAP_DART:
         return 8;
     // Irrelevant:
     default:
@@ -1094,12 +1089,12 @@ item_def trap_def::generate_trap_item()
     switch (type)
     {
 #if TAG_MAJOR_VERSION == 34
-    case TRAP_DART:   base = OBJ_MISSILES; sub = MI_DART;         break;
+    case TRAP_NEEDLE: base = OBJ_MISSILES; sub = MI_NEEDLE;       break;
 #endif
     case TRAP_ARROW:  base = OBJ_MISSILES; sub = MI_ARROW;        break;
     case TRAP_BOLT:   base = OBJ_MISSILES; sub = MI_BOLT;         break;
     case TRAP_SPEAR:  base = OBJ_WEAPONS;  sub = WPN_SPEAR;       break;
-    case TRAP_NEEDLE: base = OBJ_MISSILES; sub = MI_NEEDLE;       break;
+    case TRAP_DART:   base = OBJ_MISSILES; sub = MI_DART;         break;
     case TRAP_NET:    base = OBJ_MISSILES; sub = MI_THROWING_NET; break;
     default:          return item;
     }
@@ -1111,7 +1106,7 @@ item_def trap_def::generate_trap_item()
     if (base == OBJ_MISSILES)
     {
         set_item_ego_type(item, base,
-                          (sub == MI_NEEDLE) ? SPMSL_POISONED : SPMSL_NORMAL);
+                          (sub == MI_DART) ? SPMSL_POISONED : SPMSL_NORMAL);
     }
     else
         set_item_ego_type(item, base, SPWPN_NORMAL);
@@ -1193,7 +1188,7 @@ void trap_def::shoot_ammo(actor& act, bool was_known)
     }
     else // OK, we've been hit.
     {
-        bool poison = type == TRAP_NEEDLE
+        bool poison = type == TRAP_DART
                        && (x_chance_in_y(50 - (3*act.armour_class()) / 2, 100));
 
         int damage_taken = act.apply_ac(shot_damage(act));
@@ -1264,12 +1259,12 @@ dungeon_feature_type trap_category(trap_type type)
     case TRAP_ARROW:
     case TRAP_SPEAR:
     case TRAP_BLADE:
+    case TRAP_DART:
     case TRAP_BOLT:
-    case TRAP_NEEDLE:
     case TRAP_NET:
 #if TAG_MAJOR_VERSION == 34
+    case TRAP_NEEDLE:
     case TRAP_GAS:
-    case TRAP_DART:
 #endif
     case TRAP_PLATE:
         return DNGN_TRAP_MECHANICAL;
@@ -1298,7 +1293,7 @@ bool is_valid_shaft_level()
 
     const Branch &branch = branches[place.branch];
 
-    if (branch.branch_flags & BFLAG_NO_SHAFTS)
+    if (branch.branch_flags & brflag::no_shafts)
         return false;
 
     // Don't allow shafts from the bottom of a branch.
@@ -1318,7 +1313,7 @@ bool is_valid_shaft_effect_level()
     // Don't shaft the player when we can't, and also when it would be into a
     // dangerous end.
     return is_valid_shaft_level()
-           && !(branch.branch_flags & BFLAG_DANGEROUS_END
+           && !(branch.branch_flags & brflag::dangerous_end
                 && brdepth[place.branch] - place.depth == 1);
 }
 
@@ -1344,7 +1339,7 @@ static level_id _generic_shaft_dest(level_pos lpos, bool known = false)
 
     // Only shafts on the level immediately above a dangerous branch
     // bottom will take you to that dangerous bottom.
-    if (branches[lid.branch].branch_flags & BFLAG_DANGEROUS_END
+    if (branches[lid.branch].branch_flags & brflag::dangerous_end
         && lid.depth == max_depth
         && (max_depth - curr_depth) > 1)
     {
@@ -1366,45 +1361,51 @@ void roll_trap_effects()
 }
 
 /***
- * Separate from the previous function so the trap triggers when crawl is in an
+ * Separate from roll_trap_effects so the trap triggers when crawl is in an
  * appropriate state
  */
 void do_trap_effects()
 {
-    const level_id place = level_id::current();
-    const Branch &branch = branches[place.branch];
-
     // Try to shaft, teleport, or alarm the player.
-    int roll = random2(3);
-    switch (roll)
+
+    // We figure out which possibilites are allowed before picking which happens
+    // so that the overall chance of being trapped doesn't depend on which
+    // possibilities are allowed.
+
+    // Teleport effects are allowed everywhere, no need to check
+    vector<trap_type> available_traps = { TRAP_TELEPORT };
+    // Don't shaft the player when shafts aren't allowed in the location or when
+    //  it would be into a dangerous end.
+    if (is_valid_shaft_effect_level())
+        available_traps.push_back(TRAP_SHAFT);
+    // No alarms on the first 3 floors
+    if (env.absdepth0 > 3)
+        available_traps.push_back(TRAP_ALARM);
+
+    switch (*random_iterator(available_traps))
     {
-        case 0:
-            // Don't shaft the player when we can't, and also when it would be into a
-            // dangerous end.
-            if (is_valid_shaft_level()
-               && !(branch.branch_flags & BFLAG_DANGEROUS_END
-                    && brdepth[place.branch] - place.depth == 1))
-            {
-                dprf("Attempting to shaft player.");
-                you.do_shaft();
-            }
+        case TRAP_SHAFT:
+            dprf("Attempting to shaft player.");
+            you.do_shaft();
             break;
-        case 1:
-            // No alarms on the first 3 floors
-            if (env.absdepth0 > 3)
-            {
-                // Alarm effect alarms are always noisy, even if the player is
-                // silenced, to avoid "travel only while silenced" behavior.
-                // XXX: improve messaging to make it clear theres a wail outside of the
-                // player's silence
-                mprf("You set off the alarm!");
-                fake_noisy(40, you.pos());
-                you.sentinel_mark(true);
-            }
+
+        case TRAP_ALARM:
+            // Alarm effect alarms are always noisy, even if the player is
+            // silenced, to avoid "travel only while silenced" behavior.
+            // XXX: improve messaging to make it clear theres a wail outside of the
+            // player's silence
+            mprf("You set off the alarm!");
+            fake_noisy(40, you.pos());
+            you.sentinel_mark(true);
             break;
-        case 2:
-            // Teleportitis
+
+        case TRAP_TELEPORT:
             you_teleport_now(false, true, "You stumble into a teleport trap!");
+            break;
+
+        // Other cases shouldn't be possible, but having a default here quiets
+        // compiler warnings
+        default:
             break;
     }
 }
@@ -1489,7 +1490,7 @@ trap_type random_vault_trap()
     trap_type type = TRAP_ARROW;
 
     if ((random2(1 + level_number) > 1) && one_chance_in(4))
-        type = TRAP_NEEDLE;
+        type = TRAP_DART;
     if (random2(1 + level_number) > 3)
         type = TRAP_SPEAR;
 

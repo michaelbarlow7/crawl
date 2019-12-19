@@ -585,9 +585,6 @@ void validate_mutations(bool debug_msg)
         }
     }
     ASSERT(total_temp == you.attribute[ATTR_TEMP_MUTATIONS]);
-    ASSERT(you.attribute[ATTR_TEMP_MUT_XP] >=0);
-    if (total_temp > 0)
-        ASSERT(you.attribute[ATTR_TEMP_MUT_XP] > 0);
 }
 
 string describe_mutations(bool drop_title)
@@ -644,11 +641,13 @@ string describe_mutations(bool drop_title)
 
     if (you.species == SP_VAMPIRE)
     {
-        if (you.hunger_state <= HS_STARVING)
-            result += "<green>You do not heal naturally.</green>\n";
-        else if (you.hunger_state < HS_SATIATED)
-            result += "<green>You heal slowly.</green>\n";
-        else if (you.hunger_state >= HS_FULL)
+        if (!you.vampire_alive)
+        {
+            result += "<green>You do not regenerate when monsters are visible.</green>\n";
+            result += "<green>You are frail without blood (-20% HP).</green>\n";
+            result += "<green>You can heal yourself when you bite living creatures.</green>\n";
+        }
+        else
             result += "<green>Your natural rate of healing is unusually fast.</green>\n";
     }
 
@@ -768,23 +767,7 @@ static formatted_string _vampire_Ascreen_footer(bool first_page)
 
 static int _vampire_bloodlessness()
 {
-    switch (you.hunger_state)
-    {
-    case HS_ENGORGED:
-    case HS_VERY_FULL:
-    case HS_FULL:
-        return 1;
-    case HS_SATIATED:
-        return 2;
-    case HS_HUNGRY:
-    case HS_VERY_HUNGRY:
-    case HS_NEAR_STARVING:
-        return 3;
-    case HS_STARVING:
-    case HS_FAINTING:
-        return 4;
-    }
-    die("bad hunger state %d", you.hunger_state);
+    return you.vampire_alive ? 1 : 2;
 }
 
 static string _display_vampire_attributes()
@@ -794,41 +777,41 @@ static string _display_vampire_attributes()
     string result;
 
     const int lines = 12;
-    string column[lines][5] =
+    string column[lines][3] =
     {
-        {"                     ", "<green>Full</green>       ", "Satiated   ", "<yellow>Thirsty</yellow>    ", "<lightred>Bloodless</lightred>"},
-                                 //Full       Satiated      Thirsty         Bloodless
-        {"Metabolism           ", "fast       ", "normal     ", "slow       ", "none  "},
+        {"                     ", "<green>Alive</green>      ", "<lightred>Bloodless</lightred>"},
+                                 //Full       Bloodless
+        {"Regeneration         ", "fast       ", "none with monsters in sight"},
 
-        {"Regeneration         ", "fast       ", "normal     ", "slow       ", "none  "},
+        {"HP modifier          ", "none       ", "-20%"},
 
-        {"Stealth boost        ", "none       ", "none       ", "minor      ", "major "},
+        {"Stealth boost        ", "none       ", "major "},
 
-        {"Hunger costs         ", "full       ", "full       ", "halved     ", "none  "},
+        {"Heal on bite         ", "no         ", "yes "},
 
         {"\n<w>Resistances</w>\n"
-         "Poison resistance    ", "           ", "           ", "+          ", "immune"},
+         "Poison resistance    ", "           ", "immune"},
 
-        {"Cold resistance      ", "           ", "           ", "+          ", "++    "},
+        {"Cold resistance      ", "           ", "++    "},
 
-        {"Negative resistance  ", "           ", " +         ", "++         ", "+++   "},
+        {"Negative resistance  ", "           ", "+++   "},
 
-        {"Rotting resistance   ", "           ", "           ", "+          ", "+     "},
+        {"Rotting resistance   ", "           ", "+     "},
 
-        {"Torment resistance   ", "           ", "           ", "           ", "+     "},
+        {"Torment resistance   ", "           ", "+     "},
 
         {"\n<w>Transformations</w>\n"
-         "Bat form             ", "no         ", "yes        ", "yes        ", "yes   "},
+         "Bat form             ", "no         ", "yes   "},
 
         {"Other forms and \n"
-         "berserk              ", "yes        ", "yes        ", "no         ", "no    "}
+         "berserk              ", "yes        ", "no    "}
     };
 
     int current = _vampire_bloodlessness();
 
     for (int y = 0; y < lines; y++)  // lines   (properties)
     {
-        for (int x = 0; x < 5; x++)  // columns (hunger states)
+        for (int x = 0; x < 3; x++)  // columns (hunger states)
         {
             if (y > 0 && x == current)
                 result += "<w>";
@@ -863,10 +846,10 @@ void display_mutations()
     trim_string_right(mutation_s);
 
     auto vbox = make_shared<Box>(Widget::VERT);
+    vbox->align_cross = Widget::CENTER;
 
     const char *title_text = "Innate Abilities, Weirdness & Mutations";
     auto title = make_shared<Text>(formatted_string(title_text, WHITE));
-    title->align_self = Widget::CENTER;
     vbox->add_child(move(title));
 
     auto switcher = make_shared<Switcher>();
@@ -878,23 +861,23 @@ void display_mutations()
         auto scroller = make_shared<Scroller>();
         auto text = make_shared<Text>(formatted_string::parse_string(
                 descs[static_cast<int>(i)]));
-        text->wrap_text = true;
+        text->set_wrap_text(true);
         scroller->set_child(text);
         switcher->add_child(move(scroller));
     }
 
     switcher->current() = 0;
-    switcher->set_margin_for_sdl({20, 0, 0, 0});
-    switcher->set_margin_for_crt({1, 0, 0, 0});
+    switcher->set_margin_for_sdl(20, 0, 0, 0);
+    switcher->set_margin_for_crt(1, 0, 0, 0);
     switcher->expand_h = false;
 #ifdef USE_TILE_LOCAL
-    switcher->max_size()[0] = tiles.get_crt_font()->char_width()*80;
+    switcher->max_size().width = tiles.get_crt_font()->char_width()*80;
 #endif
     vbox->add_child(switcher);
 
     auto bottom = make_shared<Text>(_vampire_Ascreen_footer(true));
-    bottom->set_margin_for_sdl({20, 0, 0, 0});
-    bottom->set_margin_for_crt({1, 0, 0, 0});
+    bottom->set_margin_for_sdl(20, 0, 0, 0);
+    bottom->set_margin_for_crt(1, 0, 0, 0);
     if (you.species == SP_VAMPIRE)
         vbox->add_child(bottom);
 
@@ -908,16 +891,18 @@ void display_mutations()
         lastch = ev.key.keysym.sym;
         if (you.species == SP_VAMPIRE && (lastch == '!' || lastch == CK_MOUSE_CMD || lastch == '^'))
         {
-            int c = 1 - switcher->current();
-            switcher->current() = c;
+            int& c = switcher->current();
+
+            bottom->set_text(_vampire_Ascreen_footer(c));
+
+            c = 1 - c;
 #ifdef USE_TILE_WEB
             tiles.json_open_object();
             tiles.json_write_int("pane", c);
             tiles.ui_state_change("mutations", 0);
 #endif
-            bottom->set_text(_vampire_Ascreen_footer(c));
         } else
-            done = !vbox->on_event(ev);
+            done = !switcher->current_widget()->on_event(ev);
         return true;
     });
 
@@ -2557,6 +2542,12 @@ _schedule_ds_mutations(vector<mutation_type> muts)
 
 void roll_demonspawn_mutations()
 {
+    // intentionally create the subgenerator either way, so that this has the
+    // same impact on the current main rng for all chars.
+    rng::subgenerator ds_rng;
+
+    if (you.species != SP_DEMONSPAWN)
+        return;
     you.demonic_traits = _schedule_ds_mutations(
                          _order_ds_mutations(
                          _select_ds_mutations()));
@@ -2789,7 +2780,7 @@ void check_monster_detect()
             if (you.see_cell(*ri2))
             {
                 mon->flags |= MF_SENSED;
-                interrupt_activity(AI_SENSE_MONSTER);
+                interrupt_activity(activity_interrupt::sense_monster);
                 break;
             }
         }

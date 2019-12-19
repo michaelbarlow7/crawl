@@ -89,7 +89,7 @@ public:
         if (you.duration[DUR_DEATHS_DOOR])
         {
             if (reason)
-                *reason = "You can't heal while in Death's door.";
+                *reason = "You can't heal while in death's door.";
             return false;
         }
         if (!you.can_potion_heal()
@@ -175,7 +175,7 @@ public:
         if (you.duration[DUR_DEATHS_DOOR])
         {
             if (reason)
-                *reason = "You cannot heal while in Death's door!";
+                *reason = "You cannot heal while in death's door.";
             return false;
         }
         if (you.hp == you.hp_max && player_rotted() == 0)
@@ -655,7 +655,7 @@ public:
 
     bool effect(bool was_known = true, int pow = 40, bool=true) const override
     {
-        if (you.species == SP_VAMPIRE && you.hunger_state < HS_SATIATED)
+        if (you.species == SP_VAMPIRE && !you.vampire_alive)
         {
             mpr("You feel slightly irritated.");
             return false;

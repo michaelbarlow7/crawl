@@ -111,7 +111,7 @@ static bool _show_skill(skill_type sk, skill_menu_state state)
     switch (state)
     {
     case SKM_SHOW_DEFAULT:
-        return you.can_train[sk] || you.skill(sk, 10, false, false)
+        return you.can_currently_train[sk] || you.skill(sk, 10, false, false)
                || sk == you.transfer_from_skill || sk == you.transfer_to_skill;
     case SKM_SHOW_ALL:     return true;
     default:               return false;
@@ -149,7 +149,7 @@ bool SkillMenuEntry::is_selectable(bool keep_hotkey)
         return false;
     }
 
-    if (!you.can_train[m_sk] && !is_set(SKMF_RESKILL_TO)
+    if (!you.can_currently_train[m_sk] && !is_set(SKMF_RESKILL_TO)
         && !is_set(SKMF_RESKILL_FROM))
     {
         return false;
@@ -226,7 +226,7 @@ void SkillMenuEntry::set_name(bool keep_hotkey)
         if (!keep_hotkey)
         {
             m_name->add_hotkey(++m_letter);
-            m_name->add_hotkey(toupper(m_letter));
+            m_name->add_hotkey(toupper_safe(m_letter));
         }
         m_name->set_id(m_sk);
         m_name->allow_highlight(true);
@@ -336,7 +336,7 @@ string SkillMenuEntry::get_prefix()
     else
         letter = ' ';
 
-    const int sign = (!you.can_train[m_sk] || mastered()) ? ' ' :
+    const int sign = (!you.can_currently_train[m_sk] || mastered()) ? ' ' :
                                    (you.train[m_sk] == TRAINING_FOCUSED) ? '*' :
                                           you.train[m_sk] ? '+'
                                                           : '-';
@@ -791,9 +791,9 @@ void SkillMenu::init_experience()
         for (int i = 0; i < NUM_SKILLS; ++i)
         {
             const skill_type sk = skill_type(i);
-            if (!is_useless_skill(sk) && !you.can_train[sk])
+            if (!is_useless_skill(sk) && !you.can_currently_train[sk])
             {
-                you.can_train.set(sk);
+                you.can_currently_train.set(sk);
                 you.train[sk] = TRAINING_DISABLED;
             }
         }
@@ -1603,7 +1603,7 @@ void SkillMenu::set_skills()
 
 void SkillMenu::toggle_practise(skill_type sk, int keyn)
 {
-    ASSERT(you.can_train[sk]);
+    ASSERT(you.can_currently_train[sk]);
     if (keyn >= 'A' && keyn <= 'Z')
         you.train.init(TRAINING_DISABLED);
     if (get_state(SKM_DO) == SKM_DO_PRACTISE)
@@ -1774,14 +1774,13 @@ SizeReq UISkillMenu::_get_preferred_size(Direction dim, int prosp_width)
 void UISkillMenu::_allocate_region()
 {
     skm.exit(true);
-    int height = m_region[3];
-    skm.init(flag, height);
+    skm.init(flag, m_region.height);
 }
 
 void UISkillMenu::_render()
 {
 #ifdef USE_TILE_LOCAL
-    GLW_3VF t = {(float)m_region[0], (float)m_region[1], 0}, s = {1, 1, 1};
+    GLW_3VF t = {(float)m_region.x, (float)m_region.y, 0}, s = {1, 1, 1};
     glmanager->set_transform(t, s);
 #endif
     skm.draw_menu();
@@ -1801,8 +1800,8 @@ bool UISkillMenu::on_event(const wm_event& ev)
     }
 
     MouseEvent mouse_ev = ev.mouse_event;
-    mouse_ev.px -= m_region[0];
-    mouse_ev.py -= m_region[1];
+    mouse_ev.px -= m_region.x;
+    mouse_ev.py -= m_region.y;
 
     int key = skm.handle_mouse(mouse_ev);
     if (key && key != CK_NO_KEY)

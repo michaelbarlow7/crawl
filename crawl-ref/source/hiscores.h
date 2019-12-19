@@ -16,8 +16,7 @@ void logfile_new_entry(const scorefile_entry &se);
 
 void hiscores_read_to_memory();
 
-string hiscores_print_list(int display_count = -1, int format = SCORE_TERSE,
-                         int newest_entry = -1);
+string hiscores_print_list(int display_count, int format, int newest_entry, int& start_out);
 void hiscores_print_all(int display_count = -1, int format = SCORE_TERSE);
 void show_hiscore_table();
 
@@ -132,6 +131,8 @@ private:
 
     int         scrolls_used;       // Number of scrolls used.
     int         potions_used;       // Number of potions used.
+    string      seed;               // Game seed: use string here for simplicity
+                                    // even though the seed is really uint64_t
 
     mutable unique_ptr<xlog_fields> fields;
 

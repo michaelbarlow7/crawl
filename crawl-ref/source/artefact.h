@@ -28,7 +28,7 @@ enum unrand_flag_type
     UNRAND_FLAG_EVIL             = 0x08,
     UNRAND_FLAG_UNCLEAN          = 0x10,
     UNRAND_FLAG_CHAOTIC          = 0x20,
-    UNRAND_FLAG_CORPSE_VIOLATING = 0x40,
+                              // = 0x40,  // was UNRAND_FLAG_CORPSE_VIOLATING
     UNRAND_FLAG_NOGEN            = 0x80,
     UNRAND_FLAG_RANDAPP          =0x100,
     UNRAND_FLAG_UNIDED           =0x200,
@@ -52,6 +52,9 @@ struct unrandart_entry
 
     object_class_type base_type;
     uint8_t           sub_type;
+    object_class_type fallback_base_type;
+    uint8_t           fallback_sub_type;
+    int               fallback_brand;
     short             plus;
     short             plus2;
     colour_t          colour;

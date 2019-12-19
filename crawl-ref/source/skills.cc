@@ -488,9 +488,9 @@ static void _check_start_train()
         if (is_invalid_skill(sk) || is_useless_skill(sk))
             continue;
 
-        if (!you.can_train[sk] && you.train[sk])
+        if (!you.can_currently_train[sk] && you.train[sk])
             skills.insert(sk);
-        you.can_train.set(sk);
+        you.can_currently_train.set(sk);
     }
 
     reset_training();
@@ -508,10 +508,15 @@ static void _check_start_train()
     you.start_train.clear();
 }
 
+static bool _player_is_gnoll()
+{
+    return you.species == SP_GNOLL;
+}
+
 static void _check_stop_train()
 {
     // Gnolls can't stop training skills.
-    if (you.species == SP_GNOLL)
+    if (_player_is_gnoll())
         return;
 
     _check_inventory_skills();
@@ -531,7 +536,7 @@ static void _check_stop_train()
 
         if (skill_trained(sk) && you.training[sk])
             skills.insert(sk);
-        you.can_train.set(sk, false);
+        you.can_currently_train.set(sk, false);
     }
 
     if (!skills.empty())
@@ -544,7 +549,7 @@ static void _check_stop_train()
     you.stop_train.clear();
 }
 
-void update_can_train()
+void update_can_currently_train()
 {
     if (!you.start_train.empty())
         _check_start_train();
@@ -555,7 +560,7 @@ void update_can_train()
 
 bool training_restricted(skill_type sk)
 {
-    if (you.species == SP_GNOLL)
+    if (_player_is_gnoll())
         return false;
 
     switch (sk)
@@ -575,15 +580,15 @@ bool training_restricted(skill_type sk)
 }
 
 /*
- * Init the can_train array by examining inventory and spell list to see which
- * skills can be trained.
+ * Init the can_currently_train array by examining inventory and spell list to
+ * see which skills can be trained.
  */
-void init_can_train()
+void init_can_currently_train()
 {
     // Clear everything out, in case this isn't the first game.
     you.start_train.clear();
     you.stop_train.clear();
-    you.can_train.reset();
+    you.can_currently_train.reset();
 
     for (int i = 0; i < NUM_SKILLS; ++i)
     {
@@ -592,7 +597,7 @@ void init_can_train()
         if (is_useless_skill(sk))
             continue;
 
-        you.can_train.set(sk);
+        you.can_currently_train.set(sk);
         if (training_restricted(sk))
             you.stop_train.insert(sk);
     }
@@ -602,15 +607,13 @@ void init_can_train()
 
 void init_train()
 {
-    const bool is_gnoll = you.species == SP_GNOLL;
-
     for (int i = 0; i < NUM_SKILLS; ++i)
     {
-        if (you.can_train[i] && you.skill_points[i])
+        if (you.can_currently_train[i] && you.skill_points[i])
             you.train[i] = you.train_alt[i] = TRAINING_ENABLED;
         else
         {
-            const bool gnoll_enable = is_gnoll &&
+            const bool gnoll_enable = _player_is_gnoll() &&
                                 !is_removed_skill((skill_type) i);
             // Skills are on by default in auto mode and off in manual.
             you.train[i] = (training_status) (gnoll_enable
@@ -747,7 +750,7 @@ bool check_selected_skills()
 
     mpr("You need to enable at least one skill for training.");
     // Training will be fixed up on load if this ASSERT triggers.
-    ASSERT(you.species != SP_GNOLL);
+    ASSERT(!_player_is_gnoll());
     more();
     reset_training();
     skill_menu();
@@ -763,10 +766,9 @@ bool check_selected_skills()
  */
 void reset_training()
 {
-    const bool is_gnoll = you.species == SP_GNOLL;
     // Disable this here since we don't want any autotraining related skilling
     // changes for Gnolls.
-    if (is_gnoll)
+    if (_player_is_gnoll())
         you.auto_training = false;
 
     // We clear the values in the training array. In auto mode they are set
@@ -776,7 +778,7 @@ void reset_training()
     {
         // skill_trained doesn't work for gnolls, but all existent skills
         // will be set as enabled here.
-        if (!is_gnoll && (you.auto_training || !skill_trained(i)))
+        if (!_player_is_gnoll() && (you.auto_training || !skill_trained(i)))
             you.training[i] = 0;
         else
             you.training[i] = you.train[i];
@@ -822,12 +824,15 @@ void reset_training()
 
         // Focused skills get at least 20% training.
         for (int sk = 0; sk < NUM_SKILLS; ++sk)
-            if (you.train[sk] == 2 && you.training[sk] < 20 && you.can_train[sk])
+            if (you.train[sk] == 2 && you.training[sk] < 20
+                && you.can_currently_train[sk])
+            {
                 you.training[sk] += 5 * (5 - you.training[sk] / 4);
+            }
     }
 
     _scale_array(you.training, 100, you.auto_training);
-    if (is_gnoll)
+    if (_player_is_gnoll())
     {
         // we use the full set of skills to calculate gnoll percentages,
         // but they don't actually get to train sacrificed skills.
@@ -888,7 +893,7 @@ int _gnoll_total_skill_cost();
 void train_skills(bool simu)
 {
     int cost, exp;
-    if (you.species == SP_GNOLL)
+    if (_player_is_gnoll())
     {
         do
         {
@@ -960,7 +965,7 @@ static void _train_skills(int exp, const int cost, const bool simu)
         if (you.training[i] > 0)
         {
             sk_exp[i] = you.training[i] * exp / 100;
-            if (sk_exp[i] < cost && you.species != SP_GNOLL)
+            if (sk_exp[i] < cost && !_player_is_gnoll())
             {
                 // One skill has a too low training to be trained at all.
                 // We skip the first phase and go directly to the random
@@ -976,7 +981,7 @@ static void _train_skills(int exp, const int cost, const bool simu)
     {
         // We randomize the order, to avoid a slight bias to first skills.
         // Being trained first can make a difference if skill cost increases.
-        if (you.species == SP_GNOLL)
+        if (_player_is_gnoll())
             reverse(training_order.begin(), training_order.end());
         else
             shuffle_array(training_order);
@@ -984,7 +989,7 @@ static void _train_skills(int exp, const int cost, const bool simu)
         {
             int gain = 0;
 
-            if (you.species == SP_GNOLL)
+            if (_player_is_gnoll())
                 sk_exp[sk] = exp;
             while (sk_exp[sk] >= cost && you.training[sk])
             {
@@ -994,7 +999,7 @@ static void _train_skills(int exp, const int cost, const bool simu)
                 ASSERT(exp >= 0);
                 if (_level_up_check(sk, simu))
                     sk_exp[sk] = 0;
-                if (you.species == SP_GNOLL)
+                if (_player_is_gnoll())
                     break;
             }
 
@@ -1010,7 +1015,7 @@ static void _train_skills(int exp, const int cost, const bool simu)
     // with random_choose_weighted.
     while (exp >= cost)
     {
-        if (you.species == SP_GNOLL)
+        if (_player_is_gnoll())
             break;
         int gain;
         skill_type sk = SK_NONE;
@@ -1053,7 +1058,7 @@ static void _train_skills(int exp, const int cost, const bool simu)
         for (int i = 0; i < NUM_SKILLS; ++i)
         {
             skill_type sk = static_cast<skill_type>(i);
-            if (total_gain[sk] && !simu && you.species != SP_GNOLL)
+            if (total_gain[sk] && !simu && !_player_is_gnoll())
             {
                 dprf(DIAG_SKILLS, "Trained %s by %d.",
                      skill_name(sk), total_gain[sk]);
@@ -1080,7 +1085,7 @@ static void _train_skills(int exp, const int cost, const bool simu)
 
 bool skill_trained(int i)
 {
-    return you.can_train[i] && you.train[i];
+    return you.can_currently_train[i] && you.train[i];
 }
 
 /**
@@ -1247,7 +1252,7 @@ static int _train(skill_type exsk, int &max_exp, bool simu)
     // This will be deducted from you.exp_available.
     int cost = calc_skill_cost(you.skill_cost_level);
 
-    if (you.species == SP_GNOLL)
+    if (_player_is_gnoll())
     {
         int useless_count = _useless_skill_count();
         int total_count = _total_skill_count();
@@ -1529,7 +1534,7 @@ bool player::set_training_target(const skill_type sk, const int target, bool ann
     const int ranged_target = min(max((int) target, 0), 270);
     if (announce && ranged_target != (int) training_targets[sk])
     {
-        if (you.species == SP_GNOLL)
+        if (_player_is_gnoll())
             mprf("Gnolls can't set training targets!");
         else if (ranged_target == 0)
             mprf("Clearing the skill training target for %s.", skill_name(sk));
@@ -1701,10 +1706,12 @@ string skill_title_by_rank(skill_type best_skill, uint8_t skill_rank,
                 result = god_title(god, species, piety);
             break;
 
+#if TAG_MAJOR_VERSION == 34
         case SK_EVOCATIONS:
             if (god == GOD_PAKELLAS)
                 result = god_title(god, species, piety);
             break;
+#endif
 
         default:
             break;
@@ -1941,7 +1948,7 @@ float species_apt_factor(skill_type sk, species_type sp)
 vector<skill_type> get_crosstrain_skills(skill_type sk)
 {
     // Gnolls do not have crosstraining.
-    if (you.species == SP_GNOLL)
+    if (_player_is_gnoll())
         return {};
 
     switch (sk)
@@ -2038,7 +2045,7 @@ void dump_skills(string &text)
         {
             text += make_stringf(" %c Level %.*f%s %s\n",
                                  real == 270       ? 'O' :
-                                 !you.can_train[i] ? ' ' :
+                                 !you.can_currently_train[i] ? ' ' :
                                  you.train[i] == 2 ? '*' :
                                  you.train[i]      ? '+' :
                                                      '-',
@@ -2069,7 +2076,7 @@ int skill_transfer_amount(skill_type sk)
 int transfer_skill_points(skill_type fsk, skill_type tsk, int skp_max,
                           bool simu, bool boost)
 {
-    ASSERT(you.species != SP_GNOLL);
+    ASSERT(!_player_is_gnoll());
     ASSERT(!is_invalid_skill(fsk) && !is_invalid_skill(tsk));
 
     const int penalty = 90; // 10% XP penalty
@@ -2188,18 +2195,18 @@ skill_state::skill_state() :
 
 void skill_state::save()
 {
-    can_train          = you.can_train;
-    skills             = you.skills;
-    train              = you.train;
-    training           = you.training;
-    skill_points       = you.skill_points;
-    training_targets   = you.training_targets;
-    ct_skill_points    = you.ct_skill_points;
-    skill_cost_level   = you.skill_cost_level;
-    skill_order        = you.skill_order;
-    auto_training      = you.auto_training;
-    exp_available      = you.exp_available;
-    total_experience   = you.total_experience;
+    can_currently_train = you.can_currently_train;
+    skills              = you.skills;
+    train               = you.train;
+    training            = you.training;
+    skill_points        = you.skill_points;
+    training_targets    = you.training_targets;
+    ct_skill_points     = you.ct_skill_points;
+    skill_cost_level    = you.skill_cost_level;
+    skill_order         = you.skill_order;
+    auto_training       = you.auto_training;
+    exp_available       = you.exp_available;
+    total_experience    = you.total_experience;
     get_all_manual_charges(manual_charges);
     for (int i = 0; i < NUM_SKILLS; i++)
     {
@@ -2240,7 +2247,7 @@ void skill_state::restore_training()
         }
     }
 
-    you.can_train                   = can_train;
+    you.can_currently_train         = can_currently_train;
     you.auto_training               = auto_training;
     reset_training();
 }
@@ -2248,7 +2255,6 @@ void skill_state::restore_training()
 // Sanitize skills after an upgrade, racechange, etc.
 void fixup_skills()
 {
-    const bool is_gnoll = you.species == SP_GNOLL;
     for (skill_type sk = SK_FIRST_SKILL; sk < NUM_SKILLS; ++sk)
     {
         if (is_useless_skill(sk))
@@ -2257,21 +2263,21 @@ void fixup_skills()
             // gnolls have everything existent enabled, so that the
             // training percentage is calculated correctly. (Useless
             // skills still won't be trained for them.)
-            if (is_gnoll && !is_removed_skill(sk))
+            if (_player_is_gnoll() && !is_removed_skill(sk))
                 you.train[sk] = TRAINING_ENABLED;
             else
                 you.train[sk] = TRAINING_DISABLED;
         }
-        else if (is_gnoll)
+        else if (_player_is_gnoll())
             you.train[sk] = TRAINING_ENABLED;
         you.skill_points[sk] = min(you.skill_points[sk],
                                    skill_exp_needed(MAX_SKILL_LEVEL, sk));
         check_skill_level_change(sk);
     }
-    init_can_train();
+    init_can_currently_train();
     reset_training();
 
-    if (you.exp_available >= 10 * calc_skill_cost(you.skill_cost_level) && !is_gnoll)
+    if (you.exp_available >= 10 * calc_skill_cost(you.skill_cost_level) && !_player_is_gnoll())
         skill_menu(SKMF_EXPERIENCE);
 
     check_training_targets();
@@ -2287,8 +2293,8 @@ void fixup_skills()
 bool can_enable_skill(skill_type sk, bool override)
 {
     // TODO: should this check you.skill_points or you.skills?
-    return you.species != SP_GNOLL
+    return !_player_is_gnoll()
        && you.skills[sk] < MAX_SKILL_LEVEL
        && !is_useless_skill(sk)
-       && (override || (you.can_train[sk] && !is_harmful_skill(sk)));
+       && (override || (you.can_currently_train[sk] && !is_harmful_skill(sk)));
 }

@@ -694,9 +694,11 @@ static void _hydra_consider_devouring(monster &defender)
     if (defender.is_shapeshifter())
     {
         // handle this carefully, so the player knows what's going on
-        mprf("You spit out %s as %s twists & changes in your mouth!",
+        mprf("You spit out %s as %s %s & %s in your mouth!",
              defender.name(DESC_THE).c_str(),
-             defender.pronoun(PRONOUN_SUBJECTIVE).c_str());
+             defender.pronoun(PRONOUN_SUBJECTIVE).c_str(),
+             conjugate_verb("twist", defender.pronoun_plurality()).c_str(),
+             conjugate_verb("change", defender.pronoun_plurality()).c_str());
         return;
     }
 
@@ -834,7 +836,7 @@ bool melee_attack::attack()
 
     // Calculate various ev values and begin to check them to determine the
     // correct handle_phase_ handler.
-    const int ev = defender->evasion(EV_IGNORE_NONE, attacker);
+    const int ev = defender->evasion(ev_ignore::none, attacker);
     ev_margin = test_hit(to_hit, ev, !attacker->is_player());
     bool shield_blocked = attack_shield_blocked(true);
 
@@ -1280,7 +1282,7 @@ bool melee_attack::player_aux_test_hit()
     // XXX We're clobbering did_hit
     did_hit = false;
 
-    const int evasion = defender->evasion(EV_IGNORE_NONE, attacker);
+    const int evasion = defender->evasion(ev_ignore::none, attacker);
 
     if (player_under_penance(GOD_ELYVILON)
         && god_hates_your_god(GOD_ELYVILON)
@@ -1475,7 +1477,7 @@ void melee_attack::player_announce_aux_hit()
 
 string melee_attack::player_why_missed()
 {
-    const int ev = defender->evasion(EV_IGNORE_NONE, attacker);
+    const int ev = defender->evasion(ev_ignore::none, attacker);
     const int combined_penalty =
         attacker_armour_tohit_penalty + attacker_shield_tohit_penalty;
     if (to_hit < ev && to_hit + combined_penalty >= ev)
@@ -2949,8 +2951,7 @@ void melee_attack::mons_apply_attack_flavour()
     case AF_ENGULF:
         if (x_chance_in_y(2, 3) && attacker->can_constrict(defender, true))
         {
-            if (defender->is_player() && !you.duration[DUR_WATER_HOLD]
-                && !you.duration[DUR_WATER_HOLD_IMMUNITY])
+            if (defender->is_player() && !you.duration[DUR_WATER_HOLD])
             {
                 you.duration[DUR_WATER_HOLD] = 10;
                 you.props["water_holder"].get_int() = attacker->as_monster()->mid;
@@ -2980,7 +2981,7 @@ void melee_attack::mons_apply_attack_flavour()
         if (attacker->type == MONS_FIRE_VORTEX)
             attacker->as_monster()->suicide(-10);
 
-        special_damage = defender->apply_ac(base_damage, 0, AC_HALF);
+        special_damage = defender->apply_ac(base_damage, 0, ac_type::half);
         special_damage = resist_adjust_damage(defender,
                                               BEAM_FIRE,
                                               special_damage);
@@ -3644,17 +3645,13 @@ bool melee_attack::_player_vampire_draws_blood(const monster* mon, const int dam
         }
     }
 
-    // Gain nutrition.
-    if (you.hunger_state != HS_ENGORGED)
-        lessen_hunger(30 + random2avg(59, 2), false);
-
     return true;
 }
 
 bool melee_attack::_vamp_wants_blood_from_monster(const monster* mon)
 {
     return you.species == SP_VAMPIRE
-           && you.hunger_state < HS_SATIATED
+           && !you.vampire_alive
            && actor_is_susceptible_to_vampirism(*mon)
            && mons_has_blood(mon->type);
 }

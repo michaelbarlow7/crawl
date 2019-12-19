@@ -71,22 +71,25 @@ void formatted_scroller::scroll_to_end()
 int formatted_scroller::show()
 {
     auto vbox = make_shared<Box>(Widget::VERT);
+    vbox->align_cross = Widget::Align::STRETCH;
 
     if (!m_title.empty())
     {
         shared_ptr<Text> title = make_shared<Text>();
         title->set_text(m_title);
-        title->set_margin_for_crt({0, 0, 1, 0});
-        title->set_margin_for_sdl({0, 0, 20, 0});
+        title->set_margin_for_crt(0, 0, 1, 0);
+        title->set_margin_for_sdl(0, 0, 20, 0);
+        auto title_hbox = make_shared<Box>(Widget::HORZ);
 #ifdef USE_TILE_LOCAL
-        title->align_self = Widget::Align::CENTER;
+        title_hbox->align_main = Widget::Align::CENTER;
 #endif
-        vbox->add_child(move(title));
+        title_hbox->add_child(move(title));
+        vbox->add_child(move(title_hbox));
     }
 
 #ifdef USE_TILE_LOCAL
     if (!(m_flags & FS_PREWRAPPED_TEXT))
-        vbox->max_size()[0] = tiles.get_crt_font()->char_width()*80;
+        vbox->max_size().width = tiles.get_crt_font()->char_width()*80;
 #endif
 
     m_scroller = make_shared<UIHookedScroller>(*this);
@@ -97,7 +100,7 @@ int formatted_scroller::show()
     formatted_string c = formatted_string::parse_string(contents.to_colour_string());
     text->set_text(c);
     text->set_highlight_pattern(highlight, true);
-    text->wrap_text = !(m_flags & FS_PREWRAPPED_TEXT);
+    text->set_wrap_text(!(m_flags & FS_PREWRAPPED_TEXT));
     m_scroller->set_child(text);
     vbox->add_child(m_scroller);
 
@@ -106,8 +109,8 @@ int formatted_scroller::show()
         shared_ptr<Text> more = make_shared<Text>();
         more = make_shared<Text>();
         more->set_text(m_more);
-        more->set_margin_for_crt({1, 0, 0, 0});
-        more->set_margin_for_sdl({20, 0, 0, 0});
+        more->set_margin_for_crt(1, 0, 0, 0);
+        more->set_margin_for_sdl(20, 0, 0, 0);
         vbox->add_child(move(more));
     }
 
@@ -115,7 +118,7 @@ int formatted_scroller::show()
 
     m_contents_dirty = false;
     bool done = false;
-    popup->on(Widget::slots.event, [&done, &vbox, &text, this](wm_event ev) {
+    popup->on(Widget::slots.event, [&done, &text, this](wm_event ev) {
         if (ev.type != WME_KEYDOWN)
             return false; // allow default event handling
         m_lastch = ev.key.keysym.sym;
@@ -138,11 +141,11 @@ int formatted_scroller::show()
         }
         if (done)
             return true;
-        if (vbox->on_event(ev))
+        if (m_scroller->on_event(ev))
             return true;
         if (m_flags & FS_EASY_EXIT)
             return done = true;
-        return false;
+        return true;
     });
 
 #ifdef USE_TILE_WEB
@@ -209,5 +212,5 @@ void recv_formatted_scroller_scroll(int line)
     // XXX: since the scroll event from webtiles is not delivered by the event
     // pumping loop in ui::pump_events, the UI system won't automatically draw
     // any changes for console spectators, so we need to force a redraw here.
-    ui_force_render();
+    ui::force_render();
 }

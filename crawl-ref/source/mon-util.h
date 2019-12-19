@@ -8,6 +8,7 @@
 #include <functional>
 
 #include "enum.h"
+#include "gender-type.h"
 #include "los-type.h"
 #include "mon-enum.h"
 #include "mon-inv-type.h"
@@ -244,7 +245,7 @@ bool mons_class_sees_invis(monster_type type, monster_type base);
 
 bool mons_immune_magic(const monster& mon);
 
-mon_attack_def mons_attack_spec(const monster& mon, int attk_number, bool base_flavour = false);
+mon_attack_def mons_attack_spec(const monster& mon, int attk_number, bool base_flavour = true);
 string mon_attack_name(attack_type attack, bool with_object = true);
 bool flavour_triggers_damageless(attack_flavour flavour);
 int flavour_damage(attack_flavour flavour, int HD, bool random = true);
@@ -350,6 +351,7 @@ bool mons_can_attack(const monster& mon);
 bool mons_has_incapacitating_spell(const monster& mon, const actor& foe);
 bool mons_has_incapacitating_ranged_attack(const monster& mon, const actor& foe);
 
+gender_type mons_class_gender(monster_type mc);
 const char *mons_pronoun(monster_type mon_type, pronoun_type variant,
                          bool visible = true);
 
@@ -411,7 +413,6 @@ bool herd_monster(const monster& mon);
 
 int cheibriados_monster_player_speed_delta(const monster& mon);
 bool cheibriados_thinks_mons_is_fast(const monster& mon);
-bool mons_is_fiery(const monster& mon);
 bool mons_is_projectile(monster_type mc);
 bool mons_is_projectile(const monster& mon);
 bool mons_can_cling_to_walls(const monster& mon);

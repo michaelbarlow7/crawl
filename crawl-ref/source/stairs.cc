@@ -7,6 +7,7 @@
 #include "abyss.h"
 #include "act-iter.h"
 #include "areas.h"
+#include "artefact.h"
 #include "bloodspatter.h"
 #include "branch.h"
 #include "chardump.h"
@@ -96,7 +97,7 @@ bool check_annotation_exclusion_warning()
         && !yesno("Enter next level anyway?", true, 'n', true, false))
     {
         canned_msg(MSG_OK);
-        interrupt_activity(AI_FORCE_INTERRUPT);
+        interrupt_activity(activity_interrupt::force);
         crawl_state.level_annotation_shown = false;
         return false;
     }
@@ -221,14 +222,20 @@ static void _clear_prisms()
 
 void leaving_level_now(dungeon_feature_type stair_used)
 {
-    process_sunlights(true);
-
     if (stair_used == DNGN_EXIT_ZIGGURAT)
     {
         if (you.depth == 27)
             you.zigs_completed++;
         mark_milestone("zig.exit", make_stringf("left a ziggurat at level %d.",
                        you.depth));
+    }
+
+    if (stair_used == DNGN_EXIT_ABYSS)
+    {
+#ifdef DEBUG
+        auto &vault_list =  you.vault_list[level_id::current()];
+        vault_list.push_back("[exit]");
+#endif
     }
 
     dungeon_events.fire_position_event(DET_PLAYER_CLIMBS, you.pos());
@@ -399,6 +406,22 @@ static void _rune_effect(dungeon_feature_type ftype)
     }
 }
 
+static void _gauntlet_effect()
+{
+    // already doomed
+    if (you.species == SP_FORMICID)
+        return;
+
+    mprf(MSGCH_WARN, "The nature of this place prevents you from teleporting.");
+
+    if (you.has_mutation(MUT_TELEPORT, true)
+        || you.wearing(EQ_RINGS, RING_TELEPORTATION, true)
+        || you.scan_artefacts(ARTP_CAUSE_TELEPORTATION, true))
+    {
+        mpr("You feel stable on this floor.");
+    }
+}
+
 static void _new_level_amuses_xom(dungeon_feature_type feat,
                                   dungeon_feature_type old_feat,
                                   bool shaft, int shaft_depth, bool voluntary)
@@ -523,13 +546,10 @@ static level_id _travel_destination(const dungeon_feature_type how,
                                     + shaft_dest.describe() + ".");
         }
 
-        string howfar;
-        if (shaft_depth > 1)
-            howfar = make_stringf(" for %d floors", shaft_depth);
-
-        mprf("You %s a shaft%s!", you.airborne() ? "are sucked into"
-                                                 : "fall through",
-                                  howfar.c_str());
+        mprf("You %s into a shaft and drop %d floor%s!",
+             you.airborne() ? "are sucked" : "fall",
+             shaft_depth,
+             shaft_depth > 1 ? "s" : "");
 
         // Shafts are one-time-use.
         mpr("The shaft crumbles and collapses.");
@@ -771,6 +791,9 @@ void floor_transition(dungeon_feature_type how,
                 mprf("Welcome to %s!", branches[branch].longname);
         }
 
+        if (branch == BRANCH_GAUNTLET)
+            _gauntlet_effect();
+
         const set<branch_type> boring_branch_exits = {
             BRANCH_TEMPLE,
             BRANCH_BAZAAR,
@@ -783,7 +806,7 @@ void floor_transition(dungeon_feature_type how,
         {
             string old_branch_string = branches[old_level.branch].longname;
             if (starts_with(old_branch_string, "The "))
-                old_branch_string[0] = tolower(old_branch_string[0]);
+                old_branch_string[0] = tolower_safe(old_branch_string[0]);
             mark_milestone("br.exit", "left " + old_branch_string + ".",
                            old_level.describe());
             you.branches_left.set(old_level.branch);
@@ -799,8 +822,8 @@ void floor_transition(dungeon_feature_type how,
                 mpr(rune_msg);
         }
 
-        // Entered a regular (non-portal) branch from above.
-        if (!going_up && parent_branch(branch) == old_level.branch)
+        // Entered a branch from its parent.
+        if (parent_branch(branch) == old_level.branch)
             enter_branch(branch, old_level);
     }
 
@@ -1048,18 +1071,6 @@ void down_stairs(dungeon_feature_type force_stair, bool force_known_shaft, bool 
     take_stairs(force_stair, false, force_known_shaft, update_travel_cache);
 }
 
-static bool _any_glowing_mold()
-{
-    for (rectangle_iterator ri(0); ri; ++ri)
-        if (glowing_mold(*ri))
-            return true;
-    for (monster_iterator mon_it; mon_it; ++mon_it)
-        if (mon_it->type == MONS_HYPERACTIVE_BALLISTOMYCETE)
-            return true;
-
-    return false;
-}
-
 static void _update_level_state()
 {
     env.level_state = 0;
@@ -1068,8 +1079,6 @@ static void _update_level_state()
     if (!golub.empty())
         env.level_state |= LSTATE_GOLUBRIA;
 
-    if (_any_glowing_mold())
-        env.level_state |= LSTATE_GLOW_MOLD;
     for (monster_iterator mon_it; mon_it; ++mon_it)
     {
         if (mons_allows_beogh(**mon_it))

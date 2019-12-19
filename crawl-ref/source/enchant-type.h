@@ -49,8 +49,8 @@ enum enchant_type
     ENCH_EAT_ITEMS,
 #endif
     ENCH_AQUATIC_LAND,   // Water monsters lose hp while on land.
-    ENCH_SPORE_PRODUCTION,
 #if TAG_MAJOR_VERSION == 34
+    ENCH_SPORE_PRODUCTION,
     ENCH_SLOUCH,
 #endif
     ENCH_SWIFT,
@@ -161,8 +161,8 @@ enum enchant_type
 #endif
     ENCH_RESISTANCE,
     ENCH_HEXED,
-    ENCH_BONE_ARMOUR,
 #if TAG_MAJOR_VERSION == 34
+    ENCH_BONE_ARMOUR,
     ENCH_CHANT_FIRE_STORM, // chanting the fire storm spell
     ENCH_CHANT_WORD_OF_ENTROPY, // chanting word of entropy
 #endif
