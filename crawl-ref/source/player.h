@@ -44,14 +44,14 @@
 #define POWERED_BY_DEATH_KEY "powered_by_death_strength"
 #define SONG_OF_SLAYING_KEY "song_of_slaying_bonus"
 #define FORCE_MAPPABLE_KEY "force_mappable"
-#define REGEN_AMULET_ACTIVE "regen_amulet_active"
 #define MANA_REGEN_AMULET_ACTIVE "mana_regen_amulet_active"
-#define ACROBAT_AMULET_ACTIVE "acrobat_amulet_active"
 #define SAP_MAGIC_KEY "sap_magic_amount"
 #define TEMP_WATERWALK_KEY "temp_waterwalk"
 #define EMERGENCY_FLIGHT_KEY "emergency_flight"
 #define PARALYSED_BY_KEY "paralysed_by"
 #define PETRIFIED_BY_KEY "petrified_by"
+#define NOXIOUS_BOG_KEY "noxious_bog_pow"
+#define FROZEN_RAMPARTS_KEY "frozen_ramparts_position"
 
 // display/messaging breakpoints for penalties from Ru's MUT_HORROR
 #define HORROR_LVL_EXTREME  3
@@ -163,6 +163,10 @@ public:
     FixedBitVector<NUM_EQUIP> melded;
     // Whether these are unrands that we should run the _*_world_reacts func for
     FixedBitVector<NUM_EQUIP> unrand_reacts;
+    // True if the slot has an item that activates when worn with max hp (regen
+    // items, acrobat amulet) and max hp has been reached while wearing it;
+    // false otherwise.
+    FixedBitVector<NUM_EQUIP> activated;
 
     FixedArray<int, NUM_OBJECT_CLASSES, MAX_SUBTYPES> force_autopickup;
 
@@ -245,8 +249,6 @@ public:
 
     branch_type where_are_you;
     int depth;
-
-    FixedVector<uint8_t, 30> branch_stairs;
 
     god_type religion;
     string jiyva_second_name;       // Random second name of Jiyva
@@ -503,7 +505,6 @@ public:
     bool can_swim(bool permanently = false) const;
     bool can_water_walk() const;
     int visible_igrd(const coord_def&) const;
-    bool can_cling_to_walls() const override;
     bool is_banished() const override;
     bool is_sufficiently_rested() const; // Up to rest_wait_percent HP and MP.
     bool is_web_immune() const override;
@@ -651,7 +652,7 @@ public:
         override;
     int scan_artefacts(artefact_prop_type which_property,
                        bool calc_unid = true,
-                       vector<item_def> *matches = nullptr) const override;
+                       vector<const item_def *> *matches = nullptr) const override;
 
     item_def *weapon(int which_attack = -1) const override;
     item_def *shield() const override;
@@ -757,7 +758,7 @@ public:
     int res_cold() const override;
     int res_elec() const override;
     int res_poison(bool temp = true) const override;
-    int res_rotting(bool temp = true) const override;
+    rot_resistance res_rotting(bool temp = true) const override;
     int res_water_drowning() const override;
     bool res_sticky_flame() const override;
     int res_holy_energy() const override;
@@ -832,8 +833,7 @@ public:
     int shield_block_penalty() const override;
     int shield_bypass_ability(int tohit) const override;
     void shield_block_succeeded(actor *foe) override;
-    int missile_deflection() const override;
-    void ablate_deflection() override;
+    bool missile_repulsion() const override;
 
     // Combat-related adjusted penalty calculation methods
     int unadjusted_body_armour_penalty() const override;
@@ -859,6 +859,8 @@ public:
     void apply_location_effects(const coord_def &oldpos,
                                 killer_type killer = KILL_NONE,
                                 int killernum = -1) override;
+
+    void be_agile(int pow);
 
     ////////////////////////////////////////////////////////////////
 
@@ -900,12 +902,26 @@ public:
 
     bool clear_far_engulf() override;
 
+    int armour_class_with_one_sub(item_def sub) const;
+
+    int armour_class_with_one_removal(item_def sub) const;
+
+    int ac_changes_from_mutations() const;
+    vector<const item_def *> get_armour_items() const;
+    vector<const item_def *> get_armour_items_one_sub(const item_def& sub) const;
+    vector<const item_def *> get_armour_items_one_removal(const item_def& sub) const;
+    int base_ac_with_specific_items(int scale,
+                                    vector<const item_def *> armour_items) const;
+    int armour_class_with_specific_items(
+                                vector<const item_def *> items) const;
+
 protected:
     void _removed_beholder(bool quiet = false);
     bool _possible_beholder(const monster* mon) const;
 
     void _removed_fearmonger(bool quiet = false);
     bool _possible_fearmonger(const monster* mon) const;
+
 };
 COMPILE_CHECK((int) SP_UNKNOWN_BRAND < 8*sizeof(you.seen_weapon[0]));
 COMPILE_CHECK((int) SP_UNKNOWN_BRAND < 8*sizeof(you.seen_armour[0]));
@@ -957,14 +973,14 @@ void update_acrobat_status();
 bool is_effectively_light_armour(const item_def *item);
 bool player_effectively_in_light_armour();
 
-int player_energy();
+bool hungerless_spells();
 
 int player_shield_racial_factor();
 int player_armour_shield_spell_penalty();
 
 int player_movement_speed();
 
-int player_hunger_rate(bool temp = true);
+int player_hunger_rate();
 
 int calc_hunger(int food_cost);
 
@@ -979,8 +995,6 @@ int player_prot_life(bool calc_unid = true, bool temp = true,
 bool regeneration_is_inhibited();
 int player_regen();
 int player_mp_regen();
-void update_amulet_attunement_by_health();
-void update_mana_regen_amulet_attunement();
 
 int player_res_cold(bool calc_unid = true, bool temp = true,
                     bool items = true);
@@ -997,8 +1011,7 @@ int player_res_electricity(bool calc_unid = true, bool temp = true,
 
 int player_res_fire(bool calc_unid = true, bool temp = true,
                     bool items = true);
-int player_res_sticky_flame(bool calc_unid = true, bool temp = true,
-                            bool items = true);
+int player_res_sticky_flame();
 int player_res_steam(bool calc_unid = true, bool temp = true,
                      bool items = true);
 
@@ -1021,7 +1034,7 @@ int player_spec_charm();
 int player_spec_poison();
 int player_spec_summ();
 
-const int player_adjust_evoc_power(const int power, int enhancers = 0);
+int player_adjust_evoc_power(const int power, int enhancers = 0);
 
 int player_speed();
 
@@ -1129,6 +1142,7 @@ void dec_haste_player(int delay);
 void dec_elixir_player(int delay);
 void dec_ambrosia_player(int delay);
 void dec_channel_player(int delay);
+void dec_frozen_ramparts(int delay);
 bool invis_allowed(bool quiet = false, string *fail_reason = nullptr);
 bool flight_allowed(bool quiet = false, string *fail_reason = nullptr);
 void fly_player(int pow, bool already_flying = false);

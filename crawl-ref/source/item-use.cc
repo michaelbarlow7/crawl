@@ -21,14 +21,11 @@
 #include "database.h"
 #include "delay.h"
 #include "describe.h"
-#include "directn.h"
 #include "english.h"
 #include "env.h"
 #include "evoke.h"
-#include "exercise.h"
 #include "fight.h"
 #include "food.h"
-#include "god-abil.h"
 #include "god-conduct.h"
 #include "god-item.h"
 #include "god-passive.h"
@@ -37,6 +34,7 @@
 #include "item-prop.h"
 #include "item-status-flag-type.h"
 #include "items.h"
+#include "known-items.h"
 #include "level-state-type.h"
 #include "libutil.h"
 #include "macro.h"
@@ -53,7 +51,6 @@
 #include "potion.h"
 #include "prompt.h"
 #include "religion.h"
-#include "rot.h"
 #include "shout.h"
 #include "skills.h"
 #include "sound.h"
@@ -64,7 +61,6 @@
 #include "spl-summoning.h"
 #include "spl-transloc.h"
 #include "spl-wpnench.h"
-#include "spl-zap.h"
 #include "state.h"
 #include "stringutil.h"
 #include "target.h"
@@ -818,7 +814,7 @@ bool armour_prompt(const string & mesg, int *index, operation_types oper)
  * @param item      The armour in question.
  * @return          The number of turns it takes to don or doff the item.
  */
-static int armour_equip_delay(const item_def &item)
+static int armour_equip_delay(const item_def &/*item*/)
 {
     return 5;
 }
@@ -1396,7 +1392,7 @@ static vector<equipment_type> _current_jewellery_types()
     return ret;
 }
 
-static const char _ring_slot_key(equipment_type slot)
+static char _ring_slot_key(equipment_type slot)
 {
     switch (slot)
     {
@@ -2242,7 +2238,7 @@ void drink(item_def* potion)
 
     const bool alreadyknown = item_type_known(*potion);
 
-    if (alreadyknown && is_bad_item(*potion, true))
+    if (alreadyknown && is_bad_item(*potion))
     {
         canned_msg(MSG_UNTHINKING_ACT);
         return;
@@ -2972,7 +2968,7 @@ void read(item_def* scroll)
                                              " place you under penance!",
                                              verb_object.c_str());
 
-        targeter_los hitfunc(&you, LOS_NO_TRANS);
+        targeter_radius hitfunc(&you, LOS_NO_TRANS);
 
         if (stop_attack_prompt(hitfunc, verb_object.c_str(),
                                [which_scroll] (const actor* m)
@@ -2989,7 +2985,7 @@ void read(item_def* scroll)
             return;
         }
         else if ((is_dangerous_item(*scroll, true)
-                  || is_bad_item(*scroll, true))
+                  || is_bad_item(*scroll))
                  && Options.bad_item_prompt
                  && !yesno(make_stringf("Really %s?",
                                         verb_object.c_str()).c_str(),
@@ -3141,17 +3137,9 @@ void read_scroll(item_def& scroll)
             mpr("Anything you acquired here would fall and be lost!");
             cancel_scroll = true;
             break;
-            // yes, we cancel out even if the scroll wasn't known beforehand.
-            // there's no plausible abuse of this, and it's much better to
-            // never have to worry about "am i over dangerous terrain?" while
-            // IDing scrolls. (Not an interesting ID game mechanic!)
         }
 
-        if (!alreadyknown)
-            run_uncancel(UNC_ACQUIREMENT, AQ_SCROLL);
-        else
-            cancel_scroll = !acquirement(OBJ_RANDOM, AQ_SCROLL, false, nullptr,
-                    false, true);
+        cancel_scroll = !acquirement_menu();
         break;
 
     case SCR_FEAR:
@@ -3205,7 +3193,7 @@ void read_scroll(item_def& scroll)
         bool had_effect = false;
         for (monster_near_iterator mi(you.pos(), LOS_NO_TRANS); mi; ++mi)
         {
-            if (mons_immune_magic(**mi) || mi->is_summoned())
+            if (mons_immune_magic(**mi))
                 continue;
 
             if (mi->add_ench(mon_enchant(ENCH_INNER_FLAME, 0, &you)))
@@ -3378,7 +3366,6 @@ void read_scroll(item_def& scroll)
     }
 
     if (!alreadyknown
-        && which_scroll != SCR_ACQUIREMENT
         && which_scroll != SCR_BRAND_WEAPON
         && which_scroll != SCR_ENCHANT_WEAPON
         && which_scroll != SCR_IDENTIFY

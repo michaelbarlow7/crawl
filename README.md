@@ -32,11 +32,13 @@ Both classical ASCII and tiles (GUI) versions of Crawl are available to [downloa
 
 ## Community
 
-### Web
-Our official homepage is [https://crawl.develz.org](https://crawl.develz.org/). You can find online play, offline downloads, a community forum and the development bug tracker/wiki.
-
-### IRC
-Chat with fellow crawlers in [##crawl on irc.freenode.net](https://webchat.freenode.net/?channels=##crawl), or talk development in [##crawl-dev](https://webchat.freenode.net/?channels=##crawl-dev).
+* Our official homepage: [crawl.develz.org](https://crawl.develz.org/)
+  * Online webtiles play
+  * Offline downloads
+  * A community forum
+* The official [/r/dcss subreddit](https://www.reddit.com/r/dcss/)
+* [/r/roguelikes Discord](https://discord.gg/S5F2H32)
+* IRC: ##crawl on Freenode (or ##crawl-dev to chat development)
 
 ## How you can help
 
@@ -80,11 +82,11 @@ Please be sure to read [docs/develop/coding_conventions.txt](crawl-ref/docs/deve
 
 ## License and history information
 
-Crawl is licensed as GPLv2+. See [licence.txt](crawl-ref/licence.txt) for the full text.
+Crawl is licensed as GPLv2+. See [LICENSE](LICENSE) for the full text.
 
-Crawl is a descendant of Linley's Dungeon Crawl. Development of the main branch stalled at version 4.0.0b26, with a final alpha of 4.1 being released by Brent Ross in 2005. Since 2006, the Dungeon Crawl Stone Soup team has continued development. [CREDITS.txt](crawl-ref/CREDITS.txt) contains a full list of contributors.
+Crawl is a descendant of Linley's Dungeon Crawl. The final alpha of Linley's Dungeon Crawl (v4.1) was released by Brent Ross in 2005. Since 2006, the Dungeon Crawl Stone Soup team has continued development. [CREDITS.txt](crawl-ref/CREDITS.txt) contains a full list of contributors.
 
-Crawl gladly uses the following open source packages; thanks to their developers:
+Crawl uses the following open source packages; thanks to their developers:
 
 * The Lua scripting language, for in-game functionality and user macros ([license](crawl-ref/docs/license/lualicense.txt)).
 * The PCRE library, for regular expressions ([license](crawl-ref/docs/license/pcre_license.txt)).

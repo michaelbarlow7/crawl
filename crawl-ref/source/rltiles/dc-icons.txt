@@ -33,6 +33,8 @@ animated_weapon ANIMATED_WEAPON
 summoned SUMMONED
 summoned_durable PERM_SUMMON
 poison POISON
+poison_more MORE_POISON
+poison_max MAX_POISON
 sticky_flame STICKY_FLAME
 inner_flame INNER_FLAME
 constricted CONSTRICTED
@@ -56,7 +58,6 @@ bound_soul BOUND_SOUL
 infested INFESTED
 corroded CORRODED
 swift SWIFT
-pinned PINNED
 vile_clutch VILE_CLUTCH
 possessable POSSESSABLE
 

@@ -15,8 +15,6 @@
 #include <sstream>
 
 #include "ability.h"
-#include "act-iter.h"
-#include "butcher.h"
 #include "cio.h"
 #include "coordit.h"
 #include "dactions.h"
@@ -31,20 +29,17 @@
 #include "libutil.h"
 #include "menu.h"
 #include "message.h"
-#include "mon-death.h"
 #include "mon-place.h"
 #include "notes.h"
 #include "output.h"
 #include "player-equip.h" // lose_permafly_source
 #include "player-stats.h"
 #include "religion.h"
-#include "scroller.h"
 #include "skills.h"
 #include "state.h"
 #include "stringutil.h"
 #include "transform.h"
 #include "unicode.h"
-#include "viewchar.h"
 #include "xom.h"
 
 using namespace ui;
@@ -385,6 +380,9 @@ mutation_activity_type mutation_activity_level(mutation_type mut)
         return mutation_activity_type::INACTIVE;
     }
 #endif
+
+    if (mut == MUT_BERSERK && you.species == SP_VAMPIRE && !you.vampire_alive)
+        return mutation_activity_type::INACTIVE;
 
     if (!form_can_bleed(you.form) && mut == MUT_SANGUINE_ARMOUR)
         return mutation_activity_type::INACTIVE;
@@ -846,11 +844,14 @@ void display_mutations()
     trim_string_right(mutation_s);
 
     auto vbox = make_shared<Box>(Widget::VERT);
-    vbox->align_cross = Widget::CENTER;
+    vbox->set_cross_alignment(Widget::STRETCH);
 
     const char *title_text = "Innate Abilities, Weirdness & Mutations";
     auto title = make_shared<Text>(formatted_string(title_text, WHITE));
-    vbox->add_child(move(title));
+    auto title_hbox = make_shared<Box>(Widget::HORZ);
+    title_hbox->add_child(move(title));
+    title_hbox->set_main_alignment(Widget::CENTER);
+    vbox->add_child(move(title_hbox));
 
     auto switcher = make_shared<Switcher>();
 
@@ -870,6 +871,7 @@ void display_mutations()
     switcher->set_margin_for_sdl(20, 0, 0, 0);
     switcher->set_margin_for_crt(1, 0, 0, 0);
     switcher->expand_h = false;
+    switcher->align_x = Widget::STRETCH;
 #ifdef USE_TILE_LOCAL
     switcher->max_size().width = tiles.get_crt_font()->char_width()*80;
 #endif
@@ -885,10 +887,8 @@ void display_mutations()
 
     bool done = false;
     int lastch;
-    popup->on(Widget::slots.event, [&](wm_event ev) {
-        if (ev.type != WME_KEYDOWN)
-            return false;
-        lastch = ev.key.keysym.sym;
+    popup->on_keydown_event([&](const KeyEvent& ev) {
+        lastch = ev.key();
         if (you.species == SP_VAMPIRE && (lastch == '!' || lastch == CK_MOUSE_CMD || lastch == '^'))
         {
             int& c = switcher->current();
@@ -912,13 +912,10 @@ void display_mutations()
     if (you.species == SP_VAMPIRE)
         tiles.json_write_int("vampire", _vampire_bloodlessness());
     tiles.push_ui_layout("mutations", 1);
+    popup->on_layout_pop([](){ tiles.pop_ui_layout(); });
 #endif
 
     ui::run_layout(move(popup), done);
-
-#ifdef USE_TILE_WEB
-    tiles.pop_ui_layout();
-#endif
 }
 
 static int _calc_mutation_amusement_value(mutation_type which_mutation)
@@ -949,6 +946,9 @@ static bool _accept_mutation(mutation_type mutat, bool ignore_weight = false)
 
     if (ignore_weight)
         return true;
+
+    if (mdef.weight == 0)
+        return false;
 
     // bias towards adding (non-innate) levels to existing innate mutations.
     const int weight = mdef.weight + you.get_innate_mutation_level(mutat);
@@ -2661,14 +2661,14 @@ int player::how_mutated(bool innate, bool levels, bool temp) const
 // Return whether current tension is balanced
 static bool _balance_demonic_guardian()
 {
-    // if tension is unfavorably high, perhaps another guardian should spawn
+    // if tension is unfavourably high, perhaps another guardian should spawn
     const int mutlevel = you.get_mutation_level(MUT_DEMONIC_GUARDIAN);
     const int tension = get_tension(GOD_NO_GOD);
     return tension*3/4 <= mutlevel*6 + random2(mutlevel*mutlevel*2);
 }
 
 // Primary function to handle and balance demonic guardians, if the tension
-// is unfavorably high and a guardian was not recently spawned, a new guardian
+// is unfavourably high and a guardian was not recently spawned, a new guardian
 // will be made, if tension is below a threshold (determined by the mutations
 // level and a bit of randomness), guardians may be dismissed in
 // _balance_demonic_guardian()

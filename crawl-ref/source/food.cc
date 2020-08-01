@@ -13,13 +13,11 @@
 #include <cstring>
 #include <sstream>
 
-#include "butcher.h"
 #include "chardump.h"
 #include "database.h"
 #include "delay.h"
 #include "env.h"
 #include "god-abil.h"
-#include "god-conduct.h"
 #include "hints.h"
 #include "invent.h"
 #include "item-prop.h"
@@ -33,7 +31,6 @@
 #include "nearby-danger.h"
 #include "notes.h"
 #include "options.h"
-#include "output.h"
 #include "religion.h"
 #include "rot.h"
 #include "state.h"
@@ -486,20 +483,10 @@ static const char *_chunk_flavour_phrase(bool likes_chunks)
         phrase = "tastes great!";
     else if (likes_chunks)
         phrase = "tastes great.";
-    else
+    else if (you.gourmand())
     {
-        const int gourmand = you.duration[DUR_GOURMAND];
-        if (gourmand >= GOURMAND_MAX)
-        {
-            phrase = one_chance_in(1000) ? "tastes like chicken!"
-                                         : "tastes great.";
-        }
-        else if (gourmand > GOURMAND_MAX * 75 / 100)
-            phrase = "tastes very good.";
-        else if (gourmand > GOURMAND_MAX * 50 / 100)
-            phrase = "tastes good.";
-        else if (gourmand > GOURMAND_MAX * 25 / 100)
-            phrase = "is not very appetising.";
+        phrase = one_chance_in(1000) ? "tastes like chicken!"
+                                     : "tastes great.";
     }
 
     return phrase;
@@ -522,9 +509,9 @@ static int _apply_herbivore_nutrition_effects(int nutrition)
         return nutrition;
 }
 
-static int _apply_gourmand_nutrition_effects(int nutrition, int gourmand)
+static int _apply_gourmand_nutrition_effects(int nutrition)
 {
-    return nutrition * (gourmand + GOURMAND_NUTRITION_BASE)
+    return nutrition * ((you.gourmand() ? GOURMAND_MAX : 0) + GOURMAND_NUTRITION_BASE)
                      / (GOURMAND_MAX + GOURMAND_NUTRITION_BASE);
 }
 
@@ -538,15 +525,15 @@ static int _chunk_nutrition(bool likes_chunks)
                             : _apply_herbivore_nutrition_effects(nutrition);
     }
 
-    const int gourmand = you.gourmand() ? you.duration[DUR_GOURMAND] : 0;
     const int effective_nutrition =
-        _apply_gourmand_nutrition_effects(nutrition, gourmand);
+        _apply_gourmand_nutrition_effects(nutrition);
 
 #ifdef DEBUG_DIAGNOSTICS
     const int epercent = effective_nutrition * 100 / nutrition;
     mprf(MSGCH_DIAGNOSTICS,
-            "Gourmand factor: %d, chunk base: %d, effective: %d, %%: %d",
-                gourmand, nutrition, effective_nutrition, epercent);
+            "Gourmand: %s, chunk base: %d, effective: %d, %%: %d",
+                you.gourmand() ? "y" : "n", nutrition, effective_nutrition,
+                epercent);
 #endif
 
     return _apply_herbivore_nutrition_effects(effective_nutrition);
@@ -693,20 +680,8 @@ bool is_inedible(const item_def &item, bool temp)
 // still be edible or even delicious.
 bool is_preferred_food(const item_def &food)
 {
-    // Mummies, vampirees, and liches don't eat.
-    if (you_foodless())
-        return false;
-
     if (you.species == SP_GHOUL)
         return food.is_type(OBJ_FOOD, FOOD_CHUNK);
-
-#if TAG_MAJOR_VERSION == 34
-    if (food.is_type(OBJ_POTIONS, POT_PORRIDGE)
-        && item_type_known(food))
-    {
-        return you.get_mutation_level(MUT_CARNIVOROUS) == 0;
-    }
-#endif
 
     return false;
 }
@@ -866,6 +841,27 @@ bool apply_starvation_penalties()
     return you.hunger_state <= HS_STARVING && !you_min_hunger();
 }
 
+static item_def* _get_emergency_food()
+{
+    // Look for food on floor
+    for (stack_iterator si(you.pos(), true); si; ++si)
+    {
+        if (can_eat(*si, true))
+            return &*si;
+    }
+
+    // Look in inventory
+    auto it = find_if(begin(you.inv), end(you.inv),
+                      [](const item_def& inv_item) -> bool
+                          {
+                              return can_eat(inv_item, true);
+                          });
+    if (it != end(you.inv))
+        return &*it;
+
+    return nullptr;
+}
+
 void handle_starvation()
 {
     // Don't faint or die while eating.
@@ -888,18 +884,12 @@ void handle_starvation()
 
         if (you.hunger <= 0 && !you.duration[DUR_DEATHS_DOOR])
         {
-            auto it = find_if(begin(you.inv), end(you.inv),
-                [](const item_def& food) -> bool
-                {
-                    return can_eat(food, true);
-                });
-            if (it != end(you.inv))
+            if (item_def* emergency_food = _get_emergency_food())
             {
                 mpr("As you are about to starve, you manage to eat something.");
-                eat_item(*it);
+                eat_item(*emergency_food);
                 return;
             }
-
             mprf(MSGCH_FOOD, "You have starved to death.");
             ouch(INSTANT_DEATH, KILLED_BY_STARVATION);
             if (!you.pending_revival) // if we're still here...

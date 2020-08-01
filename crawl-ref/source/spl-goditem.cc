@@ -8,7 +8,6 @@
 #include "spl-goditem.h"
 
 #include "cleansing-flame-source-type.h"
-#include "cloud.h"
 #include "coordit.h"
 #include "database.h"
 #include "directn.h"
@@ -30,16 +29,14 @@
 #include "mon-cast.h"
 #include "mon-death.h"
 #include "mon-tentacle.h"
-#include "mutation.h"
 #include "religion.h"
 #include "spl-util.h"
 #include "state.h"
 #include "status.h"
 #include "stringutil.h"
 #include "terrain.h"
-#include "tiledef-dngn.h"
+#include "rltiles/tiledef-dngn.h"
 #include "traps.h"
-#include "view.h"
 #include "viewchar.h"
 
 static void _print_holy_pacification_speech(const string &key,
@@ -380,15 +377,6 @@ struct player_debuff_effects
  */
 static void _dispellable_player_buffs(player_debuff_effects &buffs)
 {
-    // attributes
-    static const attribute_type dispellable_attributes[] = {
-        ATTR_DEFLECT_MISSILES,
-    };
-
-    for (auto attribute : dispellable_attributes)
-        if (you.attribute[attribute])
-            buffs.attributes.push_back(attribute);
-
     // durations
     for (unsigned int i = 0; i < NUM_DURATIONS; ++i)
     {
@@ -1190,6 +1178,7 @@ void torment_player(actor *attacker, torment_source_type taux)
     {
     case TORMENT_CARDS:
     case TORMENT_SPELL:
+    case TORMENT_CARD_PAIN:
         aux = "Symbol of Torment";
         break;
 
@@ -1232,8 +1221,9 @@ void torment_player(actor *attacker, torment_source_type taux)
 void torment_cell(coord_def where, actor *attacker, torment_source_type taux)
 {
     if (where == you.pos()
-        // The Sceptre of Torment doesn't affect the  wielder.
-        && !(attacker && attacker->is_player() && taux == TORMENT_SCEPTRE))
+        // The Sceptre of Torment and pain card do not affect the user.
+        && !(attacker && attacker->is_player()
+            && (taux == TORMENT_SCEPTRE || taux == TORMENT_CARD_PAIN)))
     {
         torment_player(attacker, taux);
     }

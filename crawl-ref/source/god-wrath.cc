@@ -18,10 +18,9 @@
 #include "cleansing-flame-source-type.h"
 #include "coordit.h"
 #include "database.h"
+#include "death-curse.h"
 #include "decks.h"
-#include "english.h"
 #include "env.h"
-#include "evoke.h"
 #include "food.h"
 #include "ghost.h"
 #include "god-abil.h"
@@ -34,11 +33,9 @@
 #include "message.h"
 #include "misc.h"
 #include "mon-behv.h"
-#include "mon-book.h"
 #include "mon-cast.h"
 #include "mon-pick.h"
 #include "mon-place.h"
-#include "mon-poly.h"
 #include "mutation.h"
 #include "notes.h"
 #include "player-stats.h"
@@ -48,7 +45,6 @@
 #include "shout.h"
 #include "spl-clouds.h"
 #include "spl-goditem.h"
-#include "spl-miscast.h"
 #include "spl-selfench.h"
 #include "spl-summoning.h"
 #include "spl-transloc.h"
@@ -375,22 +371,18 @@ static bool _cheibriados_retribution()
 
     switch (wrath_type)
     {
-    // Very high tension wrath
+    // Very high tension wrath.
+    // Add noise then start sleeping and slow the player with 2/3 chance.
     case 4:
-        simple_god_message(" adjusts the clock.", god);
-        MiscastEffect(&you, nullptr, {miscast_source::god, god},
-                      spschool::random,
-                      5 + div_rand_round(you.experience_level, 9),
-                      random2avg(88, 3), _god_wrath_name(god));
-        if (one_chance_in(3))
-            break;
-        else
-            dec_penance(god, 1); // and fall-through.
+        simple_god_message(" strikes the hour.", god);
+        noisy(40, you.pos());
+        dec_penance(god, 1); // and fall-through.
     // High tension wrath
+    // Sleep the player and slow the player with 50% chance.
     case 3:
         mpr("You lose track of time.");
         you.put_to_sleep(nullptr, 30 + random2(20));
-        if (coinflip())
+        if (one_chance_in(wrath_type - 1))
             break;
         else
             dec_penance(god, 1); // and fall-through.
@@ -402,14 +394,11 @@ static bool _cheibriados_retribution()
             slow_player(100);
         }
         break;
-    // Low/no tension
+    // Low/no tension; lose stats.
     case 1:
     case 0:
         mpr("Time shudders.");
-        MiscastEffect(&you, nullptr, {miscast_source::god, god},
-                      spschool::random,
-                      5 + div_rand_round(you.experience_level, 9),
-                      random2avg(88, 3), _god_wrath_name(god));
+        lose_stat(STAT_RANDOM, 1 + random2avg(5, 2));
         break;
 
     default:
@@ -419,9 +408,11 @@ static bool _cheibriados_retribution()
     return true;
 }
 
-static void _spell_retribution(monster* avatar, spell_type spell, god_type god)
+static void _spell_retribution(monster* avatar, spell_type spell, god_type god,
+                               const char* message = nullptr)
 {
-    simple_god_message(" rains destruction down upon you!", god);
+    simple_god_message(message ? message : " rains destruction down upon you!",
+                       god);
     bolt beam;
     beam.source = you.pos();
     beam.target = you.pos();
@@ -659,30 +650,26 @@ static bool _kikubaaqudgha_retribution()
 
     if (x_chance_in_y(you.experience_level, 27))
     {
-        // torment, or 3 necromancy miscasts
+        // torment, or 3 death curses of maximum power
         if (!player_res_torment(false))
             torment(nullptr, TORMENT_KIKUBAAQUDGHA, you.pos());
         else
         {
             for (int i = 0; i < 3; ++i)
             {
-                MiscastEffect(&you, nullptr, {miscast_source::god, god},
-                              spschool::necromancy,
-                              2 + div_rand_round(you.experience_level, 9),
-                              random2avg(88, 3), _god_wrath_name(god));
+                death_curse(you, nullptr,
+                            _god_wrath_name(god), you.experience_level);
             }
         }
     }
     else if (random2(you.experience_level) >= 4)
     {
-        // necromancy miscast, 25% chance of additional miscast
-        const int num_miscasts = one_chance_in(4) ? 2 : 1;
-        for (int i = 0; i < num_miscasts; i++)
+        // death curse, 25% chance of additional curse
+        const int num_curses = one_chance_in(4) ? 2 : 1;
+        for (int i = 0; i < num_curses; i++)
         {
-            MiscastEffect(&you, nullptr, {miscast_source::god, god},
-                          spschool::necromancy,
-                          2 + div_rand_round(you.experience_level, 9),
-                          random2avg(88, 3), _god_wrath_name(god));
+                death_curse(you, nullptr,
+                            _god_wrath_name(god), you.experience_level);
         }
     }
 
@@ -732,11 +719,18 @@ static bool _yredelemnul_retribution()
     }
     else
     {
-        simple_god_message("'s anger turns toward you for a moment.", god);
-        MiscastEffect(&you, nullptr, {miscast_source::god, god},
-                      spschool::necromancy,
-                      2 + div_rand_round(you.experience_level, 9),
-                      random2avg(88, 3), _god_wrath_name(god));
+        monster* avatar = get_avatar(god);
+        // can't be const because mons_cast() doesn't accept const monster*
+
+        if (avatar == nullptr)
+        {
+            simple_god_message(" has no time to deal with you just now.", god);
+            return false;
+        }
+
+        _spell_retribution(avatar, SPELL_BOLT_OF_DRAINING, god,
+                           "'s anger turns toward you for a moment.");
+        _reset_avatar(*avatar);
     }
 
     return true;
@@ -792,9 +786,6 @@ static bool _trog_retribution()
         switch (random2(6))
         {
         case 0:
-            you.rot(nullptr, 3 + random2(3));
-            break;
-
         case 1:
         case 2:
             lose_stat(STAT_STR, 1 + random2(you.strength() / 5));
@@ -822,14 +813,21 @@ static bool _trog_retribution()
     }
     else
     {
-        //jmf: returned Trog's old Fire damage
-        // -- actually, this function partially exists to remove that,
-        //    we'll leave this effect in, but we'll remove the wild
-        //    fire magic. -- bwr
-        mprf(MSGCH_WARN, "You feel Trog's fiery rage upon you!");
-        MiscastEffect(&you, nullptr, {miscast_source::god, god}, spschool::fire,
-                      8 + you.experience_level, random2avg(98, 3),
-                      _god_wrath_name(god));
+        // A fireball is magic when used by a mortal but just a manifestation
+        // of pure rage when used by a god. --ebering
+
+        monster* avatar = get_avatar(god);
+        // can't be const because mons_cast() doesn't accept const monster*
+
+        if (avatar == nullptr)
+        {
+            simple_god_message(" has no time to deal with you just now.", god);
+            return false; // not a very dazzling divine experience...
+        }
+
+        _spell_retribution(avatar, SPELL_FIREBALL,
+                           god, " hurls firey rage upon you!");
+        _reset_avatar(*avatar);
     }
 
     return true;
@@ -1001,7 +999,7 @@ static bool _sif_muna_retribution()
 /**
  * Perform translocation-flavored Lugonu retribution.
  *
- * 50% chance of tloc miscasts; failing that, 50% chance of teleports/blinks.
+ * 25% banishment; 50% teleport near monsters.
  */
 static void _lugonu_transloc_retribution()
 {
@@ -1009,19 +1007,14 @@ static void _lugonu_transloc_retribution()
 
     if (coinflip())
     {
-        simple_god_message("'s wrath finds you!", god);
-        MiscastEffect(&you, nullptr, {miscast_source::god, god},
-                      spschool::translocation, 9, 90, "Lugonu's touch");
+        // Give extra opportunities for embarrassing teleports.
+        simple_god_message("'s wrath scatters you!", god);
+        you_teleport_now(false, true, "Space warps around you!");
     }
     else if (coinflip())
     {
-        // Give extra opportunities for embarrassing teleports.
-        simple_god_message("'s wrath finds you!", god);
-        mpr("Space warps around you!");
-        if (!one_chance_in(3))
-            you_teleport_now();
-        else
-            uncontrolled_blink();
+        simple_god_message(" draws you home!", god);
+        you.banish(nullptr, "Lugonu's touch", you.get_experience_level(), true);
     }
 }
 
@@ -1122,8 +1115,7 @@ static spell_type _vehumet_wrath_type()
             return random_choose(SPELL_MEPHITIC_CLOUD,
                                  SPELL_STONE_ARROW);
         case 4:
-            return random_choose(SPELL_ISKENDERUNS_MYSTIC_BLAST,
-                                 SPELL_STICKY_FLAME,
+            return random_choose(SPELL_STICKY_FLAME,
                                  SPELL_THROW_ICICLE,
                                  SPELL_ENERGY_BOLT);
         case 5:
@@ -1319,17 +1311,28 @@ static bool _jiyva_retribution()
 
 /**
  * Let Fedhas call down the enmity of nature upon the player!
+ * Equal chance corrosive bolt, primal wave (a throwback to rain),
+ * or thorn volley
  */
-static void _fedhas_elemental_miscast()
+static void _fedhas_nature_retribution()
 {
     const god_type god = GOD_FEDHAS;
-    simple_god_message(" invokes the elements against you.", god);
 
-    const spschool stype = random_choose(spschool::ice, spschool::fire,
-                                         spschool::earth, spschool::air);
-    MiscastEffect(&you, nullptr, {miscast_source::god, god}, stype,
-                  5 + you.experience_level, random2avg(88, 3),
-                  _god_wrath_name(god));
+    monster* avatar = get_avatar(god);
+    // can't be const because mons_cast() doesn't accept const monster*
+
+    if (avatar == nullptr)
+    {
+        simple_god_message(" has no time to deal with you just now.", god);
+        return;
+    }
+
+    spell_type spell = random_choose(SPELL_CORROSIVE_BOLT,
+                                     SPELL_PRIMAL_WAVE,
+                                     SPELL_THORN_VOLLEY);
+
+    _spell_retribution(avatar, spell, god, " invokes nature against you.");
+    _reset_avatar(*avatar);
 }
 
 // Collect lists of points that are within LOS (under the given env map),
@@ -1739,7 +1742,7 @@ static int _fedhas_corpse_spores(beh_type attitude)
 /**
  * Call down the wrath of Fedhas upon the player!
  *
- * Plants and elemental miscasts.
+ * Plants and plant/nature themed attacks.
  *
  * @return Whether to take further divine wrath actions afterward.
  */
@@ -1764,7 +1767,7 @@ static bool _fedhas_retribution()
 
     case 1:
     default:
-        _fedhas_elemental_miscast();
+        _fedhas_nature_retribution();
         return true;
 
     case 2:

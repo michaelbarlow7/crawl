@@ -68,12 +68,6 @@ static uint8_t _jewellery_type_from_artefact_prop(const string &s
         return AMU_REGENERATION;
 #endif
 
-    if (s == "+Rage")
-        return AMU_RAGE;
-    if (s == "Harm")
-        return AMU_HARM;
-    if (s == "Gourm")
-        return AMU_THE_GOURMAND;
     if (s == "Inacc")
         return AMU_INACCURACY;
     if (s == "Spirit")

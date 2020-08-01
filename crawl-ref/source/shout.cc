@@ -12,7 +12,6 @@
 #include "act-iter.h"
 #include "areas.h"
 #include "artefact.h"
-#include "art-enum.h"
 #include "branch.h"
 #include "database.h"
 #include "directn.h"
@@ -20,7 +19,6 @@
 #include "env.h"
 #include "exercise.h"
 #include "ghost.h"
-#include "god-abil.h"
 #include "hints.h"
 #include "item-status-flag-type.h"
 #include "jobs.h"
@@ -41,9 +39,7 @@
 static noise_grid _noise_grid;
 static void _actor_apply_noise(actor *act,
                                const coord_def &apparent_source,
-                               int noise_intensity_millis,
-                               const noise_t &noise,
-                               int noise_travel_distance);
+                               int noise_intensity_millis);
 
 /// By default, what databse lookup key corresponds to each shout type?
 static const map<shout_type, string> default_msg_keys = {
@@ -467,8 +463,8 @@ static void _set_friendly_foes(bool allow_patrol = false)
             mi->behaviour = BEH_SEEK;
             mi->patrol_point = coord_def(0, 0);
         }
-        mi->foe = (allow_patrol && mi->is_patrolling() ? MHITNOT
-                                                         : you.pet_target);
+        mi->foe = (allow_patrol && mi->is_patrolling() ? int{MHITNOT}
+                                                       : you.pet_target);
     }
 }
 
@@ -1042,8 +1038,7 @@ void noise_grid::propagate_noise()
             {
                 apply_noise_effects(p,
                                     cell.noise_intensity_millis,
-                                    noises[cell.noise_id],
-                                    travel_distance - 1);
+                                    noises[cell.noise_id]);
 
                 const int attenuation = _noise_attenuation_millis(p);
                 // If the base noise attenuation kills the noise, go no farther:
@@ -1128,8 +1123,7 @@ bool noise_grid::propagate_noise_to_neighbour(int base_attenuation,
 
 void noise_grid::apply_noise_effects(const coord_def &pos,
                                      int noise_intensity_millis,
-                                     const noise_t &noise,
-                                     int noise_travel_distance)
+                                     const noise_t &noise)
 {
     if (you.pos() == pos)
     {
@@ -1139,8 +1133,7 @@ void noise_grid::apply_noise_effects(const coord_def &pos,
         // because the type is correct here.
 
         _actor_apply_noise(&you, noise.noise_source,
-                           noise_intensity_millis, noise,
-                           noise_travel_distance);
+                           noise_intensity_millis);
 
         // The next bit stores noise heard at the player's position for
         // display in the HUD. A more interesting (and much more complicated)
@@ -1167,8 +1160,7 @@ void noise_grid::apply_noise_effects(const coord_def &pos,
             const coord_def perceived_position =
                 noise_perceived_position(mons, pos, noise);
             _actor_apply_noise(mons, perceived_position,
-                               noise_intensity_millis, noise,
-                               noise_travel_distance);
+                               noise_intensity_millis);
             ++affected_actor_count;
         }
     }
@@ -1185,15 +1177,15 @@ void noise_grid::apply_noise_effects(const coord_def &pos,
 //  - If the cells cannot see each other, calculate a noise source as follows:
 //
 //    Calculate a noise centroid between the noise source and the observer,
-//    weighted to the noise source if the noise has traveled in a straight line,
+//    weighted to the noise source if the noise has travelled in a straight line,
 //    weighted toward the observer the more the noise has deviated from a
 //    straight line.
 //
-//    Fuzz the centroid by the extra distance the noise has traveled over
+//    Fuzz the centroid by the extra distance the noise has travelled over
 //    the straight line distance. This is where the observer will think the
 //    noise originated.
 //
-//    Thus, if the noise has traveled in a straight line, the observer
+//    Thus, if the noise has travelled in a straight line, the observer
 //    will know the exact origin, 100% of the time, even if the
 //    observer is all the way across the level.
 coord_def noise_grid::noise_perceived_position(actor *act,
@@ -1361,9 +1353,7 @@ void noise_grid::dump_noise_grid(const string &filename) const
 
 static void _actor_apply_noise(actor *act,
                                const coord_def &apparent_source,
-                               int noise_intensity_millis,
-                               const noise_t &noise,
-                               int noise_travel_distance)
+                               int noise_intensity_millis)
 {
 #ifdef DEBUG_NOISE_PROPAGATION
     dprf(DIAG_NOISE, "[NOISE] Actor %s (%d,%d) perceives noise (%d) "
@@ -1395,7 +1385,7 @@ static void _actor_apply_noise(actor *act,
         // linear from p(0) = 100 to p(R) = 10. This replaces a version that
         // was 100% from 0 to 3, and 0% outward.
         //
-        // behavior around the old breakpoint for R=8: p(3) = 66, p(4) = 55.
+        // behaviour around the old breakpoint for R=8: p(3) = 66, p(4) = 55.
 
         const int player_distance = grid_distance(apparent_source, you.pos());
         const int alert_prob = max(player_distance * -90 / LOS_RADIUS + 100, 0);

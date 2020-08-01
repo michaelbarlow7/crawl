@@ -8,10 +8,10 @@
 
 #include "fineff.h"
 
-#include "act-iter.h"
 #include "bloodspatter.h"
 #include "coordit.h"
 #include "dactions.h"
+#include "death-curse.h"
 #include "directn.h"
 #include "english.h"
 #include "env.h"
@@ -26,13 +26,11 @@
 #include "mon-place.h"
 #include "ouch.h"
 #include "religion.h"
-#include "spl-miscast.h"
 #include "state.h"
 #include "stringutil.h"
 #include "terrain.h"
 #include "transform.h"
 #include "view.h"
-#include "viewchar.h"
 
 /*static*/ void final_effect::schedule(final_effect *eff)
 {
@@ -113,7 +111,7 @@ bool shock_serpent_discharge_fineff::mergeable(const final_effect &fe) const
     return o && def == o->def;
 }
 
-bool delayed_action_fineff::mergeable(const final_effect &fe) const
+bool delayed_action_fineff::mergeable(const final_effect &) const
 {
     return false;
 }
@@ -123,6 +121,13 @@ bool rakshasa_clone_fineff::mergeable(const final_effect &fe) const
     const rakshasa_clone_fineff *o =
         dynamic_cast<const rakshasa_clone_fineff *>(&fe);
     return o && att == o->att && def == o->def && posn == o->posn;
+}
+
+bool summon_dismissal_fineff::mergeable(const final_effect &fe) const
+{
+    const summon_dismissal_fineff *o =
+        dynamic_cast<const summon_dismissal_fineff *>(&fe);
+    return o && def == o->def;
 }
 
 void mirror_damage_fineff::merge(const final_effect &fe)
@@ -173,6 +178,12 @@ void shock_serpent_discharge_fineff::merge(const final_effect &fe)
     const shock_serpent_discharge_fineff *ssdfe =
         dynamic_cast<const shock_serpent_discharge_fineff *>(&fe);
     power += ssdfe->power;
+}
+
+void summon_dismissal_fineff::merge(const final_effect &)
+{
+    // no damage to accumulate, but no need to fire this more than once
+    return;
 }
 
 void mirror_damage_fineff::fire()
@@ -612,7 +623,7 @@ void mummy_death_curse_fineff::fire()
             break;
     }
 
-    actor * victim;
+    actor* victim;
 
     if (YOU_KILL(killer))
         victim = &you;
@@ -639,8 +650,15 @@ void mummy_death_curse_fineff::fire()
     }
     const string cause = make_stringf("%s death curse",
                             apostrophise(name).c_str());
-    MiscastEffect(victim, nullptr, {miscast_source::mummy}, spschool::necromancy,
-                  pow, random2avg(88, 3), cause.c_str());
+    // source is used as a melee source and must be alive
+    // since the mummy is dead now we pass nullptr
+    death_curse(*victim, nullptr, cause, pow);
+}
+
+void summon_dismissal_fineff::fire()
+{
+    if (defender() && defender()->alive())
+        monster_die(*(defender()->as_monster()), KILL_DISMISSED, NON_MONSTER);
 }
 
 // Effects that occur after all other effects, even if the monster is dead.

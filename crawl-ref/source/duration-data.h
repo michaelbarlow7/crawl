@@ -103,11 +103,10 @@ struct duration_def
         return name_text[0] ? name_text : short_text;
     }
 
-    const bool duration_has_flag(uint64_t flag_wanted) const
+    bool duration_has_flag(uint64_t flag_wanted) const
     {
         return flags & flag_wanted;
     }
-
 };
 
 /**
@@ -133,7 +132,7 @@ static const duration_def duration_data[] =
       "agile", "agility",
       "You are agile.", D_DISPELLABLE,
       {{ "You feel a little less agile now.", []() {
-          notify_stat_change(STAT_DEX, -5, true);
+          you.redraw_evasion = true;
       }}}},
     { DUR_BERSERK,
       BLUE, "Berserk",
@@ -153,9 +152,7 @@ static const duration_def duration_data[] =
       LIGHTBLUE, "Brill",
       "brilliant", "brilliance",
       "You are brilliant.", D_DISPELLABLE,
-      {{ "You feel a little less clever now.", []() {
-          notify_stat_change(STAT_INT, -5, true);
-      }}}},
+      {{ "You feel a little less clever now." }}},
     { DUR_CONF,
       RED, "Conf",
       "confused", "conf",
@@ -223,9 +220,7 @@ static const duration_def duration_data[] =
       LIGHTBLUE, "Might",
       "mighty", "might",
       "You are mighty.", D_DISPELLABLE,
-      {{ "You feel a little less mighty now.", []() {
-          notify_stat_change(STAT_STR, -5, true);
-      }}}},
+      {{ "You feel a little less mighty now." }}},
     { DUR_PARALYSIS,
       RED, "Para",
       "paralysed", "paralysis",
@@ -562,6 +557,12 @@ static const duration_def duration_data[] =
       {{ "", []() {
           you.redraw_evasion = true;
       }}}},
+    { DUR_STABBING,
+      LIGHTBLUE, "Stab",
+      "stab", "stabbing",
+      "You are ready to backstab.", D_DISPELLABLE,
+      {{ "You feel less ready to backstab.", }}},
+
     // The following are visible in wizmode only, or are handled
     // specially in the status lights and/or the % or @ screens.
 
@@ -576,15 +577,11 @@ static const duration_def duration_data[] =
     { DUR_FLIGHT, 0, "", "", "flight", "", D_DISPELLABLE /*but special-cased*/, {}, 10},
     { DUR_POISONING, 0, "", "", "poisoning", "", D_NO_FLAGS},
     { DUR_PIETY_POOL, 0, "", "", "piety pool", "", D_NO_FLAGS},
-    { DUR_REGENERATION, 0, "", "", "regeneration", "", D_DISPELLABLE,
-      {{ "Your skin stops crawling." },
-          { "Your skin is crawling a little less now.", 1}}, 6},
     { DUR_TRANSFORMATION, 0, "", "", "transformation", "", D_DISPELLABLE /*but special-cased*/, {}, 10},
     { DUR_EXCRUCIATING_WOUNDS, 0, "", "", "excruciating wounds", "", D_DISPELLABLE,
       {{ "", _end_weapon_brand }}},
     { DUR_DEMONIC_GUARDIAN, 0, "", "", "demonic guardian", "", D_NO_FLAGS, {{""}}},
     { DUR_POWERED_BY_DEATH, 0, "", "", "pbd", "", D_NO_FLAGS},
-    { DUR_GOURMAND, 0, "", "", "gourmand", "", D_NO_FLAGS},
         { DUR_REPEL_STAIRS_MOVE, 0, "", "", "repel stairs move", "", D_NO_FLAGS, {{""}}},
     { DUR_REPEL_STAIRS_CLIMB, 0, "", "", "repel stairs climb", "", D_NO_FLAGS, {{""}}},
     { DUR_CLOUD_TRAIL, 0, "", "", "cloud trail", "", D_NO_FLAGS},
@@ -607,11 +604,21 @@ static const duration_def duration_data[] =
     { DUR_BRAINLESS, 0, "", "", "brainless", "", D_NO_FLAGS },
     { DUR_CLUMSY, 0, "", "", "clumsy", "", D_NO_FLAGS },
     { DUR_ANCESTOR_DELAY, 0, "", "", "ancestor delay", "", D_NO_FLAGS, {{""}}},
-    { DUR_HEAVENLY_STORM, 0, "", "", "", "", D_NO_FLAGS,
-      {{ "",  wu_jian_heaven_tick }}},
     { DUR_GRASPING_ROOTS, 0, "", "grasped by roots", "grasping roots",
       "You are constricted by grasping roots.", D_NO_FLAGS},
     { DUR_SHAFT_IMMUNITY, 0, "", "", "shaft immunity", "", D_NO_FLAGS, {{""}}},
+    { DUR_NOXIOUS_BOG,
+      MAGENTA, "Bog",
+      "noxious spew", "noxious bog",
+      "You are spewing a noxious bog.", D_DISPELLABLE,
+      {{ "Your noxious spew wanes." }}},
+    { DUR_FROZEN_RAMPARTS, LIGHTBLUE, "Ramparts", "frozen ramparts",
+        "frozen ramparts", "You have covered nearby walls with an icy ambush.",
+        D_DISPELLABLE},
+    { DUR_HEAVENLY_STORM, 0, "", "heavenly storm", "",
+      "Heavenly clouds are increasing your accuracy and damage.", D_NO_FLAGS,
+      {{ "", wu_jian_decrement_heavenly_storm }}},
+
 
 #if TAG_MAJOR_VERSION == 34
     // And removed ones
@@ -649,6 +656,8 @@ static const duration_def duration_data[] =
     { DUR_MAGIC_SHIELD, 0, "", "", "old magic shield", "", D_NO_FLAGS},
     { DUR_FORTITUDE, 0, "", "", "old fortitude", "", D_NO_FLAGS},
     { DUR_WATER_HOLD_IMMUNITY, 0, "", "", "old drowning immunity", "", D_NO_FLAGS, {{""}}},
+    { DUR_REGENERATION, 0, "", "", "old regeneration", "", D_NO_FLAGS},
     { DUR_NO_CAST, 0, "", "", "old no cast", "", D_NO_FLAGS},
+    { DUR_GOURMAND, 0, "", "", "old gourmand", "", D_NO_FLAGS},
 #endif
 };

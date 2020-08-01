@@ -6,6 +6,7 @@
 #include <cmath>
 
 #include "act-iter.h"
+#include "areas.h"
 #include "artefact.h"
 #include "art-enum.h"
 #include "branch.h"
@@ -17,10 +18,8 @@
 #include "eq-type-flags.h"
 #include "fight.h"
 #include "files.h"
-#include "food.h"
 #include "fprop.h"
 #include "god-abil.h"
-#include "god-item.h"
 #include "god-prayer.h"
 #include "invent.h" // in_inventory
 #include "item-name.h"
@@ -40,12 +39,10 @@
 #include "skills.h"
 #include "spl-clouds.h"
 #include "state.h"
-#include "status.h"
 #include "stringutil.h"
 #include "terrain.h"
 #include "throw.h"
 #include "unwind.h"
-#include "view.h"
 
 // TODO: template out the differences between this and god_power.
 // TODO: use the display method rather than dummy powers in god_powers.
@@ -421,8 +418,8 @@ static const vector<god_passive> god_passives[] =
     // Wu Jian
     {
         { 0, passive_t::wu_jian_lunge, "perform damaging attacks by moving towards foes." },
-        { 1, passive_t::wu_jian_whirlwind, "lightly attack and pin monsters in place by moving around them." },
-        { 2, passive_t::wu_jian_wall_jump, "perform airborne attacks by moving against a solid obstacle." },
+        { 1, passive_t::wu_jian_whirlwind, "lightly attack monsters by moving around them." },
+        { 2, passive_t::wu_jian_wall_jump, "perform airborne attacks in an area by jumping off a solid obstacle." },
     },
 };
 COMPILE_CHECK(ARRAYSZ(god_passives) == NUM_GODS);
@@ -1563,40 +1560,40 @@ static void _wu_jian_trigger_serpents_lash(const coord_def& old_pos,
         check_place_cloud(CLOUD_DUST, old_pos, 2 + random2(3) , &you, 1, -1);
 }
 
-void wu_jian_heaven_tick()
+static void _wu_jian_increment_heavenly_storm()
 {
-    if (you.attribute[ATTR_HEAVENLY_STORM] == 0)
-        return;
-
-    // TODO: this is still ridiculous. REWRITEME!
-    if (you.attribute[ATTR_HEAVENLY_STORM] <= 10)
-        you.attribute[ATTR_HEAVENLY_STORM] -= 1;
-    else if (you.attribute[ATTR_HEAVENLY_STORM] <= 15)
-        you.attribute[ATTR_HEAVENLY_STORM] -= 2;
-    else if (you.attribute[ATTR_HEAVENLY_STORM] <= 20)
-        you.attribute[ATTR_HEAVENLY_STORM] -= 3;
-    else if (you.attribute[ATTR_HEAVENLY_STORM] <= 30)
-        you.attribute[ATTR_HEAVENLY_STORM] -= 5;
-    else
-        you.attribute[ATTR_HEAVENLY_STORM] -= 10;
-
-    for (radius_iterator ai(you.pos(), 2, C_SQUARE, LOS_SOLID); ai; ++ai)
-    {
-        if (!cell_is_solid(*ai))
-            place_cloud(CLOUD_GOLD_DUST, *ai, 5 + random2(5), &you);
-    }
-
-    noisy(15, you.pos());
-
-    if (you.attribute[ATTR_HEAVENLY_STORM] == 0)
-        end_heavenly_storm();
-    else
-        you.duration[DUR_HEAVENLY_STORM] = WU_JIAN_HEAVEN_TICK_TIME;
+    int storm = you.props[WU_JIAN_HEAVENLY_STORM_KEY].get_int();
+    if (storm < WU_JIAN_HEAVENLY_STORM_MAX)
+        you.props[WU_JIAN_HEAVENLY_STORM_KEY].get_int()++;
 }
 
-void end_heavenly_storm()
+void wu_jian_heaven_tick()
 {
-    you.attribute[ATTR_HEAVENLY_STORM] = 0;
+    for (radius_iterator ai(you.pos(), 2, C_SQUARE, LOS_SOLID); ai; ++ai)
+        if (!cell_is_solid(*ai))
+            place_cloud(CLOUD_GOLD_DUST, *ai, 5 + random2(5), &you);
+
+    noisy(15, you.pos());
+}
+
+void wu_jian_decrement_heavenly_storm()
+{
+    int storm = you.props[WU_JIAN_HEAVENLY_STORM_KEY].get_int();
+
+    if (storm > 1)
+    {
+        you.props[WU_JIAN_HEAVENLY_STORM_KEY].get_int()--;
+        you.set_duration(DUR_HEAVENLY_STORM, random_range(2, 3));
+    }
+    else
+        wu_jian_end_heavenly_storm();
+}
+
+void wu_jian_end_heavenly_storm()
+{
+    you.props.erase(WU_JIAN_HEAVENLY_STORM_KEY);
+    you.duration[DUR_HEAVENLY_STORM] = 0;
+    invalidate_agrid(true);
     mprf(MSGCH_GOD, "The heavenly storm settles.");
 }
 
@@ -1651,8 +1648,8 @@ static bool _wu_jian_lunge(const coord_def& old_pos)
     if (!mons || !_can_attack_martial(mons) || !mons->alive())
         return false;
 
-    if (you.attribute[ATTR_HEAVENLY_STORM] > 0)
-        you.attribute[ATTR_HEAVENLY_STORM] += 2;
+    if (you.props.exists(WU_JIAN_HEAVENLY_STORM_KEY))
+        _wu_jian_increment_heavenly_storm();
 
     you.apply_berserk_penalty = false;
 
@@ -1717,16 +1714,8 @@ static bool _wu_jian_whirlwind(const coord_def& old_pos)
         if (!mons->alive())
             continue;
 
-        if (you.attribute[ATTR_HEAVENLY_STORM] > 0)
-            you.attribute[ATTR_HEAVENLY_STORM] += 2;
-
-        // Pin has a longer duration than one player turn, but gets cleared
-        // before its duration expires by wu_jian_end_of_turn_effects. This is
-        // necessary to make sure it works well with Wall Jump's longer aut
-        // count.
-        mons->del_ench(ENCH_WHIRLWIND_PINNED);
-        mons->add_ench(mon_enchant(ENCH_WHIRLWIND_PINNED, 2, nullptr,
-                                   BASELINE_DELAY * 5));
+        if (you.props.exists(WU_JIAN_HEAVENLY_STORM_KEY))
+            _wu_jian_increment_heavenly_storm();
 
         you.apply_berserk_penalty = false;
 
@@ -1780,7 +1769,7 @@ static bool _wu_jian_trigger_martial_arts(const coord_def& old_pos)
     return did_wu_jian_attacks;
 }
 
-void wu_jian_wall_jump_effects(const coord_def& old_pos)
+void wu_jian_wall_jump_effects()
 {
     vector<monster*> targets;
     for (adjacent_iterator ai(you.pos(), true); ai; ++ai)
@@ -1798,8 +1787,8 @@ void wu_jian_wall_jump_effects(const coord_def& old_pos)
         if (!target->alive())
             continue;
 
-        if (you.attribute[ATTR_HEAVENLY_STORM] > 0)
-            you.attribute[ATTR_HEAVENLY_STORM] += 2;
+        if (you.props.exists(WU_JIAN_HEAVENLY_STORM_KEY))
+            _wu_jian_increment_heavenly_storm();
 
         you.apply_berserk_penalty = false;
 
@@ -1833,20 +1822,6 @@ void wu_jian_wall_jump_effects(const coord_def& old_pos)
     }
 }
 
-void wu_jian_end_of_turn_effects()
-{
-    // This guarantees that the whirlwind pin status is capped to one turn of
-    // monster movement.
-    for (monster_iterator mi; mi; ++mi)
-        if (mi->has_ench(ENCH_WHIRLWIND_PINNED)
-            && !you.attribute[ATTR_SERPENTS_LASH])
-        {
-            mi->lose_ench_levels(mi->get_ench(ENCH_WHIRLWIND_PINNED), 1, true);
-        }
-
-    you.attribute[ATTR_WALL_JUMP_READY] = 0;
-}
-
 bool wu_jian_post_move_effects(bool did_wall_jump,
                                const coord_def& initial_position)
 {
@@ -1878,7 +1853,7 @@ static int _check_for_uskayaw_targets(coord_def where)
 }
 
 /**
- * Paralyze the monster in this cell, assuming one exists.
+ * Paralyse the monster in this cell, assuming one exists.
  *
  * Duration increases with invocations and experience level, and decreases
  * with target HD. The duration is pretty low, maxing out at 40 AUT.
@@ -1927,6 +1902,10 @@ static int _bond_audience(coord_def where)
         return 0;
 
     monster* mons = monster_at(where);
+
+    // Don't pain bond monsters that aren't invested in fighting the player
+    if (mons->wont_attack())
+        return 0;
 
     int power = you.skill(SK_INVOCATIONS, 7) + you.experience_level
                  - mons->get_hit_dice();

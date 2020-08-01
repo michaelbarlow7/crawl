@@ -20,17 +20,14 @@
 #include "english.h"
 #include "env.h"
 #include "fight.h"
-#include "fprop.h"
 #include "hints.h"
 #include "item-status-flag-type.h"
 #include "items.h"
 #include "libutil.h"
 #include "losglobal.h"
 #include "message.h"
-#include "misc.h"
 #include "mon-abil.h"
 #include "mon-behv.h"
-#include "mon-book.h"
 #include "mon-cast.h"
 #include "mon-death.h"
 #include "mon-place.h"
@@ -50,7 +47,6 @@
 #include "traps.h"
 #include "unwind.h"
 #include "view.h"
-#include "xom.h"
 
 static void _place_thunder_ring(const monster &mons)
 {
@@ -65,7 +61,7 @@ static void _place_thunder_ring(const monster &mons)
         }
 }
 
-#ifdef DEBUG_DIAGNOSTICS
+#ifdef DEBUG_ENCH_CACHE_DIAGNOSTICS
 bool monster::has_ench(enchant_type ench) const
 {
     mon_enchant e = get_ench(ench);
@@ -456,8 +452,6 @@ void monster::remove_enchantment_effect(const mon_enchant &me, bool quiet)
             else
                 attitude = ATT_HOSTILE;
         }
-        else
-            attitude = static_cast<mon_attitude_type>(props["old_attitude"].get_short());
         mons_att_changed(this);
         break;
 
@@ -939,11 +933,6 @@ void monster::remove_enchantment_effect(const mon_enchant &me, bool quiet)
             simple_monster_message(*this, " is no longer repelling missiles.");
         break;
 
-    case ENCH_DEFLECT_MISSILES:
-        if (!quiet)
-            simple_monster_message(*this, " is no longer deflecting missiles.");
-        break;
-
     case ENCH_RESISTANCE:
         if (!quiet)
             simple_monster_message(*this, " is no longer unusually resistant.");
@@ -995,6 +984,11 @@ void monster::remove_enchantment_effect(const mon_enchant &me, bool quiet)
 
     case ENCH_STILL_WINDS:
         end_still_winds();
+        break;
+
+    case ENCH_WATERLOGGED:
+        if (!quiet)
+            simple_monster_message(*this, " is no longer waterlogged.");
         break;
 
     default:
@@ -1401,9 +1395,9 @@ void monster::apply_enchantment(const mon_enchant &me)
     case ENCH_BLACK_MARK:
     case ENCH_STILL_WINDS:
     case ENCH_RING_OF_THUNDER:
-    case ENCH_WHIRLWIND_PINNED:
     case ENCH_VILE_CLUTCH:
     case ENCH_GRASPING_ROOTS:
+    case ENCH_WATERLOGGED:
         decay_enchantment(en);
         break;
 
@@ -1968,8 +1962,9 @@ static const char *enchant_names[] =
 #if TAG_MAJOR_VERSION == 34
     "eat_items",
 #endif
-    "aquatic_land", "spore_production",
+    "aquatic_land",
 #if TAG_MAJOR_VERSION == 34
+    "spore_production",
     "slouch",
 #endif
     "swift", "tide",
@@ -2031,18 +2026,22 @@ static const char *enchant_names[] =
 #endif
     "sap magic", "shroud", "phantom_mirror", "bribed", "permabribed",
     "corrosion", "gold_lust", "drained", "repel missiles",
-    "deflect missiles",
 #if TAG_MAJOR_VERSION == 34
+    "deflect missiles",
     "negative_vuln", "condensation_shield",
 #endif
-    "resistant", "hexed", "corpse_armour",
+    "resistant", "hexed",
 #if TAG_MAJOR_VERSION == 34
+    "corpse_armour",
     "chanting_fire_storm", "chanting_word_of_entropy",
 #endif
     "aura_of_brilliance", "empowered_spells", "gozag_incite", "pain_bond",
     "idealised", "bound_soul", "infestation",
-    "stilling the winds", "thunder_ringed", "pinned_by_whirlwind",
-    "vortex", "vortex_cooldown", "vile_clutch",
+    "stilling the winds", "thunder_ringed",
+#if TAG_MAJOR_VERSION == 34
+    "pinned_by_whirlwind",
+#endif
+    "vortex", "vortex_cooldown", "vile_clutch", "waterlogged",
     "buggy",
 };
 
@@ -2302,13 +2301,13 @@ int mon_enchant::calc_duration(const monster* mons,
         cturn = random_range(7, 17) * 10 / _mod_speed(10, mons->speed);
         break;
     case ENCH_FROZEN:
-        cturn = 3 * BASELINE_DELAY;
+        cturn = 3 * 10 / _mod_speed(10, mons->speed);
         break;
     case ENCH_BRILLIANCE_AURA:
-        cturn = 20 * BASELINE_DELAY;
+        cturn = 20 * 10 / _mod_speed(10, mons->speed);
         break;
     case ENCH_EMPOWERED_SPELLS:
-        cturn = 2 * BASELINE_DELAY;
+        cturn = 20 * 10 / _mod_speed(10, mons->speed);
         break;
     case ENCH_GOZAG_INCITE:
         cturn = 100; // is never decremented

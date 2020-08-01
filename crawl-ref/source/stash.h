@@ -22,7 +22,8 @@ class Stash
 {
 public:
     Stash(coord_def pos_ = coord_def());
-    Stash(const Stash &other) { *this = other; };
+    Stash(const Stash &) = default;
+    Stash& operator=(const Stash &) = default;
 
     static bool is_boring_feature(dungeon_feature_type feat);
 
@@ -31,8 +32,6 @@ public:
     bool unmark_trapping_nets();
     void save(writer&) const;
     void load(reader&);
-
-    void rot_all_corpses();
 
     string description() const;
     string feature_description() const;
@@ -188,8 +187,6 @@ public:
     // Update stash at (x,y).
     bool  update_stash(const coord_def& c);
 
-    void rot_all_corpses();
-
     // Mark nets at (x,y) as no longer trapping an actor.
     bool unmark_trapping_nets(const coord_def &c);
 
@@ -342,10 +339,8 @@ void describe_stash(const coord_def& c);
 
 vector<item_def> item_list_in_stash(const coord_def& pos);
 
-string userdef_annotate_item(const char *s, const item_def *item,
-                             bool exclusive = false);
-string stash_annotate_item(const char *s, const item_def *item,
-                           bool exclusive = false);
+string userdef_annotate_item(const char *s, const item_def *item);
+string stash_annotate_item(const char *s, const item_def *item);
 
 #define STASH_LUA_SEARCH_ANNOTATE "ch_stash_search_annotate_item"
 #define STASH_LUA_DUMP_ANNOTATE   "ch_stash_dump_annotate_item"

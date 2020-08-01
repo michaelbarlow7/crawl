@@ -50,10 +50,6 @@ enum xom_event_type
 
     // bad acts
     XOM_BAD_MISCAST_PSEUDO,
-    XOM_BAD_MISCAST_HARMLESS,
-    XOM_BAD_MISCAST_MINOR,
-    XOM_BAD_MISCAST_MAJOR,
-    XOM_BAD_MISCAST_CRITICAL,
     XOM_BAD_STATLOSS,
     XOM_BAD_TELEPORT,
     XOM_BAD_CHAOS_UPGRADE,
@@ -99,7 +95,7 @@ xom_event_type xom_maybe_reverts_banishment(bool xom_banished = true,
 void xom_check_lost_item(const item_def& item);
 void xom_check_destroyed_item(const item_def& item);
 void xom_death_message(const kill_method_type killed_by);
-bool xom_saves_your_life(const kill_method_type death_type, const char *aux);
+bool xom_saves_your_life(const kill_method_type death_type);
 void xom_new_level_noise_or_stealth();
 
 string xom_effect_to_name(xom_event_type effect);

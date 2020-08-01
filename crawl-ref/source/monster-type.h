@@ -100,7 +100,9 @@ enum monster_type                      // menv[].type
     MONS_BARACHI,
     MONS_BEAR,                  // genus
 #endif
+#if TAG_MAJOR_VERSION == 34
     MONS_GRIZZLY_BEAR,
+#endif
     MONS_POLAR_BEAR,
     MONS_BLACK_BEAR,
     MONS_WORM,
@@ -339,7 +341,9 @@ enum monster_type                      // menv[].type
 #endif
     MONS_BALLISTOMYCETE_SPORE,
     MONS_BALLISTOMYCETE,
+#if TAG_MAJOR_VERSION == 34
     MONS_HYPERACTIVE_BALLISTOMYCETE,
+#endif
 
     MONS_GOBLIN,
     MONS_HOBGOBLIN,
@@ -824,6 +828,7 @@ enum monster_type                      // menv[].type
     MONS_MOON_TROLL,
     MONS_BAI_SUZHEN,
     MONS_BAI_SUZHEN_DRAGON,
+    MONS_MAGGIE,
 #endif
     // Sprint uniques:
     MONS_CHUCK,
@@ -843,6 +848,7 @@ enum monster_type                      // menv[].type
 #if TAG_MAJOR_VERSION > 34
     MONS_FULMINANT_PRISM,
     MONS_BATTLESPHERE,
+    MONS_FOXFIRE,
 #endif
     MONS_PILLAR_OF_SALT,
 #if TAG_MAJOR_VERSION > 34
@@ -867,6 +873,7 @@ enum monster_type                      // menv[].type
     MONS_TEST_SPAWNER,
 #if TAG_MAJOR_VERSION > 34
     MONS_TEST_STATUE,
+    MONS_NAMELESS,              // summoning miscast
 #endif
 
     // Add new monsters here:
@@ -1048,6 +1055,9 @@ enum monster_type                      // menv[].type
     MONS_BARACHI,
     MONS_BULTUNGIN,             // remove this someday
     MONS_TEST_STATUE,
+    MONS_FOXFIRE,
+    MONS_MAGGIE,
+    MONS_NAMELESS,
 #endif
 
     NUM_MONSTERS,               // used for polymorph
@@ -1084,5 +1094,3 @@ enum monster_type                      // menv[].type
     WANDERING_MONSTER = 3500, // only used in monster placement routines - forced limit checks {dlb}
 };
 COMPILE_CHECK(NUM_MONSTERS < MONS_NO_MONSTER);
-COMPILE_CHECK(NUM_MONSTERS < 32768); // stored in a 16 bit field,
-                                     // with untested signedness

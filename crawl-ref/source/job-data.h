@@ -136,7 +136,7 @@ static const map<job_type, job_def> job_data =
     8, 0, 4,
     { SP_DEEP_DWARF, SP_HILL_ORC, SP_TROLL, SP_MINOTAUR, SP_GARGOYLE,
       SP_CENTAUR, },
-    { "scale mail", "shield", "potion of might" },
+    { "scale mail", "kite shield", "potion of might" },
     WCHOICE_GOOD,
     { { SK_FIGHTING, 3 }, { SK_SHIELDS, 3 }, { SK_ARMOUR, 3 },
       { SK_WEAPON, 2 } },
@@ -180,7 +180,7 @@ static const map<job_type, job_def> job_data =
       SP_GARGOYLE, },
     { "robe", "book of Frost" },
     WCHOICE_NONE,
-    { { SK_CONJURATIONS, 1 }, { SK_ICE_MAGIC, 3 }, { SK_SPELLCASTING, 2 },
+    { { SK_ICE_MAGIC, 4 }, { SK_SPELLCASTING, 2 },
       { SK_DODGING, 2 }, { SK_STEALTH, 2 }, },
 } },
 
@@ -245,7 +245,7 @@ static const map<job_type, job_def> job_data =
       SP_DEMONSPAWN, },
     { "robe", "Young Poisoner's Handbook" },
     WCHOICE_NONE,
-    { { SK_CONJURATIONS, 1 }, { SK_POISON_MAGIC, 3 }, { SK_SPELLCASTING, 2 },
+    { { SK_TRANSMUTATIONS, 1 }, { SK_POISON_MAGIC, 3 }, { SK_SPELLCASTING, 2 },
       { SK_DODGING, 2 }, { SK_STEALTH, 2 }, },
 } },
 

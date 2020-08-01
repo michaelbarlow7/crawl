@@ -182,7 +182,7 @@ void pick_hints(newgame_def& choice)
     auto prompt_ui = make_shared<Text>(formatted_string::parse_string(prompt));
 
     auto vbox = make_shared<Box>(Box::VERT);
-    vbox->align_cross = Widget::Align::STRETCH;
+    vbox->set_cross_alignment(Widget::Align::STRETCH);
     vbox->add_child(prompt_ui);
 
     auto main_items = make_shared<OuterMenu>(true, 1, 3);
@@ -197,7 +197,7 @@ void pick_hints(newgame_def& choice)
 
 #ifdef USE_TILE_LOCAL
         auto hbox = make_shared<Box>(Box::HORZ);
-        hbox->align_cross = Widget::Align::CENTER;
+        hbox->set_cross_alignment(Widget::Align::CENTER);
         dolls_data doll;
         newgame_def tng = choice;
         _fill_newgame_choice_for_hints(tng, static_cast<hints_types>(i));
@@ -227,24 +227,20 @@ void pick_hints(newgame_def& choice)
     auto sub_items = make_shared<OuterMenu>(false, 1, 2);
     vbox->add_child(sub_items);
 
-    int keyn;
+    bool cancelled = false;
     bool done = false;
-    auto menu_item_activated = [&](int id) {
+    vbox->on_activate_event([&](const ActivateEvent& event) {
+        const auto button = static_pointer_cast<MenuButton>(event.target());
+        int id = button->id;
         if (id == CK_ESCAPE)
-        {
-            keyn = CK_ESCAPE;
-            done = true;
-            return;
-        }
+            return done = cancelled = true;
         else if (id == '*')
             id = random2(HINT_TYPES_NUM);
         Hints.hints_type = id;
         _fill_newgame_choice_for_hints(choice, static_cast<hints_types>(id));
-        done = true;
-    };
+        return done = true;
+    });
 
-    main_items->on_button_activated = menu_item_activated;
-    sub_items->on_button_activated = menu_item_activated;
     main_items->linked_menus[2] = sub_items;
     sub_items->linked_menus[0] = main_items;
 
@@ -267,32 +263,14 @@ void pick_hints(newgame_def& choice)
 
     auto popup = make_shared<ui::Popup>(vbox);
 
-    popup->on(Widget::slots.event, [&](wm_event ev) {
-        if (ev.type != WME_KEYDOWN)
-            return false;
-        keyn = ev.key.keysym.sym;
-        if (keyn == 'X')
-            return done = true;
-        // Random choice.
-        if (keyn == '+' || keyn == '!' || keyn == '#')
-            ev.key.keysym.sym = '*';
-        return false;
-    });
     ui::run_layout(move(popup), done);
 
-    switch (keyn)
+    if (cancelled)
     {
-    CASE_ESCAPE
 #ifdef USE_TILE_WEB
         tiles.send_exit_reason("cancel");
 #endif
         game_ended(game_exit::abort);
-    case 'X':
-#ifdef USE_TILE_WEB
-        tiles.send_exit_reason("cancel");
-#endif
-        end(0);
-        return;
     }
 }
 
@@ -382,7 +360,7 @@ static void _replace_static_tags(string &text)
         dummy.base_type = static_cast<object_class_type>(type);
         dummy.sub_type = 0;
         if (item == "amulet") // yay shared item classes
-            dummy.base_type = OBJ_JEWELLERY, dummy.sub_type = AMU_RAGE;
+            dummy.base_type = OBJ_JEWELLERY, dummy.sub_type = AMU_FAITH;
         item = stringize_glyph(get_item_symbol(show_type(dummy).item));
 
         if (item == "<")
@@ -424,12 +402,10 @@ void hints_starting_screen()
 #endif
 
     bool done = false;
-    prompt_ui->on(Widget::slots.event, [&](wm_event ev)  {
-        return done = ev.type == WME_KEYDOWN;
-    });
+    auto popup = make_shared<ui::Popup>(prompt_ui);
+    popup->on_keydown_event([&](const KeyEvent&) { return done = true; });
 
     mouse_control mc(MOUSE_MODE_MORE);
-    auto popup = make_shared<ui::Popup>(prompt_ui);
     ui::run_layout(move(popup), done);
 }
 
@@ -864,7 +840,6 @@ static bool _advise_use_wand()
         case WAND_RANDOM_EFFECTS:
         case WAND_DISINTEGRATION:
         case WAND_CLOUDS:
-        case WAND_SCATTERSHOT:
             return true;
         }
     }
@@ -1899,9 +1874,7 @@ void learned_something_new(hints_event_type seen_what, coord_def gc)
     case HINT_MAKE_CHUNKS:
         text << "How lucky! That monster left a corpse which you can now "
                 "<w>%</w>hop up, producing chunks that you can then "
-                "<w>%</w>at. Some monsters are inedible or or even mutagenic,"
-                "but their chunks will be named accordingly, so don't worry "
-                "about any surprises in the food!";
+                "<w>%</w>at.";
         cmd.push_back(CMD_BUTCHER);
         cmd.push_back(CMD_EAT);
         break;
@@ -3379,10 +3352,9 @@ string hints_describe_item(const item_def &item)
 
             if (item_known_cursed(item))
             {
-                ostr << "\nA cursed piece of jewellery will cling to its "
-                        "unfortunate wearer's neck or fingers until the curse "
-                        "is finally lifted when he or she reads a scroll of "
-                        "remove curse.";
+                ostr << "\nA cursed piece of jewellery will stick to its "
+                        "wearer when equipped, and cannot be removed until "
+                        "you read a scroll of remove curse.";
             }
             if (gives_resistance(item))
             {
@@ -3558,9 +3530,19 @@ static void _hints_describe_feature(int x, int y, ostringstream& ostr)
         break;
 
     case DNGN_TRAP_TELEPORT:
+    case DNGN_TRAP_TELEPORT_PERMANENT:
     case DNGN_TRAP_ALARM:
     case DNGN_TRAP_ZOT:
+#if TAG_MAJOR_VERSION == 34
     case DNGN_TRAP_MECHANICAL:
+#endif
+    case DNGN_TRAP_ARROW:
+    case DNGN_TRAP_SPEAR:
+    case DNGN_TRAP_BLADE:
+    case DNGN_TRAP_DART:
+    case DNGN_TRAP_BOLT:
+    case DNGN_TRAP_NET:
+    case DNGN_TRAP_PLATE:
         ostr << "These nasty constructions can cause a range of "
                 "unpleasant effects. You won't be able to avoid "
                 "tripping traps by flying over them; their magic "

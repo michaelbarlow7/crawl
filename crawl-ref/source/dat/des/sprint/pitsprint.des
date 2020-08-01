@@ -167,7 +167,7 @@ function general_item_setup(e)
           potion of heal wounds ident:all q:4 w:3 /\
           potion of haste ident:all q:4 w:3 /\
           scroll of fog w:1 ident:all / scroll of holy word w:1 ident:all /\
-          potion of might ident:all w:2 / potion of agility w:2 ident:all /\
+          potion of might ident:all w:2 / potion of stabbing w:2 ident:all /\
           scroll of acquirement q:1 w:1 ident:all /\
           scroll of enchant weapon ident:all q:4 w:2 /\
           scroll of enchant armour ident:all q:4 w:2 /\
@@ -177,7 +177,7 @@ function general_item_setup(e)
   e.kitem("% = any ident:all")
   e.kitem("! = potion of heal wounds ident:all q:2 w:30 /\
           potion of curing ident:all w:20 / potion of might ident:all /\
-          potion of agility ident:all / potion of haste ident:all /\
+          potion of stabbing ident:all / potion of haste ident:all /\
           potion of resistance ident:all w:5 /\
           potion of brilliance ident:all / potion of berserk rage ident:all /\
           potion of mutation ident:all")
@@ -246,8 +246,8 @@ function general_item_setup(e)
     cloak plus:2 good_item not_cursed ident:all /\
     hat plus:4 not_cursed ident:all /\
     hat plus:2 good_item not_cursed ident:all /\
-    large shield plus:5 not_cursed ident:all /\
-    large shield plus:3 good_item not_cursed ident:all /\
+    tower shield plus:5 not_cursed ident:all /\
+    tower shield plus:3 good_item not_cursed ident:all /\
     naga barding plus:6 not_cursed ident:all w:5 /\
     centaur barding plus:6 not_cursed ident:all w:5")
   e.kitem("( = battleaxe plus:6 ego:none not_cursed ident:all /\
@@ -306,8 +306,8 @@ function general_item_setup(e)
     cloak plus:0 good_item not_cursed ident:all /\
     hat plus:2 not_cursed ident:all /\
     hat plus:0 good_item not_cursed ident:all /\
-    large shield plus:3 not_cursed ident:all /\
-    large shield plus:0 good_item not_cursed ident:all /\
+    tower shield plus:3 not_cursed ident:all /\
+    tower shield plus:0 good_item not_cursed ident:all /\
     naga barding plus:2 not_cursed ident:all w:5 /\
     centaur barding plus:2 not_cursed ident:all w:5")
 end
@@ -446,7 +446,7 @@ function armoury_setup(e)
           storm dragon scales plus:3 not_cursed ident:all w:5 /\
           shadow dragon scales plus:3 not_cursed ident:all w:5 /\
           gold dragon scales plus:2 not_cursed ident:all /\
-          large shield plus:1 not_cursed ident:all /\
+          tower shield plus:1 not_cursed ident:all /\
           any armour good_item ident:all w:20")
   e.kitem("c = any weapon good_item ident:all")
   e.kitem("d = any armour good_item ident:all")
@@ -482,9 +482,7 @@ function coven_setup(e)
   e.kitem("b = amulet of faith randart not_cursed ident:all /\
           amulet of guardian spirit randart not_cursed ident:all /\
           amulet of magic regeneration randart not_cursed ident:all /\
-          amulet of rage randart not_cursed ident:all /\
           amulet of reflection randart not_cursed ident:all /\
-          amulet of the gourmand randart not_cursed ident:all /\
           amulet of regeneration randart ident:all not_cursed /\
           ring of slaying plus:5 randart ident:all not_cursed /\
           any jewellery randart level:27 not_cursed ident:all w:40")
@@ -507,8 +505,8 @@ function coven_setup(e)
   e.kitem("e = potion of haste q:5 ident:all")
   e.kitem("f = any wand good_item ident:all")
   e.kitem("g = staff of energy ident:all")
-  e.kitem("h = staff of power ident:all")
-  e.kitem("i = crystal ball of energy")
+  e.kitem("h = staff of wizardry ident:all")
+  e.kitem("i = potion of magic q:5 ident:all")
   e.kitem("j = potion of mutation ident:all")
   e.lua_marker('~', props_marker {
            door_description_suffix=" to the Coven (Very Hard)",

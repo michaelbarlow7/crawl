@@ -851,14 +851,14 @@ VISUAL:@The_monster@ gnaws at a bone — where's that from?
 
 @hound@
 %%%%
-friendly hound Shoals
+friendly Shoals hound
 
 w:50
 @friendly hound@
 
 VISUAL:@The_monster@ [plays|frolics] in the surf!
 
-There's a distinct wet dog smell emanating from @the_monster@.
+A distinct wet dog smell emanates from @the_monster@.
 
 w:1
 VISUAL:@The_monster@ hopefully picks up a piece of driftwood and looks at you.
@@ -3412,8 +3412,6 @@ w:50
 @The_monster@ says, "Are you still afraid of the dark?"
 
 @The_monster@ says, "Careful; you might trip over your own shadow."
-
-@The_monster@ holds up a torch and says, "I bet you miss these."
 %%%%
 Gozag Donald
 
@@ -4929,6 +4927,43 @@ _Louise_rare_
 
 @The_monster@ says, "It's the perfect time of year for a holiday!"
 ### END Louise
+%%%%
+############ Maggie ### Younger Margery
+Maggie
+
+@_Maggie_common_@
+
+w:5
+@_Maggie_rare_@
+%%%%
+_Maggie_common_
+
+VISUAL:@The_monster@ practices a pose.
+
+VISUAL:@The_monster@ smiles, but it's obviously fake.
+
+@The_monster@ says @to_foe@, "Leave now, and tell all of Margery's mercy!"
+
+@The_monster@ says @to_foe@, "Fear not. I will immortalize you in the tale of my first kill."
+
+VISUAL:@The_monster@ gives herself a magical halo, but it quickly sputters out.
+
+@The_monster@ mumbles the words to a spell, but in the wrong order.
+%%%%
+_Maggie_rare_
+
+@The_monster@ says @to_foe@, "If you die in the Dungeon, but nobody's around to see it, does it really matter?"
+
+@The_monster@ says @to_foe@, "Did Master Lance send you?"
+
+@The_monster@ says @to_foe@, "Have you seen any dragons?"
+
+@The_monster@ says @to_foe@, "How do the people who live here stand the isolation?"
+
+@The_monster@ shouts @at_foe@, "Leave me alone!"
+
+@The_monster@ mutters to herself, "Master Lance won't take me back. This is the way forward."
+## END Maggie ##
 %%%%
 ############ MARA ### A powerful demon lord, Lord of Illusions
 Mara

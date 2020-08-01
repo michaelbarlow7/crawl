@@ -45,10 +45,6 @@ nieszczęście, ich żywe kolory stały się ich zgubą, alarmując potencjalną
 zdobycz. Dziś już zupełnie wyginęły, a ten cenny relikt jest jednym z ostatnich
 dowodów że kiedykolwiek istniały.
 %%%%
-demon blade "Bloodbane"
-
-Ta broń jest skażona krwią nieludzkiego szaleńca.
-%%%%
 scimitar of Flaming Death
 
 Gorące ostrze!
@@ -131,7 +127,7 @@ storm bow
 
 Ten łuk ma kolor ciemnych deszczowych chmur, i pachnie ozonem.
 %%%%
-large shield of Ignorance
+tower shield of Ignorance
 
 „Otwarty umysł jest jak twierdza o bramach otwartych i niestrzeżonych.”
 %%%%
@@ -143,7 +139,7 @@ cloak of the Thief
 
 Pozwala nosicielowi przodować w złodziejskich sztukach.
 %%%%
-large shield "Bullseye"
+tower shield "Bullseye"
 
 Na wypadek jakby twoi wrogowie mieli problemy z trafianiem w ciebie.
 %%%%

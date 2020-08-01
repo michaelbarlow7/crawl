@@ -261,11 +261,8 @@ skeletons cannot leave the level they were created on.
 %%%%
 Drain Life ability
 
-# Note: part of this description duplicates the Drain Life spell description.
-
-Drains the life force of any nearby creatures, healing the user depending on
-the damage dealt. The amount of life force drained is increased by Invocations
-skill.
+[[Drain Life spell]] The amount of life force drained is increased by
+Invocations skill.
 %%%%
 Enslave Soul ability
 
@@ -303,13 +300,13 @@ demon hostile.
 %%%%
 Major Destruction ability
 
-Shoots a random harmful beam or explosion at the targeted creature. Damage and
-accuracy are increased by Invocations skill.
+[[Major Destruction spell]] Damage and accuracy are increased by Invocations
+skill.
 %%%%
 Greater Servant of Makhleb ability
 
-Summons a major demon. Failing to use this ability correctly will turn the
-demon hostile.
+[[Greater Servant of Makhleb spell]] Failing to use this ability correctly will
+turn the demon hostile.
 %%%%
 # Sif Muna
 %%%%
@@ -374,6 +371,7 @@ Heals a creature other than yourself by a moderate amount, depending on
 Invocations skill. Using this ability on hostile monsters will try to turn them
 neutral. This works best on animals, and is less effective on humanoids and
 other intelligent creatures. Undead and demons are harder still to pacify.
+Plants do not respond to the healing arts and cannot be pacified.
 Ghosts of dead adventurers and demon lords are too wrathful to be pacified,
 mindless creatures are too unintelligent to be pacified, and no monster can be
 pacified while it is asleep.
@@ -458,8 +456,7 @@ Re-using this ability will discard the current stack.
 # Beogh
 Smiting ability
 
-Smites any targeted enemy within sight, with no direct line of fire required.
-The strength of the smiting is increased by Invocations skill.
+[[Smiting spell]] The strength of the smiting is increased by Invocations skill.
 %%%%
 Recall Orcish Followers ability
 
@@ -488,8 +485,8 @@ be damaged by sharp thorns. Invocations skill increases the briars' health.
 %%%%
 Grow Ballistomycete ability
 
-Grow a short-lived ballistomycete at the location you choose. A Ballistomycete
-occasionally release spores that quickly seek out foes and violently explode,
+Grow a short-lived ballistomycete at the location you choose. A ballistomycete
+occasionally releases spores that quickly seek out foes and violently explode,
 damaging and confusing all living things caught in the blast.
 
 Invocations skill increases the health and duration of the ballistomycete as
@@ -656,7 +653,7 @@ increases with your piety and experience level.
 Apocalypse ability
 
 Reveals Ru's truth to your enemies, dealing severe damage to all enemies in
-your line of sight. Affected creatures may be paralyzed, slowed or have their
+your line of sight. Affected creatures may be paralysed, slowed or have their
 magic drained. The damage dealt increases with your piety and experience level.
 %%%%
 Sacrifice Purity ability
@@ -854,11 +851,10 @@ Serpent's Lash are more damaging and never miss.
 %%%%
 Heavenly Storm ability
 
-Invokes a storm of heavenly clouds. While the storm rages, striking enemies
-with martial attacks provides an increasing bonus to melee damage and accuracy.
-The bonus fades over time, and the storm lasts until the bonus has faded
-completely. The heavenly clouds prevent invisibility, and obscure the vision of
-those outside the storm.
+Invokes a storm of heavenly clouds. While the storm rages, your combat
+accuracy and damage are substantially increased, and striking enemies with
+martial attacks increases this bonus. The storm weakens over time and fades
+away once the bonus reaches zero. The heavenly clouds prevent invisibility, and obscure the vision of those outside the storm.
 %%%%
 Hop ability
 

@@ -3,15 +3,15 @@
 #include "tiledgnbuf.h"
 
 #include "tile-flags.h"
-#include "tiledef-dngn.h"
-#include "tiledef-icons.h"
-#include "tiledef-main.h"
-#include "tiledef-player.h"
+#include "rltiles/tiledef-dngn.h"
+#include "rltiles/tiledef-icons.h"
+#include "rltiles/tiledef-main.h"
+#include "rltiles/tiledef-player.h"
 #include "tiledoll.h"
 #include "tilemcache.h"
 #include "tilepick.h"
 
-DungeonCellBuffer::DungeonCellBuffer(ImageManager *im) :
+DungeonCellBuffer::DungeonCellBuffer(const ImageManager *im) :
     m_buf_floor(&im->m_textures[TEX_FLOOR]),
     m_buf_wall(&im->m_textures[TEX_WALL]),
     m_buf_feat(&im->m_textures[TEX_FEAT]),
@@ -362,6 +362,16 @@ void DungeonCellBuffer::pack_background(int x, int y, const packed_cell &cell)
                 else if (att_flag == TILE_FLAG_NEUTRAL)
                     m_buf_feat.add(TILE_HALO_NEUTRAL, x, y);
 
+                const tileidx_t threat_flag = cell.fg & TILE_FLAG_THREAT_MASK;
+                if (threat_flag == TILE_FLAG_TRIVIAL)
+                    m_buf_feat.add(TILE_THREAT_TRIVIAL, x, y);
+                else if (threat_flag == TILE_FLAG_EASY)
+                    m_buf_feat.add(TILE_THREAT_EASY, x, y);
+                else if (threat_flag == TILE_FLAG_TOUGH)
+                    m_buf_feat.add(TILE_THREAT_TOUGH, x, y);
+                else if (threat_flag == TILE_FLAG_NASTY)
+                    m_buf_feat.add(TILE_THREAT_NASTY, x, y);
+
                 if (cell.is_highlighted_summoner)
                     m_buf_feat.add(TILE_HALO_SUMMONER, x, y);
             }
@@ -462,11 +472,26 @@ void DungeonCellBuffer::pack_foreground(int x, int y, const packed_cell &cell)
         }
     }
 
-    if (fg & TILE_FLAG_POISON)
+    if (fg & TILE_FLAG_POISON_MASK)
     {
-        m_buf_icons.add(TILEI_POISON, x, y, -status_shift, 0);
-        status_shift += 5;
+        const tileidx_t poison_flag = fg & TILE_FLAG_POISON_MASK;
+        if (poison_flag == TILE_FLAG_POISON)
+        {
+            m_buf_icons.add(TILEI_POISON, x, y, -status_shift, 0);
+            status_shift += 5;
+        }
+        else if (poison_flag == TILE_FLAG_MORE_POISON)
+        {
+            m_buf_icons.add(TILEI_MORE_POISON, x, y, -status_shift, 0);
+            status_shift += 5;
+        }
+        else if (poison_flag == TILE_FLAG_MAX_POISON)
+        {
+            m_buf_icons.add(TILEI_MAX_POISON, x, y, -status_shift, 0);
+            status_shift += 5;
+        }
     }
+
     if (fg & TILE_FLAG_STICKY_FLAME)
     {
         m_buf_icons.add(TILEI_STICKY_FLAME, x, y, -status_shift, 0);
@@ -553,11 +578,6 @@ void DungeonCellBuffer::pack_foreground(int x, int y, const packed_cell &cell)
     if (fg & TILE_FLAG_SWIFT)
     {
         m_buf_icons.add(TILEI_SWIFT, x, y, -status_shift, 0);
-        status_shift += 6;
-    }
-    if (fg & TILE_FLAG_PINNED)
-    {
-        m_buf_icons.add(TILEI_PINNED, x, y, -status_shift, 0);
         status_shift += 6;
     }
     if (fg & TILE_FLAG_RECALL)

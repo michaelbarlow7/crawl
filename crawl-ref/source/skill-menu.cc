@@ -9,7 +9,6 @@
 
 #include "skill-menu.h"
 
-#include "art-enum.h"
 #include "cio.h"
 #include "clua.h"
 #include "command.h"
@@ -37,10 +36,10 @@ menu_letter2 SkillMenuEntry::m_letter;
 SkillMenu skm;
 
 #ifdef USE_TILE_LOCAL
-bool SkillTextTileItem::handle_mouse(const MouseEvent& me)
+bool SkillTextTileItem::handle_mouse(const wm_mouse_event& me)
 {
-    if (me.event == MouseEvent::PRESS
-        && (me.button == MouseEvent::LEFT && me.mod & TILES_MOD_SHIFT))
+    if (me.event == wm_mouse_event::PRESS
+        && (me.button == wm_mouse_event::LEFT && me.mod & TILES_MOD_SHIFT))
     {
         skill_type sk = skill_type(get_id());
         if (is_invalid_skill(sk))
@@ -787,6 +786,7 @@ void SkillMenu::init_experience()
         m_skill_backup.save();
         you.auto_training = false;
         reset_training();
+        you.clear_training_targets();
 
         for (int i = 0; i < NUM_SKILLS; ++i)
         {
@@ -926,7 +926,7 @@ static keyfun_action _keyfun_target_input(int &ch)
     return KEYFUN_IGNORE;
 }
 
-int SkillMenu::read_skill_target(skill_type sk, int keyn)
+int SkillMenu::read_skill_target(skill_type sk)
 {
     SkillMenuEntry *entry = find_entry(sk);
     ASSERT(entry);
@@ -1181,7 +1181,7 @@ void SkillMenu::select(skill_type sk, int keyn)
     else if (skm.get_state(SKM_VIEW) == SKM_VIEW_TARGETS
                                             && skm.is_set(SKMF_SET_TARGET))
     {
-        read_skill_target(sk, keyn);
+        read_skill_target(sk);
     }
     else if (get_state(SKM_DO) == SKM_DO_PRACTISE
              || get_state(SKM_DO) == SKM_DO_FOCUS)
@@ -1741,14 +1741,14 @@ public:
     virtual SizeReq _get_preferred_size(Direction dim, int prosp_width) override;
     virtual void _allocate_region() override;
 #ifdef USE_TILE_LOCAL
-    virtual bool on_event(const wm_event& ev) override;
+    virtual bool on_event(const Event& ev) override;
 #endif
 
 protected:
     int flag;
 };
 
-SizeReq UISkillMenu::_get_preferred_size(Direction dim, int prosp_width)
+SizeReq UISkillMenu::_get_preferred_size(Direction dim, int /*prosp_width*/)
 {
 #ifdef USE_TILE_LOCAL
     SizeReq ret;
@@ -1790,29 +1790,41 @@ void UISkillMenu::_render()
 }
 
 #ifdef USE_TILE_LOCAL
-bool UISkillMenu::on_event(const wm_event& ev)
+bool UISkillMenu::on_event(const Event& ev)
 {
-    if (ev.type != WME_MOUSEMOTION
-     && ev.type != WME_MOUSEBUTTONDOWN
-     && ev.type != WME_MOUSEWHEEL)
+    if (ev.type() != Event::Type::MouseMove
+     && ev.type() != Event::Type::MouseDown
+     && ev.type() != Event::Type::MouseWheel)
     {
         return Widget::on_event(ev);
     }
 
-    MouseEvent mouse_ev = ev.mouse_event;
-    mouse_ev.px -= m_region.x;
-    mouse_ev.py -= m_region.y;
+    const auto mouse_event = static_cast<const MouseEvent&>(ev);
 
-    int key = skm.handle_mouse(mouse_ev);
+    // XXX: convert Event back into a wm_mouse_event for the PrecisionMenu
+    // code. once skill-menu is widgified, PrecisionMenu can be removed
+    wm_mouse_event mev;
+    mev.event = ev.type() == Event::Type::MouseMove ? wm_mouse_event::MOVE :
+                ev.type() == Event::Type::MouseDown ? wm_mouse_event::PRESS :
+                wm_mouse_event::WHEEL;
+    mev.button = static_cast<wm_mouse_event::mouse_event_button>(
+            mouse_event.button());
+    mev.mod = wm->get_mod_state();
+    int x, y;
+    mev.held = wm->get_mouse_state(&x, &y);
+    mev.px = x - m_region.x;
+    mev.py = y - m_region.y;
+
+    int key = skm.handle_mouse(mev);
     if (key && key != CK_NO_KEY)
     {
-        wm_event fake_key = {0};
-        fake_key.type = WME_KEYDOWN;
-        fake_key.key.keysym.sym = key;
-        Widget::on_event(fake_key);
+        wm_keyboard_event fake_key = {0};
+        fake_key.keysym.sym = key;
+        KeyEvent key_ev(Event::Type::KeyDown, fake_key);
+        Widget::on_event(key_ev);
     }
 
-    if (ev.type == WME_MOUSEMOTION)
+    if (ev.type() == Event::Type::MouseMove)
         _expose();
 
     return true;
@@ -1840,11 +1852,10 @@ void skill_menu(int flag, int exp)
 
     bool done = false;
     auto skill_menu_ui = make_shared<UISkillMenu>(flag);
+    auto popup = make_shared<ui::Popup>(skill_menu_ui);
 
-    skill_menu_ui->on(Widget::slots.event, [&done, &skill_menu_ui](wm_event ev) {
-        if (ev.type != WME_KEYDOWN)
-            return false;
-        int keyn = ev.key.keysym.sym;
+    skill_menu_ui->on_keydown_event([&done, &skill_menu_ui](const KeyEvent& ev) {
+        const auto keyn = ev.key();
 
         skill_menu_ui->_expose();
 
@@ -1929,7 +1940,6 @@ void skill_menu(int flag, int exp)
 #ifdef USE_TILE_WEB
     tiles_crt_popup show_as_popup("skills");
 #endif
-    auto popup = make_shared<ui::Popup>(skill_menu_ui);
     // XXX: this is, in theory, an arbitrary initial height. In practice,
     // there's a bug where an item in the MenuFreeform stays at its original
     // position even after skm.init is called again, crashing when the screen

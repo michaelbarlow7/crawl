@@ -32,7 +32,7 @@
 ###############################################################################
 
 {{
--- Remove this code when TAG_MAJOR > 34
+-- start TAG_MAJOR_VERSION == 34
 function callback.zig_tele(data, triggerable, triggerer, marker, ev)
   local position = dgn.point(marker:pos())
   my_slaves = dgn.find_marker_positions_by_prop("teleport_spot",
@@ -46,6 +46,7 @@ function callback.zig_tele(data, triggerable, triggerer, marker, ev)
 --                       " of Ziggurat Sprint.", "")
   end
 end
+-- end TAG_MAJOR_VERSION
 
 function callback.zig_message(data, triggerable, triggerer, marker, ev)
   if data.arena_number > 1 then
@@ -98,7 +99,7 @@ e.kitem("1 = superb_item ident:all w:590 / ration w:2 /\
             potion of heal wounds ident:all q:4 w:3 /\
             potion of haste ident:all q:4 w:3 /\
             scroll of fog w:1 ident:all / scroll of holy word w:1 ident:all /\
-            potion of might ident:all w:2 / potion of agility w:2 ident:all /\
+            potion of might ident:all w:2 / potion of stabbing w:2 ident:all /\
             scroll of acquirement q:1 w:1 ident:all /\
             scroll of enchant weapon ident:all q:4 w:2 /\
             scroll of enchant armour ident:all q:4 w:2 /\
@@ -731,8 +732,8 @@ KITEM:    B = plate armour mundane not_cursed ident:all plus:5, \
               gold dragon scales mundane not_cursed ident:all plus:5, \
               crystal plate armour mundane not_cursed ident:all plus:5
 KITEM:    C = buckler mundane not_cursed ident:all plus:3, \
-              shield mundane not_cursed ident:all plus:3, \
-              large shield mundane not_cursed ident:all plus:3
+              kite shield mundane not_cursed ident:all plus:3, \
+              tower shield mundane not_cursed ident:all plus:3
 KITEM:    D = broad axe mundane not_cursed ident:all plus:5, \
               battleaxe mundane not_cursed ident:all plus:5, \
               executioner's axe mundane not_cursed ident:all plus:5
@@ -764,7 +765,7 @@ KITEM:    K = potion of curing q:9 ident:all, \
               potion of heal wounds q:9 ident:all, \
               potion of berserk rage q:2 ident:all, \
               potion of might q:5 ident:all, \
-              potion of agility q:5 ident:all, \
+              potion of stabbing q:5 ident:all, \
               potion of magic q:5 ident:all, \
               potion of experience q:1 ident:all, \
               potion of resistance q:4 ident:all, \
@@ -782,14 +783,14 @@ KITEM:    M = ration q:6
 KITEM:    N = wand of acid ident:all charges:7, \
               wand of iceblast ident:all charges:7, \
               wand of disintegration ident:all charges:7
-KITEM:    O = crystal ball of energy ident:all, staff of energy not_cursed ident:all
+KITEM:    O = staff of energy not_cursed ident:all
 KITEM:    P = ring of strength not_cursed ident:all plus:6, \
               ring of strength not_cursed ident:all plus:6, \
               ring of intelligence not_cursed ident:all plus:6, \
               ring of intelligence not_cursed ident:all plus:6, \
               ring of dexterity not_cursed ident:all plus:6, \
               ring of dexterity not_cursed ident:all plus:6, \
-          ring of flight not_cursed ident:all
+              ring of flight not_cursed ident:all
 KITEM:    R = obsidian_axe ident:all, \
               shield_of_the_gong ident:all, \
               maxwells_patent_armour ident:all, \

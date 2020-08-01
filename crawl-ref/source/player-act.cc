@@ -92,8 +92,8 @@ bool player::move_to_pos(const coord_def &c, bool clear_net, bool /*force*/)
 }
 
 void player::apply_location_effects(const coord_def &oldpos,
-                                    killer_type killer,
-                                    int killernum)
+                                    killer_type /*killer*/,
+                                    int /*killernum*/)
 {
     moveto_location_effects(env.grid(oldpos));
 }
@@ -634,7 +634,8 @@ bool player::fumbles_attack()
     bool did_fumble = false;
 
     // Fumbling in shallow water.
-    if (floundering() || liquefied_ground())
+    if (floundering()
+        || liquefied_ground() && you.duration[DUR_LIQUEFYING] == 0)
     {
         if (x_chance_in_y(3, 8))
         {
@@ -734,15 +735,11 @@ bool player::go_berserk(bool intentional, bool potion)
 
     mpr("You feel mighty!");
 
-    int berserk_duration = (20 + random2avg(19,2)) / 2;
-
+    const int berserk_duration = (20 + random2avg(19,2)) / 2;
     you.increase_duration(DUR_BERSERK, berserk_duration);
 
-    //Apply Berserk's +50% Current/Max HP
+    // Apply Berserk's +50% Current/Max HP.
     calc_hp(true, false);
-
-    if (!you.duration[DUR_MIGHT])
-        notify_stat_change(STAT_STR, 5, true);
 
     you.berserk_penalty = 0;
 
@@ -800,11 +797,6 @@ bool player::can_go_berserk(bool intentional, bool potion, bool quiet,
 bool player::berserk() const
 {
     return duration[DUR_BERSERK];
-}
-
-bool player::can_cling_to_walls() const
-{
-    return false;
 }
 
 bool player::antimagic_susceptible() const

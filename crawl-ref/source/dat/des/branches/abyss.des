@@ -26,10 +26,11 @@ function abyss_entry(e, glyph)
   e.depth_chance("Depths:1-3", 3333)
   e.depth_chance("Depths:4",   10000)
   e.depth_chance("Depths:5-",  3333)
--- D:21-27 entries for save compat, remove when TAG_MAJOR_VERSION > 34
+-- start TAG_MAJOR_VERSION == 34
   e.depth_chance("D:21-24", 3333)
   e.depth_chance("D:25",    10000)
   e.depth_chance("D:26-",   3333)
+-- end TAG_MAJOR_VERSION
   e.kfeat(glyph .. ' = enter_abyss')
 end
 }}
@@ -539,7 +540,7 @@ NAME:    hangedman_abyss_batty_box
 MONS:    bat / fire bat / vampire bat, butterfly, wyvern
 MONS:    spatial vortex, wind drake, harpy, unseen horror
 KMONS:   8 = wind drake w:9 / harpy w:1
-KITEM:   8 = acquire any / any good_item / stone q:1 w:5
+KITEM:   8 = any good_item w:20 / stone q:1 w:5
 NSUBST:  A = 2:2 / 1:2 / 2 = 1122., B = 1:3 / 1:4 / 1:1334. / 1:12334.
 NSUBST:  C = 1:556 / 1:6 / 1:7 / 1:66777. / 1:1234567.
 SUBST:   x = x:25 c:14 v:6 b:4 G:1 n:2, y = c:3 v:1 b:1, z = x:2 c:1 v:1 b:1 .:1
@@ -732,7 +733,7 @@ WEIGHT:  5
 MONS:    rakshasa, guardian serpent / great orb of eyes
 ITEM:    potion of might / potion of haste / potion of heal wounds w:12 / \
          wand of iceblast / wand of acid / wand of paralysis / \
-         ring mail good_item / chain mail good_item w:12 / shield / \
+         ring mail good_item / chain mail good_item w:12 / kite shield / \
          spear good_item / trident good_item / any weapon w:12 / any w:2
 SUBST:   x = ccccvbb
 MAP
@@ -961,7 +962,7 @@ ITEM:    ring mail randart / scale mail randart / chain mail randart w:20
 ITEM:    demon blade ego:chaos good_item ident:type / \
          demon trident ego:chaos good_item ident:type / \
          demon whip ego:chaos good_item ident:type
-KITEM:   k = acquire misc, acquire misc
+KITEM:   k = any misc, any misc
 SHUFFLE: defghijk
 NSUBST:  0 : 2:0 / 1 = VY / *:.
 SUBST:   c = c:7 b:2 v:1, x = x:8 c:1 b:1

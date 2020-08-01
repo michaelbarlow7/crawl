@@ -15,6 +15,7 @@ beam.o \
 behold.o \
 bitary.o \
 branch.o \
+branch-data-json.o \
 butcher.o \
 bloodspatter.o \
 chardump.o \
@@ -36,6 +37,7 @@ dbg-maps.o \
 dbg-objstat.o \
 dbg-scan.o \
 dbg-util.o \
+death-curse.o \
 decks.o \
 delay.o \
 describe.o \
@@ -93,6 +95,7 @@ items.o \
 jobs.o \
 json.o \
 kills.o \
+known-items.o \
 l-colour.o \
 l-crawl.o \
 l-debug.o \
@@ -168,6 +171,7 @@ mutation.o \
 nearby-danger.o \
 newgame.o \
 ng-init.o \
+ng-init-branches.o \
 ng-input.o \
 ng-restr.o \
 ng-setup.o \
@@ -190,6 +194,7 @@ player-reacts.o \
 player-stats.o \
 player.o \
 potion.o \
+precision-menu.o \
 prompt.o \
 quiver.o \
 randbook.o \
@@ -237,6 +242,7 @@ stringutil.o \
 syscalls.o \
 tags.o \
 target.o \
+target-compass.o \
 teleport.o \
 terrain.o \
 throw.o \
@@ -300,6 +306,21 @@ windowmanager-sdl.o \
 glwrapper-ogl.o \
 fontwrapper-ft.o
 
+TEST_OBJECTS = \
+catch2-tests/test_branch.o \
+catch2-tests/test_english.o \
+catch2-tests/test_files.o \
+catch2-tests/test_items.o \
+catch2-tests/test_mon-util.o \
+catch2-tests/test_ng-init-branches.o \
+catch2-tests/test_player.o \
+catch2-tests/test_player_fixture.o \
+catch2-tests/test_randbook.o \
+catch2-tests/test_species.o \
+catch2-tests/test_tags.o \
+catch2-tests/test_ui.o \
+catch2-tests/test_viewmap.o \
+
 WEBTILES_OBJECTS = \
 tileweb.o \
 tileweb-text.o
@@ -308,10 +329,12 @@ YACC_OBJECTS = \
 util/levcomp.tab.o \
 util/levcomp.lex.o
 
-ALL_OBJECTS = $(OBJECTS) $(TILES_OBJECTS) $(GLTILES_OBJECTS) \
+ALL_OBJECTS = $(OBJECTS) $(TEST_OBJECTS) $(TILES_OBJECTS) $(GLTILES_OBJECTS) \
 $(WEBTILES_OBJECTS) $(YACC_OBJECTS) $(TILEDEFOBJS) \
 libw32c.o \
 libunix.o \
+catch2-tests/test_plug_and_play.o \
+catch2-tests/test_main.o \
 main.o \
 util/monster/monster-main.o \
 version.o

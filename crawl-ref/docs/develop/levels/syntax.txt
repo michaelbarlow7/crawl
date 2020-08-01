@@ -498,8 +498,7 @@ ITEM:     (list of items, separated by comma)
           Modifiers:
           * "q:N" sets the item quantity to N (if N > 0). Does nothing
              if the item is not stackable.
-          * "charges:N" sets the number of charges for wands. Does no checks
-            against the maximum number of charges.
+          * "charges:N" sets the number of charges for wands.
           * "plus:N" and "plus2:N" set the item pluses for weapons, armour,
             jewellery (such as rings of intelligence or slaying), and
             throwing nets.
@@ -988,7 +987,7 @@ MONS:     (list of monsters)
           Setting enchantments:
           ---------------------
           You may give a monster any number of enchantments. It may
-          start hasted, blind, have permanent DMsl, etc. The syntax is
+          start hasted, blind, have permanent RMsl, etc. The syntax is
           "ench:<name>:<degree>:<duration>" or "perm_ench:<name>:<degree>".
           The <degree> and <duration> fields may be omitted. Note that
           the enchantment will start the moment the monster is created and

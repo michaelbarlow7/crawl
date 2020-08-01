@@ -1,4 +1,11 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
+
+"""
+Generate species-data.h, aptitudes.h, species-groups.h, and species-type.h
+
+Works with both Python 2 & 3. If that changes, update how the Makefile calls
+this.
+"""
 
 from __future__ import print_function
 
@@ -6,8 +13,12 @@ import argparse
 import os
 import sys
 import traceback
-import collections
 import re
+import collections
+if sys.version_info.major == 2:
+    from collections import MutableMapping
+else:
+    from collections.abc import MutableMapping
 
 import yaml  # pip install pyyaml
 
@@ -17,7 +28,7 @@ def quote_or_nullptr(key, d):
     else:
         return 'nullptr'
 
-class Species(collections.MutableMapping):
+class Species(MutableMapping):
     """Parser for YAML definition files.
 
     If any YAML content is invalid, the relevant parser function below should
@@ -151,11 +162,10 @@ SpeciesGroup = collections.namedtuple('SpeciesGroup',
                                             ['position', 'width', 'species'])
 SpeciesGroupEntry = collections.namedtuple('SpeciesGroupEntry',
                                             ['priority', 'enum'])
-SPECIES_GROUPS_TEMPLATE = {
-    'Simple': SpeciesGroup('coord_def(0, 0)', '50', []),
-    'Intermediate': SpeciesGroup('coord_def(1, 0)', '20', []),
-    'Advanced': SpeciesGroup('coord_def(2, 0)', '20', []),
-}
+SPECIES_GROUPS_TEMPLATE = collections.OrderedDict()
+SPECIES_GROUPS_TEMPLATE['Simple'] = SpeciesGroup('coord_def(0, 0)', '50', [])
+SPECIES_GROUPS_TEMPLATE['Intermediate'] = SpeciesGroup('coord_def(1, 0)', '20', [])
+SPECIES_GROUPS_TEMPLATE['Advanced'] = SpeciesGroup('coord_def(2, 0)', '20', [])
 SPECIES_GROUP_TEMPLATE = """
     {{
         "{name}",
@@ -417,7 +427,7 @@ def main():
             continue
         f_path = os.path.join(args.datadir, f_name)
         try:
-            species_spec = yaml.load(open(f_path))
+            species_spec = yaml.safe_load(open(f_path))
         except yaml.YAMLError as e:
             print("Failed to load %s: %s" % (f_name, e))
             sys.exit(1)

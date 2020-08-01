@@ -18,7 +18,6 @@
 #include "colour.h"
 #include "command.h"
 #include "describe.h"
-#include "english.h"
 #include "env.h"
 #include "food.h"
 #include "god-item.h"
@@ -29,6 +28,7 @@
 #include "item-use.h"
 #include "item-prop.h"
 #include "item-status-flag-type.h"
+#include "known-items.h"
 #include "libutil.h"
 #include "macro.h"
 #include "message.h"
@@ -36,18 +36,15 @@
 #include "output.h"
 #include "prompt.h"
 #include "religion.h"
+#include "rltiles/tiledef-dngn.h"
+#include "rltiles/tiledef-icons.h"
+#include "rltiles/tiledef-main.h"
 #include "showsymb.h"
-#include "spl-summoning.h"
 #include "state.h"
 #include "stringutil.h"
 #include "terrain.h"
 #include "throw.h"
-#ifdef USE_TILE
- #include "tiledef-icons.h"
- #include "tiledef-main.h"
- #include "tiledef-dngn.h"
- #include "tilepick.h"
-#endif
+#include "tilepick.h"
 
 ///////////////////////////////////////////////////////////////////////////////
 // Inventory menu shenanigans
@@ -225,6 +222,12 @@ string InvEntry::get_text(bool need_cursor) const
     if (InvEntry::show_glyph)
         tstr << "(" << glyph_to_tagstr(get_item_glyph(*item)) << ")" << " ";
 
+    if (InvEntry::show_coordinates && in_bounds(item->pos))
+    {
+        const coord_def relpos = item->pos - you.pos();
+        tstr << "(" << relpos.x << ", " << -relpos.y << ")" << " ";
+    }
+
     tstr << text;
     return tstr.str();
 }
@@ -275,9 +278,6 @@ void get_class_hotkeys(const int type, vector<char> &glyphs)
     case OBJ_MISCELLANY:
         glyphs.push_back('}');
         break;
-    case OBJ_CORPSES:
-        glyphs.push_back('&');
-        break;
     default:
         break;
     }
@@ -308,6 +308,12 @@ bool InvEntry::show_glyph = false;
 void InvEntry::set_show_glyph(bool doshow)
 {
     show_glyph = doshow;
+}
+
+bool InvEntry::show_coordinates = false;
+void InvEntry::set_show_coordinates(bool doshow)
+{
+    show_coordinates = doshow;
 }
 
 InvMenu::InvMenu(int mflags)
@@ -539,7 +545,6 @@ void InvMenu::load_inv_items(int item_selector, int excluded_slot,
         set_title("");
 }
 
-#ifdef USE_TILE
 bool get_tiles_for_item(const item_def &item, vector<tile_def>& tileset, bool show_background)
 {
     tileidx_t idx = tileidx_item(get_item_info(item));
@@ -620,6 +625,7 @@ bool get_tiles_for_item(const item_def &item, vector<tile_def>& tileset, bool sh
     return true;
 }
 
+#ifdef USE_TILE
 bool InvEntry::get_tiles(vector<tile_def>& tileset) const
 {
     if (!Options.tile_menu_icons)
@@ -632,7 +638,7 @@ bool InvEntry::get_tiles(vector<tile_def>& tileset) const
     return get_tiles_for_item(*item, tileset, show_background);
 }
 #else
-bool InvEntry::get_tiles(vector<tile_def>& tileset) const { return false; }
+bool InvEntry::get_tiles(vector<tile_def>& /*tileset*/) const { return false; }
 #endif
 
 bool InvMenu::is_selectable(int index) const
@@ -1029,8 +1035,7 @@ const char* item_slot_name(equipment_type type)
 
 vector<SelItem> select_items(const vector<const item_def*> &items,
                              const char *title, bool noselect,
-                             menu_type mtype,
-                             invtitle_annotator titlefn)
+                             menu_type mtype)
 {
     vector<SelItem> selected;
     if (!items.empty())
@@ -1620,8 +1625,7 @@ static bool _is_known_no_tele_item(const item_def &item)
     if (!is_artefact(item))
         return false;
 
-    bool known;
-    return artefact_property(item, ARTP_PREVENT_TELEPORTATION, known) && known;
+    return artefact_known_property(item, ARTP_PREVENT_TELEPORTATION);
 }
 
 bool needs_notele_warning(const item_def &item, operation_types oper)
@@ -1666,9 +1670,6 @@ bool needs_handle_warning(const item_def &item, operation_types oper,
     {
         return true;
     }
-
-    if (oper == OPER_REMOVE && item.is_type(OBJ_JEWELLERY, AMU_HARM))
-        return true;
 
     if (needs_notele_warning(item, oper))
         return true;
@@ -2072,7 +2073,6 @@ static bool _item_ally_only(const item_def &item)
         case MISC_PHANTOM_MIRROR:
         case MISC_HORN_OF_GERYON:
         case MISC_BOX_OF_BEASTS:
-        case MISC_SACK_OF_SPIDERS:
             return true;
         default:
             return false;
@@ -2085,13 +2085,14 @@ static bool _item_ally_only(const item_def &item)
  * Return whether an item can be evoked.
  *
  * @param item      The item to check
- * @param reach     Do weapons of reaching count?
+ * @param unskilled Do items that don't use Evocations skill (weapons of
+ *                  reaching and tremorstones) count?
  * @param known     When set, return true for items of unknown type which
  *                  might be evokable.
  * @param msg       Whether we need to print a message.
  * @param equip     When false, ignore wield and meld requirements.
  */
-bool item_is_evokable(const item_def &item, bool reach, bool known,
+bool item_is_evokable(const item_def &item, bool unskilled, bool known,
                       bool msg, bool equip)
 {
     const string error = item_is_melded(item)
@@ -2153,10 +2154,10 @@ bool item_is_evokable(const item_def &item, bool reach, bool known,
         return true;
 
     case OBJ_WEAPONS:
-        if ((!wielded || !reach) && !msg)
+        if ((!wielded || !unskilled) && !msg)
             return false;
 
-        if (reach && weapon_reach(item) > REACH_NONE && item_type_known(item))
+        if (unskilled && weapon_reach(item) > REACH_NONE && item_type_known(item))
         {
             if (!wielded)
             {
@@ -2191,13 +2192,12 @@ bool item_is_evokable(const item_def &item, bool reach, bool known,
 #if TAG_MAJOR_VERSION == 34
     case OBJ_MISCELLANY:
         if (item.sub_type != MISC_BUGGY_LANTERN_OF_SHADOWS
-            && item.sub_type != MISC_BUGGY_EBONY_CASKET
-            )
+            && item.sub_type != MISC_BUGGY_EBONY_CASKET)
         {
             return true;
         }
-#endif
         // removed items fallthrough to failure
+#endif
 
     default:
         if (msg)

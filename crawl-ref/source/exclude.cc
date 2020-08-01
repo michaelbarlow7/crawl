@@ -18,7 +18,6 @@
 #include "env.h"
 #include "hints.h"
 #include "libutil.h"
-#include "map-knowledge.h"
 #include "mon-util.h"
 #include "options.h"
 #include "stringutil.h"
@@ -60,8 +59,7 @@ static bool _need_auto_exclude(const monster* mon, bool sleepy = false)
     {
         if (pat.matches(name)
             && _mon_needs_auto_exclude(mon, sleepy)
-            && (mon->attitude == ATT_HOSTILE
-                || mon->type == MONS_HYPERACTIVE_BALLISTOMYCETE))
+            && (mon->attitude == ATT_HOSTILE))
         {
             return true;
         }
@@ -101,9 +99,6 @@ void add_auto_excludes()
         if (_need_auto_exclude(mon) && !is_exclude_root(*ri))
         {
             int radius = _get_full_exclusion_radius();
-            if (mon->type == MONS_HYPERACTIVE_BALLISTOMYCETE)
-                radius = 2;
-
             set_exclude(*ri, radius, true);
             mons.emplace_back(mon);
         }
@@ -390,6 +385,8 @@ static void _exclude_update(const coord_def &p)
 {
 #ifdef USE_TILE
     _tile_exclude_gmap_update(p);
+#else
+    UNUSED(p);
 #endif
     _exclude_update();
 }
@@ -664,6 +661,7 @@ void marshallExcludes(writer& outf, const exclude_set& excludes)
 
 void unmarshallExcludes(reader& inf, int minorVersion, exclude_set &excludes)
 {
+    UNUSED(minorVersion);
     excludes.clear();
     int nexcludes = unmarshallShort(inf);
     if (nexcludes)

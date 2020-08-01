@@ -94,6 +94,7 @@ CRAWLSRC = ability.cc \
 	bitary.cc \
 	bloodspatter.cc \
 	branch.cc \
+	branch-data-json.cc \
 	butcher.cc \
 	chardump.cc \
 	cio.cc \
@@ -113,6 +114,7 @@ CRAWLSRC = ability.cc \
 	dbg-maps.cc \
 	dbg-scan.cc \
 	dbg-util.cc \
+	death-curse.cc \
 	decks.cc \
 	delay.cc \
 	describe.cc \
@@ -172,6 +174,7 @@ CRAWLSRC = ability.cc \
 	jobs.cc \
 	json.cc \
 	kills.cc \
+	known-items.cc \
 	l-colour.cc \
 	l-crawl.cc \
 	l-debug.cc \
@@ -250,6 +253,7 @@ CRAWLSRC = ability.cc \
 	nearby-danger.cc \
 	newgame.cc \
 	ng-init.cc \
+	ng-init-branches.cc \
 	ng-input.cc \
 	ng-restr.cc \
 	ng-setup.cc \
@@ -272,6 +276,7 @@ CRAWLSRC = ability.cc \
 	player-reacts.cc \
 	player-stats.cc \
 	potion.cc \
+	precision-menu.cc \
 	prompt.cc \
 	quiver.cc \
 	randbook.cc \
@@ -319,6 +324,7 @@ CRAWLSRC = ability.cc \
 	syscalls.cc \
 	tags.cc \
 	target.cc \
+	target-compass.cc \
 	teleport.cc \
 	terrain.cc \
 	throw.cc \

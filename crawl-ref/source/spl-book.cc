@@ -21,17 +21,11 @@
 #include "database.h"
 #include "delay.h"
 #include "describe.h"
-#include "describe-spells.h"
 #include "end.h"
-#include "english.h"
 #include "god-conduct.h"
-#include "god-item.h"
 #include "invent.h"
 #include "item-prop.h"
-#include "item-status-flag-type.h"
-#include "items.h"
 #include "libutil.h"
-#include "macro.h"
 #include "message.h"
 #include "output.h"
 #include "prompt.h"
@@ -40,9 +34,7 @@
 #include "spl-util.h"
 #include "state.h"
 #include "stringutil.h"
-#ifdef USE_TILE
- #include "tilepick.h"
-#endif
+#include "tilepick.h"
 #include "transform.h"
 #include "unicode.h"
 
@@ -103,7 +95,6 @@ static const map<wand_type, spell_type> _wand_spells =
     { WAND_ACID, SPELL_CORROSIVE_BOLT },
     { WAND_DISINTEGRATION, SPELL_DISINTEGRATE },
     { WAND_CLOUDS, SPELL_CLOUD_CONE },
-    { WAND_SCATTERSHOT, SPELL_SCATTERSHOT },
     { WAND_RANDOM_EFFECTS, SPELL_RANDOM_EFFECTS },
 };
 
@@ -184,7 +175,7 @@ int book_rarity(book_type which_book)
     case BOOK_POWER:
         return 6;
 
-    case BOOK_ENCHANTMENTS:
+    case BOOK_HEXES:
     case BOOK_PARTY_TRICKS:
         return 7;
 
@@ -351,7 +342,7 @@ bool player_can_memorise(const item_def &book)
 }
 
 /**
- * Populate the given list with all spells the player can currently memorize,
+ * Populate the given list with all spells the player can currently memorise,
  * from library or Vehumet. Does not filter by currently known spells, spell
  * levels, etc.
  *
@@ -559,7 +550,7 @@ protected:
     virtual formatted_string calc_title() override
     {
         return formatted_string::parse_string(
-                    make_stringf("<w>Spells %s                 Type                          %sLevel ",
+                    make_stringf("<w>Spells %s                 Type                          %sLevel",
                         current_action == action::cast ? "(Cast)" :
                         current_action == action::memorise ? "(Memorise)" :
                         current_action == action::describe ? "(Describe)" :
@@ -699,10 +690,8 @@ private:
             return LIGHTBLUE;
         else
         {
-            bool transient = false;
-            bool memcheck = true;
-            return spell_highlight_by_utility(entry.spell, COL_UNKNOWN,
-                                                    transient, memcheck);
+            return spell_highlight_by_utility(entry.spell, COL_UNKNOWN, false,
+                    you.divine_exegesis ? false : true);
         }
     }
 
@@ -766,9 +755,7 @@ private:
             ++hotkey;
 
             me->colour = colour;
-#ifdef USE_TILE
             me->add_tile(tile_def(tileidx_spell(spell.spell), TEX_GUI));
-#endif
 
             me->data = &(spell.spell);
             add_entry(me);

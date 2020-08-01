@@ -30,111 +30,71 @@
 #include "abyss.h" // abyss_maybe_spawn_xp_exit
 #include "act-iter.h"
 #include "areas.h"
+#include "artefact.h"
 #include "beam.h"
-#include "cio.h"
 #include "cloud.h"
 #include "clua.h"
 #include "colour.h"
-#include "command.h"
 #include "coord.h"
 #include "coordit.h"
-#include "crash.h"
 #include "database.h"
 #include "dbg-util.h"
 #include "delay.h"
-#include "describe.h"
 #ifdef DGL_SIMPLE_MESSAGING
 #include "dgl-message.h"
 #endif
-#include "dgn-overview.h"
-#include "dgn-shoals.h"
 #include "dlua.h"
 #include "dungeon.h"
 #include "env.h"
-#include "evoke.h"
 #include "exercise.h"
-#include "fight.h"
 #include "files.h"
-#include "fineff.h"
 #include "food.h"
-#include "fprop.h"
 #include "god-abil.h"
 #include "god-companions.h"
-#include "god-conduct.h"
-#include "god-item.h"
 #include "god-passive.h"
-#include "god-prayer.h"
-#include "hints.h"
-#include "initfile.h"
 #include "invent.h"
-#include "item-name.h"
 #include "item-prop.h"
-#include "items.h"
-#include "item-status-flag-type.h"
 #include "item-use.h"
 #include "level-state-type.h"
 #include "libutil.h"
-#include "luaterp.h"
-#include "macro.h"
-#include "map-knowledge.h"
-#include "mapmark.h"
 #include "maps.h"
-#include "melee-attack.h"
 #include "message.h"
-#include "misc.h"
 #include "mon-abil.h"
-#include "mon-act.h"
 #include "mon-cast.h"
 #include "mon-death.h"
 #include "mon-place.h"
 #include "mon-tentacle.h"
 #include "mon-util.h"
 #include "mutation.h"
-#include "options.h"
 #include "ouch.h"
-#include "output.h"
 #include "player.h"
 #include "player-stats.h"
-#include "quiver.h"
 #include "random.h"
 #include "religion.h"
 #include "shopping.h"
 #include "shout.h"
 #include "skills.h"
-#include "species.h"
 #include "spl-cast.h"
 #include "spl-clouds.h"
 #include "spl-damage.h"
 #include "spl-goditem.h"
 #include "spl-other.h"
-#include "spl-selfench.h"
 #include "spl-summoning.h"
 #include "spl-transloc.h"
 #include "spl-util.h"
-#include "stairs.h"
-#include "startup.h"
-#include "stash.h"
 #include "state.h"
 #include "status.h"
 #include "stepdown.h"
 #include "stringutil.h"
-#include "tags.h"
-#include "target.h"
 #include "terrain.h"
-#include "throw.h"
 #ifdef USE_TILE
-#include "tiledef-dngn.h"
+#include "rltiles/tiledef-dngn.h"
 #include "tilepick.h"
 #endif
-#include "timed-effects.h"
 #include "transform.h"
 #include "traps.h"
 #include "travel.h"
-#include "version.h"
-#include "viewchar.h"
-#include "viewgeom.h"
 #include "view.h"
-#include "viewmap.h"
 #include "xom.h"
 
 /**
@@ -431,7 +391,7 @@ static void _handle_uskayaw_time(int time_taken)
     // timer down to a minimum of 0, at which point it becomes eligible to
     // trigger again.
     if (audience_timer == -1 || (you.piety >= piety_breakpoint(2)
-            && x_chance_in_y(time_taken, time_taken * 10 + audience_timer)))
+            && x_chance_in_y(time_taken, 100 + audience_timer)))
     {
         uskayaw_prepares_audience();
     }
@@ -439,7 +399,7 @@ static void _handle_uskayaw_time(int time_taken)
         you.props[USKAYAW_AUDIENCE_TIMER] = max(0, audience_timer - time_taken);
 
     if (bond_timer == -1 || (you.piety >= piety_breakpoint(3)
-            && x_chance_in_y(time_taken, time_taken * 10 + bond_timer)))
+            && x_chance_in_y(time_taken, 100 + bond_timer)))
     {
         uskayaw_bonds_audience();
     }
@@ -457,7 +417,7 @@ void player_reacts_to_monsters()
         update_can_currently_train();
 
     if (you.duration[DUR_FIRE_SHIELD] > 0)
-        manage_fire_shield(you.time_taken);
+        manage_fire_shield();
 
     check_monster_detect();
 
@@ -580,17 +540,6 @@ static void _decrement_durations()
 {
     const int delay = you.time_taken;
 
-    if (you.gourmand())
-    {
-        // Innate gourmand is always fully active.
-        if (you.has_mutation(MUT_GOURMAND))
-            you.duration[DUR_GOURMAND] = GOURMAND_MAX;
-        else if (you.duration[DUR_GOURMAND] < GOURMAND_MAX && coinflip())
-            you.duration[DUR_GOURMAND] += delay;
-    }
-    else
-        you.duration[DUR_GOURMAND] = 0;
-
     if (you.duration[DUR_LIQUID_FLAMES])
         dec_napalm_player(delay);
 
@@ -623,7 +572,6 @@ static void _decrement_durations()
     // Vampire bat transformations are permanent (until ended), unless they
     // are uncancellable (polymorph wand on a full vampire).
     if (you.species != SP_VAMPIRE || you.form != transformation::bat
-        || you.duration[DUR_TRANSFORMATION] <= 5 * BASELINE_DELAY
         || you.transform_uncancellable)
     {
         if (form_can_fly()
@@ -674,9 +622,6 @@ static void _decrement_durations()
     dec_slow_player(delay);
     dec_berserk_recovery_player(delay);
     dec_haste_player(delay);
-
-    if (you.duration[DUR_LIQUEFYING] && !you.stand_on_solid_ground())
-        you.duration[DUR_LIQUEFYING] = 1;
 
     for (int i = 0; i < NUM_STATS; ++i)
     {
@@ -825,6 +770,7 @@ static void _decrement_durations()
         doom_howl(min(delay, you.duration[DUR_DOOM_HOWL]));
 
     dec_elixir_player(delay);
+    dec_frozen_ramparts(delay);
 
     if (!you.cannot_move()
         && !you.confused()
@@ -848,11 +794,8 @@ static void _decrement_durations()
     else if (!sanguine_armour_is_valid && you.duration[DUR_SANGUINE_ARMOUR])
         you.duration[DUR_SANGUINE_ARMOUR] = 1; // expire
 
-    if (you.attribute[ATTR_HEAVENLY_STORM]
-        && !you.duration[DUR_HEAVENLY_STORM])
-    {
-        end_heavenly_storm(); // we shouldn't hit this, but just in case
-    }
+    if (you.duration[DUR_HEAVENLY_STORM])
+        wu_jian_heaven_tick();
 
     // these should be after decr_ambrosia, transforms, liquefying, etc.
     for (int i = 0; i < NUM_DURATIONS; ++i)
@@ -901,6 +844,87 @@ static void _handle_emergency_flight()
     }
 }
 
+// Regen equipment and amulet of the acrobat only begins to function when full
+// health is reached while they are worn.
+static void _update_equipment_attunement_by_health()
+{
+    if (you.hp != you.hp_max)
+        return;
+
+    if (!you.activated[EQ_AMULET] && you.wearing(EQ_AMULET, AMU_ACROBAT))
+    {
+        mprf("Your amulet attunes itself to your body. You feel like doing "
+             "cartwheels.");
+        you.activated.set(EQ_AMULET);
+    }
+
+    if (!you.activated[EQ_AMULET] && you.wearing(EQ_AMULET, AMU_REFLECTION))
+    {
+        mprf("Your amulet attunes itself to your body. You feel a shielding "
+             "aura gather around you.");
+        you.activated.set(EQ_AMULET);
+        you.redraw_armour_class = true;
+    }
+
+    if (you.get_mutation_level(MUT_NO_REGENERATION))
+        return;
+
+    vector<string> eq_list;
+    bool plural = false;
+
+    if (!you.activated[EQ_AMULET] && you.wearing(EQ_AMULET, AMU_REGENERATION))
+    {
+        eq_list.push_back("amulet");
+        you.activated.set(EQ_AMULET);
+    }
+
+    for (int slot = EQ_MIN_ARMOUR; slot <= EQ_MAX_ARMOUR; ++slot)
+    {
+        if (you.melded[slot] || you.equip[slot] == -1 || you.activated[slot])
+            continue;
+        const item_def &arm = you.inv[you.equip[slot]];
+        if (armour_type_prop(arm.sub_type, ARMF_REGENERATION)
+            || is_artefact(arm) && artefact_property(arm, ARTP_REGENERATION))
+        {
+            eq_list.push_back(
+                slot != EQ_BODY_ARMOUR ?
+                    item_slot_name(static_cast<equipment_type>(slot)) :
+                    is_artefact(arm) ? get_artefact_name(arm) : "armour");
+
+            if (slot == EQ_GLOVES || slot == EQ_BOOTS)
+                plural = true;
+            you.activated.set(slot);
+        }
+    }
+
+    if (eq_list.empty())
+        return;
+
+    plural = plural || eq_list.size() > 1;
+    string eq_str = comma_separated_line(eq_list.begin(), eq_list.end());
+    mprf("Your %s attune%s to your body as you begin to regenerate "
+         "more quickly.", eq_str.c_str(), plural ? " themselves" : "s itself");
+}
+
+// Amulet of magic regeneration needs to be worn while at full magic before it
+// begins to function.
+static void _update_mana_regen_amulet_attunement()
+{
+    if (you.wearing(EQ_AMULET, AMU_MANA_REGENERATION)
+        && player_regenerates_mp())
+    {
+        if (you.magic_points == you.max_magic_points
+            && you.props[MANA_REGEN_AMULET_ACTIVE].get_int() == 0)
+        {
+            you.props[MANA_REGEN_AMULET_ACTIVE] = 1;
+            mpr("Your amulet attunes itself to your body and you begin to "
+                "regenerate magic more quickly.");
+        }
+    }
+    else
+        you.props[MANA_REGEN_AMULET_ACTIVE] = 0;
+}
+
 // cjo: Handles player hp and mp regeneration. If the counter
 // you.hit_points_regeneration is over 100, a loop restores 1 hp and decreases
 // the counter by 100 (so you can regen more than 1 hp per turn). If the counter
@@ -935,7 +959,7 @@ static void _regenerate_hp_and_mp(int delay)
 
     ASSERT_RANGE(you.hit_points_regeneration, 0, 100);
 
-    update_amulet_attunement_by_health();
+    _update_equipment_attunement_by_health();
 
     // MP Regeneration
     if (!player_regenerates_mp())
@@ -956,7 +980,7 @@ static void _regenerate_hp_and_mp(int delay)
 
     ASSERT_RANGE(you.magic_points_regeneration, 0, 100);
 
-    update_mana_regen_amulet_attunement();
+    _update_mana_regen_amulet_attunement();
 }
 
 void player_reacts()
@@ -1013,6 +1037,7 @@ void player_reacts()
     abyss_maybe_spawn_xp_exit();
 
     actor_apply_cloud(&you);
+    actor_apply_toxic_bog(&you);
 
     if (env.level_state & LSTATE_SLIMY_WALL)
         slime_wall_damage(&you, you.time_taken);

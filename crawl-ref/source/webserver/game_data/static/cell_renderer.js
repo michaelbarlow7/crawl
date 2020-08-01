@@ -702,6 +702,16 @@ function ($, view_data, main, tileinfo_player, icons, dngn, enums,
                         else if (fg.NEUTRAL)
                             this.draw_dngn(dngn.HALO_NEUTRAL, x, y);
 
+                        // Monster difficulty
+                        if (fg.TRIVIAL)
+                            this.draw_dngn(dngn.THREAT_TRIVIAL, x, y);
+                        else if (fg.EASY)
+                            this.draw_dngn(dngn.THREAT_EASY, x, y);
+                        else if (fg.TOUGH)
+                            this.draw_dngn(dngn.THREAT_TOUGH, x, y);
+                        else if (fg.NASTY)
+                            this.draw_dngn(dngn.THREAT_NASTY, x, y);
+
                         if (cell.highlighted_summoner)
                             this.draw_dngn(dngn.HALO_SUMMONER, x, y);
                     }
@@ -832,6 +842,17 @@ function ($, view_data, main, tileinfo_player, icons, dngn, enums,
                 this.draw_icon(icons.POISON, x, y, -status_shift, 0);
                 status_shift += 5;
             }
+            else if (fg.MORE_POISON)
+            {
+                this.draw_icon(icons.MORE_POISON, x, y, -status_shift, 0);
+                status_shift += 5;
+            }
+            else if (fg.MAX_POISON)
+            {
+                this.draw_icon(icons.MAX_POISON, x, y, -status_shift, 0);
+                status_shift += 5;
+            }
+
             if (fg.STICKY_FLAME)
             {
                 this.draw_icon(icons.STICKY_FLAME, x, y, -status_shift, 0);
@@ -851,6 +872,11 @@ function ($, view_data, main, tileinfo_player, icons, dngn, enums,
             {
                 this.draw_icon(icons.VILE_CLUTCH, x, y, -status_shift, 0);
                 status_shift += 11;
+            }
+            if (fg.POSSESSABLE)
+            {
+                this.draw_icon(icons.POSSESSABLE, x, y, -status_shift, 0);
+                status_shift += 6;
             }
             if (fg.GLOWING)
             {
@@ -920,11 +946,6 @@ function ($, view_data, main, tileinfo_player, icons, dngn, enums,
             if (fg.INFESTED)
             {
                 this.draw_icon(icons.INFESTED, x, y, -status_shift, 0);
-                status_shift += 6;
-            }
-            if (fg.PINNED)
-            {
-                this.draw_icon(icons.PINNED, x, y, -status_shift, 0);
                 status_shift += 6;
             }
             if (fg.RECALL)

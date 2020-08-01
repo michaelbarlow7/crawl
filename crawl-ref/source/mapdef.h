@@ -636,7 +636,7 @@ private:
     item_spec pick_item(item_spec_slot &slot);
     bool parse_corpse_spec(item_spec &result, string s);
     bool monster_corpse_is_valid(monster_type *, const string &name,
-                                 bool corpse, bool skeleton, bool chunk);
+                                 bool skeleton);
 
 private:
     vector<item_spec_slot> items;
@@ -1186,6 +1186,7 @@ public:
     string describe() const;
     void init();
     void reinit();
+    void reload_epilogue();
 
     void load();
     void strip();
@@ -1207,7 +1208,7 @@ public:
     void write_maplines(writer &) const;
 
     void read_index(reader&);
-    void read_full(reader&, bool check_cache_version);
+    void read_full(reader&);
     void read_maplines(reader&);
 
     void set_file(const string &s);
@@ -1268,7 +1269,7 @@ public:
     template <typename TagIterator>
     bool has_all_tags(TagIterator begin, TagIterator end) const
     {
-        if (tags.empty() || begin == end) // legacy behavior for empty case
+        if (tags.empty() || begin == end) // legacy behaviour for empty case
             return false;
         for ( ; begin != end; ++begin)
             if (!has_tag(*begin))

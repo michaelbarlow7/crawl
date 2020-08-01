@@ -1,35 +1,8 @@
 %%%%
-amulet of conservation
-
-Denne amulet beskytter bærerens ejendele mod ødelæggelse, men er ikke
-ufejlbarlig.
-%%%%
 amulet of inaccuracy
 
 Denne amulet gør bæreren mindre præcis, hvad end det gælder nærkamp eller om at
 ramme uhyrer på afstand eller med besværgelser.
-%%%%
-amulet of rage
-
-Denne amulet lader bæreren forsøge at gå bersærk.
-%%%%
-amulet of resist mutation
-
-Denne amulet beskytter bæreren mod mutationer, men den er ikke ufejlbarlig.
-%%%%
-amulet of stasis
-
-En amulet, som er omhyggeligt konstrueret med magiske værn, som blokerer
-magiske og fysiologiske effekter, der ellers ville have teleporteret, sænket,
-forhastet eller lammet bæreren.
-
-Amuletten virker mod de fleste former for translokativ magi, men planskift som
-forvisning formår den ikke at blokere.
-%%%%
-amulet of warding
-
-Denne amulet afværger angreb fra væsener, der er magisk fremmanet, og gør
-bæreren mere modstandsdygtig over for drænende angreb.
 %%%%
 animal skin
 
@@ -128,13 +101,6 @@ række besværgelser, der afspejler mystikerens drømmetilstand. Værkets kritik
 mener, at besværgelserne ikke funktionelt adskiller sig fra allerede kendte
 udgaver, men bogen er fortsat populær for sit bizarre billedsprog og sine
 kryptiske sidebemærkninger.
-%%%%
-book of enchantments
-
-En grimoire, der indeholder et sortiment af magiske forbandelser og
-fortryllelser, som glimter og glitrer, når man bladrer i den. Den bedårende
-anakronistiske titel afspejler en tidligere, mere ufuldstændig forståelse af
-disse to magiske skoler.
 %%%%
 book of fixed level
 
@@ -305,12 +271,6 @@ eveningstar
 Piggene på denne morgenstjerne er exceptionelt lange, hvilket lader den
 forårsage odiøse sår.
 %%%%
-fan of gales
-
-En fortryllet vifte som er beboet af venligtsindede luftånder. Hvis man svinger
-viften slipper man et voldsomt vindstød og ånderne fri til at feje bærerens
-fjender bort.
-%%%%
 fire dragon scales
 
 En magisk rustning, som er lavet af en ildsprudende drages skæl. Den beskytter
@@ -390,11 +350,6 @@ lajatang
 
 Et meget sjældent og ekstremt effektivt eksotisk våben, bestående af en stav
 med halvmåneformede klinger i begge ender.
-%%%%
-lamp of fire
-
-En magisk lampe, som er beboet af venligtsindede ildånder. Åbner du dens hægte,
-sætter du ånderne fri til at danse på dine fjender i et flammehav.
 %%%%
 large rock
 
@@ -785,7 +740,7 @@ scythe
 
 Et landbrugsredskab, der som regel bruges af utrænet bærme i kamp.
 %%%%
-shield
+kite shield
 
 Et stykke træ og metal, som spændes på den ene arm til beskyttelse. Det er
 uhåndterligt at gå med, og uden træning vil det få dig til at angribe
@@ -862,10 +817,6 @@ Denne stav øger brugerens giftige besværgelsers kraft og beskytter ham eller
 hende mod konsekvenserne af gift. Hvis brugeren er kyndig i både vækkelser og
 giftmagi, vil staven også forgifte dem, den rammer – selv hvis ofrene
 sædvanligvis er modstandsdygtige.
-%%%%
-staff of power
-
-Denne stav øger brugerens reservoir af magisk energi.
 %%%%
 staff of summoning
 

@@ -13,9 +13,9 @@ enum class spflag
     dir_or_target      = 0x00000001,      // use DIR_NONE targeting
     target             = 0x00000002,      // use DIR_TARGET targeting
                      //  0x00000004,
-    dir                = 0x00000008,      // use DIR_DIR targeting
-    targeting_mask     = spflag::dir_or_target | spflag::target
-                             | spflag::dir, // used to test for targeting
+                     //  0x00000008,
+                                          // used to test for targeting
+    targeting_mask     = spflag::dir_or_target | spflag::target,
     // TODO: we need a new flag if we want to target corpses too.
     obj                = 0x00000010,      // TARG_MOVABLE_OBJECT used
     helpful            = 0x00000020,      // TARG_FRIEND used
@@ -94,7 +94,7 @@ bool cast_a_spell(bool check_range, spell_type spell = SPELL_NO_SPELL);
 int apply_enhancement(const int initial_power, const int enhancer_levels);
 
 void inspect_spells();
-bool can_cast_spells(bool quiet = false);
+bool can_cast_spells(bool quiet = false, bool exegesis = false);
 void do_cast_spell_cmd(bool force);
 
 int hex_success_chance(const int mr, int powc, int scale,
@@ -107,7 +107,7 @@ spret your_spells(spell_type spell, int powc = 0, bool allow_fail = true,
 
 extern const char *fail_severity_adjs[];
 
-double get_miscast_chance(spell_type spell, int severity = 2);
+int max_miscast_damage(spell_type spell);
 int fail_severity(spell_type spell);
 int failure_rate_colour(spell_type spell);
 int failure_rate_to_int(int fail);

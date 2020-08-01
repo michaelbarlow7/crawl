@@ -804,10 +804,6 @@ will hurt you.’”
     -Victor Marie Hugo, _Notre Dame de Paris_, Book II, chapter VII “A Wedding
      Night”. 1831.
 %%%%
-amulet of harm
-
-<amulet>
-%%%%
 amulet of faith
 
 <amulet>
@@ -824,19 +820,6 @@ amulet of magic regeneration
 
 <amulet>
 %%%%
-amulet of rage
-
-“We there, in strife bewild’ring,
- Split blood enough to swim in:
- We orphaned many children,
- And widowed many women.
- The eagles and the ravens
- We glutted with our foemen;
- The heroes and the cravens,
- The spearmen and the bowmen.”
-    -Thomas Love Peacock, “The War Song of Dinas Vawr”. 1829.
-
-%%%%
 amulet of regeneration
 
 <amulet>
@@ -844,11 +827,6 @@ amulet of regeneration
 amulet of nothing
 
 <amulet>
-%%%%
-amulet of the gourmand
-
-“put a knife to thy throat, if thou be a man given to appetite.”
-    -KJV Bible, Proverbs 23:2.
 %%%%
 animal skin
 
@@ -1718,7 +1696,7 @@ large rock
  There's no hiding place down here.”
     -Negro spiritual. 19th cent.
 %%%%
-large shield
+tower shield
 
 <buckler>
 %%%%
@@ -1946,6 +1924,15 @@ nagaraja
 naga warrior
 
 <naga>
+%%%%
+nameless horror
+
+“Then the sallow oval between Ged's arms grew bright. It widened and spread, a
+rent in the darkness of the earth and night, a ripping open of the fabric of
+the world. Through it blazed a terrible brightness. And through that bright
+misshapen breach clambered something like a clot of black shadow, quick and
+hideous, and it leaped straight out at Ged's face.”
+    -Ursula K. Le Guin, _A Wizard Of Earthsea_. 1968.
 %%%%
 needle
 
@@ -2842,10 +2829,6 @@ another man's dreams—what an incomparable humiliation, what madness!”
     trans. Anthony Bonner, 1962.
 %%%%
 staff of poison
-
-<staff>
-%%%%
-staff of power
 
 <staff>
 %%%%

@@ -13,7 +13,6 @@
 #include "cluautil.h"
 #include "colour.h"
 #include "coord.h"
-#include "enum.h"
 #include "env.h"
 #include "food.h"
 #include "invent.h"
@@ -21,7 +20,6 @@
 #include "item-status-flag-type.h"
 #include "items.h"
 #include "item-use.h"
-#include "l-defs.h"
 #include "libutil.h"
 #include "mon-util.h"
 #include "output.h"
@@ -30,7 +28,6 @@
 #include "shopping.h"
 #include "skills.h"
 #include "spl-book.h"
-#include "spl-summoning.h"
 #include "spl-util.h"
 #include "stash.h"
 #include "stringutil.h"
@@ -39,10 +36,16 @@
 struct item_wrapper
 {
     item_def *item;
-    bool temp; // Does item need to be freed when the wrapper is GCed?
+    bool temp; // whether `item` is being memory managed by this object or
+               // elsewhere; if true, will be deleted on gc.
     int turn;
 
-    bool valid() const { return turn == you.num_turns; }
+    bool valid(lua_State *ls) const
+    {
+        // TODO: under what circumstances will dlua actually need to deal with
+        // wrapped items that were created on a different turn?
+        return item && (!CLua::get_vm(ls).managed_vm || turn == you.num_turns);
+    }
 };
 
 void clua_push_item(lua_State *ls, item_def *item)
@@ -67,7 +70,7 @@ item_def *clua_get_item(lua_State *ls, int ndx)
 {
     item_wrapper *iwrap =
         clua_get_userdata<item_wrapper>(ls, ITEM_METATABLE, ndx);
-    if (CLua::get_vm(ls).managed_vm && !iwrap->valid())
+    if (!iwrap->valid(ls))
         luaL_error(ls, "Invalid item");
     return iwrap->item;
 }
@@ -100,11 +103,10 @@ static void _lua_push_inv_items(lua_State *ls = nullptr)
 }
 
 #define IDEF(name)                                                      \
-    static int l_item_##name(lua_State *ls, item_def *item,             \
-                             const char *attr)                         \
+    static int l_item_##name(lua_State *ls, item_def *item)             \
 
 #define IDEFN(name, closure)                    \
-    static int l_item_##name(lua_State *ls, item_def *item, const char *attrs) \
+    static int l_item_##name(lua_State *ls, item_def *item) \
     {                                                                   \
         clua_push_item(ls, item);                                            \
         lua_pushcclosure(ls, l_item_##closure, 1);                      \
@@ -540,7 +542,7 @@ IDEF(equip_type)
     else if (item->base_type == OBJ_ARMOUR)
         eq = get_armour_slot(*item);
     else if (item->base_type == OBJ_JEWELLERY)
-        eq = item->sub_type >= AMU_RAGE ? EQ_AMULET : EQ_RINGS;
+        eq = item->sub_type >= AMU_FIRST_AMULET ? EQ_AMULET : EQ_RINGS;
 
     if (eq != EQ_NONE)
     {
@@ -1531,10 +1533,34 @@ static int l_item_shopping_list(lua_State *ls)
     return 1;
 }
 
+/*** See the items offered by acquirement.
+ * Only works when the acquirement menu is active.
+ * @treturn array|nil An array of @{Item} objects or nil if not acquiring.
+ * @function shop_inventory
+ */
+static int l_item_acquirement_items(lua_State *ls)
+{
+    if (!you.props.exists(ACQUIRE_ITEMS_KEY))
+        return 0;
+
+    auto &acq_items = you.props[ACQUIRE_ITEMS_KEY].get_vector();
+
+    lua_newtable(ls);
+
+    int index = 0;
+    for (const item_def &item : acq_items)
+    {
+        _clua_push_item_temp(ls, item);
+        lua_rawseti(ls, -2, ++index);
+    }
+
+    return 1;
+}
+
 struct ItemAccessor
 {
     const char *attribute;
-    int (*accessor)(lua_State *ls, item_def *item, const char *attr);
+    int (*accessor)(lua_State *ls, item_def *item);
 };
 
 static ItemAccessor item_attrs[] =
@@ -1613,7 +1639,7 @@ static int item_get(lua_State *ls)
 
     for (const ItemAccessor &ia : item_attrs)
         if (!strcmp(attr, ia.attribute))
-            return ia.accessor(ls, iw, attr);
+            return ia.accessor(ls, iw);
 
     return 0;
 }
@@ -1631,14 +1657,18 @@ static const struct luaL_reg item_lib[] =
     { "get_items_at",      l_item_get_items_at },
     { "shop_inventory",    l_item_shop_inventory },
     { "shopping_list",     l_item_shopping_list },
+    { "acquirement_items", l_item_acquirement_items },
     { nullptr, nullptr },
 };
 
 static int _delete_wrapped_item(lua_State *ls)
 {
     item_wrapper *iw = static_cast<item_wrapper*>(lua_touserdata(ls, 1));
-    if (iw && iw->temp)
+    if (iw && iw->temp && iw->item)
+    {
         delete iw->item;
+        iw->item = nullptr;
+    }
     return 0;
 }
 

@@ -14,7 +14,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
-#if !defined(__IBMCPP__) && !defined(TARGET_COMPILER_VC)
+#if defined(UNIX) || defined(TARGET_COMPILER_MINGW)
 #include <unistd.h>
 #endif
 
@@ -71,6 +71,7 @@ static void _sdump_gold(dump_params &);
 static void _sdump_misc(dump_params &);
 static void _sdump_turns_by_place(dump_params &);
 static void _sdump_notes(dump_params &);
+static void _sdump_screenshots(dump_params &);
 static void _sdump_inventory(dump_params &);
 static void _sdump_skills(dump_params &);
 static void _sdump_spells(dump_params &);
@@ -129,6 +130,7 @@ static dump_section_handler dump_handlers[] =
     { "misc",           _sdump_misc          },
     { "turns_by_place", _sdump_turns_by_place},
     { "notes",          _sdump_notes         },
+    { "screenshots",    _sdump_screenshots   },
     { "inventory",      _sdump_inventory     },
     { "skills",         _sdump_skills        },
     { "spells",         _sdump_spells        },
@@ -191,6 +193,15 @@ bool dump_char(const string &fname, bool quiet, bool full_id,
     return _write_dump(fname, _get_dump(full_id, se), quiet);
 }
 
+string seed_description()
+{
+    return make_stringf(
+        "Game seed: %" PRIu64 "%s", crawl_state.seed,
+            crawl_state.type == GAME_TYPE_CUSTOM_SEED
+            ? " (custom seed)"
+            : you.deterministic_levelgen ? "" : " (classic levelgen)");
+}
+
 static void _sdump_header(dump_params &par)
 {
     string type = crawl_state.game_type_name();
@@ -220,10 +231,7 @@ static void _sdump_header(dump_params &par)
 #endif
         )
     {
-        par.text += make_stringf(
-            "Game seed: %" PRIu64 ", levelgen mode: %s\n\n",
-            crawl_state.seed, you.deterministic_levelgen
-                                                ? "deterministic" : "classic");
+        par.text += seed_description() + "\n\n";
     }
 }
 
@@ -631,6 +639,28 @@ static void _sdump_screenshot(dump_params &par)
 {
     par.text += screenshot();
     par.text += "\n\n";
+}
+
+static void _sdump_screenshots(dump_params &par)
+{
+    string &text(par.text);
+    if (note_list.empty())
+        return;
+
+    text += "Illustrated notes\n\n";
+
+    for (const Note &note : note_list)
+    {
+        if (note.hidden() || note.type != NOTE_USER_NOTE || note.screen.length() == 0)
+            continue;
+
+        text += note.screen;
+        text += "\n";
+        text += make_stringf("Turn %d on ", note.turn);
+        text += note.place.describe() + ": ";
+        text += note.name;
+        text += "\n\n";
+    }
 }
 
 static void _sdump_notes(dump_params &par)
@@ -1305,8 +1335,8 @@ static string _describe_action_subtype(caction_type type, int compound_subtype)
         {
         case DODGE_EVASION:
             return "Dodged";
-        case DODGE_DEFLECT:
-            return "Deflected";
+        case DODGE_REPEL:
+            return "Repelled";
         default:
             return "Error";
         }

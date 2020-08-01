@@ -19,9 +19,7 @@
 
 #include "abyss.h"
 #include "acquire.h"
-#include "act-iter.h"
 #include "artefact.h"
-#include "attitude-change.h"
 #include "branch.h"
 #include "butcher.h"
 #include "chardump.h"
@@ -36,10 +34,8 @@
 #include "dgn-overview.h"
 #include "dgn-shoals.h"
 #include "end.h"
-#include "english.h"
 #include "files.h"
 #include "flood-find.h"
-#include "food.h"
 #include "ghost.h"
 #include "god-passive.h"
 #include "item-name.h"
@@ -67,7 +63,7 @@
 #include "stairs.h"
 #include "state.h"
 #include "stringutil.h"
-#include "tiledef-dngn.h"
+#include "rltiles/tiledef-dngn.h"
 #include "tilepick.h"
 #include "tileview.h"
 #include "timed-effects.h"
@@ -145,15 +141,14 @@ static dungeon_feature_type _vault_inspect(vault_placement &place,
                                            int vgrid, keyed_mapspec *mapsp);
 static dungeon_feature_type _vault_inspect_mapspec(vault_placement &place,
                                                    keyed_mapspec& mapsp);
-static dungeon_feature_type _vault_inspect_glyph(vault_placement &place,
-                                                 int vgrid);
+static dungeon_feature_type _vault_inspect_glyph(int vgrid);
 
 static const map_def *_dgn_random_map_for_place(bool minivault);
 static void _dgn_load_colour_grid();
 static void _dgn_map_colour_fixup();
 
 static void _dgn_unregister_vault(const map_def &map);
-static void _remember_vault_placement(const vault_placement &place, bool extra);
+static void _remember_vault_placement(const vault_placement &place);
 
 // Returns true if the given square is okay for use by any character,
 // but always false for squares in non-transparent vaults.
@@ -168,7 +163,7 @@ static coord_def _dgn_random_point_in_bounds(
 
 // ALTAR FUNCTIONS
 static int                  _setup_temple_altars(CrawlHashTable &temple);
-static dungeon_feature_type _pick_temple_altar(vault_placement &place);
+static dungeon_feature_type _pick_temple_altar();
 static dungeon_feature_type _pick_an_altar();
 
 static vector<god_type> _temple_altar_list;
@@ -252,6 +247,12 @@ set<string> &get_uniq_map_names()
  *********************************************************************/
 bool builder(bool enable_random_maps)
 {
+#ifndef DEBUG_FULL_DUNGEON_SPAM
+    // hide builder debug spam by default -- this is still collected by a tee
+    // and accessible via &ctrl-l without this #define.
+    no_messages quiet(MSGCH_DIAGNOSTICS);
+#endif
+
     // Re-check whether we're in a valid place, it leads to obscure errors
     // otherwise.
     ASSERT_RANGE(you.where_are_you, 0, NUM_BRANCHES);
@@ -353,7 +354,7 @@ static bool _build_level_vetoable(bool enable_random_maps)
         mapstat_report_map_veto(e.what());
 #endif
         // try not to lose any ghosts that have been placed
-        save_ghosts(ghost_demon::find_ghosts(false), false, false);
+        save_ghosts(ghost_demon::find_ghosts(false), false);
         return false;
     }
 
@@ -625,7 +626,6 @@ void dgn_flush_map_memory()
     you.uniq_map_names_abyss.clear();
     you.vault_list.clear();
     you.branches_left.reset();
-    you.branch_stairs.init(0);
     you.zigs_completed = 0;
     you.zig_max = 0;
     you.exploration = 0;
@@ -1167,7 +1167,7 @@ dgn_register_place(const vault_placement &place, bool register_vault)
     vault_placement *new_vault_place = new vault_placement(place);
     env.level_vaults.emplace_back(new_vault_place);
     if (register_vault)
-        _remember_vault_placement(place, place.map.is_extra_vault());
+        _remember_vault_placement(place);
     return new_vault_place;
 }
 
@@ -1461,8 +1461,7 @@ void fixup_misplaced_items()
 
             mprf(MSGCH_ERROR, "Item %s buggily placed in feature %s at (%d, %d).",
                  item.name(DESC_PLAIN).c_str(),
-                 feature_description_at(item.pos, false, DESC_PLAIN,
-                                        false).c_str(),
+                 feature_description_at(item.pos, false, DESC_PLAIN).c_str(),
                  item.pos.x, item.pos.y);
         }
         else
@@ -2974,7 +2973,7 @@ struct adjacency_test
 
 struct dummy_estimate
 {
-    bool operator() (const coord_def & pos)
+    bool operator() (const coord_def &)
     {
         return 0;
     }
@@ -3275,7 +3274,7 @@ static void _place_traps()
         }
 
         ts.type = type;
-        grd(ts.pos) = ts.category();
+        grd(ts.pos) = ts.feature();
         ts.prepare_ammo();
         env.trap[ts.pos] = ts;
         dprf("placed a %s trap", trap_name(type).c_str());
@@ -3803,12 +3802,17 @@ static void _builder_monsters()
     {
         mgen_data mg;
 
+        // On D:1, we want monsters out of LOS distance from the player's
+        // starting position, and we don't generate them awake.
+        if (env.absdepth0 == 0)
+        {
+            mg.proximity = PROX_AWAY_FROM_DUNGEON_ENTRANCE;
+            mg.behaviour = BEH_SLEEP;
+        }
         // Chance to generate the monster awake, but away from level stairs.
-        // D:1 is excluded from this chance since the player can't escape
-        // upwards and is especially vulnerable.
-        if (player_in_connected_branch()
-            && env.absdepth0 > 0
-            && one_chance_in(8))
+        else if (player_in_connected_branch()
+                 && env.absdepth0 > 0
+                 && one_chance_in(8))
         {
             mg.proximity = PROX_AWAY_FROM_STAIRS;
         }
@@ -4639,9 +4643,7 @@ static void _dgn_place_item_explicit(int index, const coord_def& where,
     dgn_place_item(spec, where);
 }
 
-static void _dgn_give_mon_spec_items(mons_spec &mspec,
-                                     monster *mon,
-                                     const monster_type type)
+static void _dgn_give_mon_spec_items(mons_spec &mspec, monster *mon)
 {
     ASSERT(mspec.place.is_valid());
 
@@ -4740,6 +4742,31 @@ static void _dgn_give_mon_spec_items(mons_spec &mspec,
     }
 }
 
+static bool _monster_type_is_already_spawned_unique(monster_type type)
+{
+    return mons_is_unique(type) && you.unique_creatures[type];
+}
+
+static bool _unique_conflicts_with_younger_or_older_version(monster_type type)
+{
+    if (type == MONS_MAGGIE
+       && _monster_type_is_already_spawned_unique(MONS_MARGERY))
+    {
+        return true;
+    }
+    else if (type == MONS_MARGERY
+       && _monster_type_is_already_spawned_unique(MONS_MAGGIE))
+        return true;
+
+    return false;
+}
+
+static bool _should_veto_unique(monster_type type)
+{
+    return _monster_type_is_already_spawned_unique(type)
+           || _unique_conflicts_with_younger_or_older_version(type);
+}
+
 monster* dgn_place_monster(mons_spec &mspec, coord_def where,
                            bool force_pos, bool generate_awake, bool patrolling)
 {
@@ -4775,7 +4802,7 @@ monster* dgn_place_monster(mons_spec &mspec, coord_def where,
     {
         // Don't place a unique monster a second time.
         // (Boris is handled specially.)
-        if (mons_is_unique(type) && you.unique_creatures[type]
+        if (_should_veto_unique(type)
             && !crawl_state.game_is_arena())
         {
             return 0;
@@ -4896,7 +4923,7 @@ monster* dgn_place_monster(mons_spec &mspec, coord_def where,
         mons->props[MON_OOD_KEY].get_bool() = true;
 
     if (!mspec.items.empty())
-        _dgn_give_mon_spec_items(mspec, mons, type);
+        _dgn_give_mon_spec_items(mspec, mons);
 
     if (mspec.props.exists("monster_tile"))
     {
@@ -4975,8 +5002,7 @@ static bool _dgn_place_one_monster(const vault_placement &place,
 }
 
 /* "Oddball grids" are handled in _vault_grid. */
-static dungeon_feature_type _glyph_to_feat(int glyph,
-                                           vault_placement *place = nullptr)
+static dungeon_feature_type _glyph_to_feat(int glyph)
 {
     return (glyph == 'x') ? DNGN_ROCK_WALL :
            (glyph == 'X') ? DNGN_PERMAROCK_WALL :
@@ -5030,7 +5056,7 @@ dungeon_feature_type map_feature_at(map_def *map, const coord_def &c,
             if (f.trap->tr_type >= NUM_TRAPS)
                 return DNGN_FLOOR;
             else
-                return trap_category(static_cast<trap_type>(f.trap->tr_type));
+                return trap_feature(f.trap->tr_type);
         }
         else if (f.feat >= 0)
             return static_cast<dungeon_feature_type>(f.feat);
@@ -5077,7 +5103,7 @@ static void _vault_grid_glyph(vault_placement &place, const coord_def& where,
 {
     // First, set base tile for grids {dlb}:
     if (vgrid != -1)
-        grd(where) = _glyph_to_feat(vgrid, &place);
+        grd(where) = _glyph_to_feat(vgrid);
 
     if (feat_is_altar(grd(where))
         && is_unavailable_god(feat_altar_god(grd(where))))
@@ -5101,7 +5127,7 @@ static void _vault_grid_glyph(vault_placement &place, const coord_def& where,
         place_specific_trap(where, random_vault_trap());
         break;
     case 'B':
-        grd(where) = _pick_temple_altar(place);
+        grd(where) = _pick_temple_altar();
         break;
     }
 
@@ -5388,7 +5414,7 @@ bool join_the_dots(const coord_def &from, const coord_def &to,
     return !path.empty() || from == to;
 }
 
-static dungeon_feature_type _pick_temple_altar(vault_placement &place)
+static dungeon_feature_type _pick_temple_altar()
 {
     if (_temple_altar_list.empty())
     {
@@ -5552,12 +5578,11 @@ static int _shop_greed(shop_type type, int level_number, int spec_greed)
 /**
  * How many items should be placed in a given shop?
  *
- * @param type              The type of the shop. (E.g. SHOP_FOOD.)
  * @param spec              A vault shop spec; may override default results.
  * @return                  The number of items the shop should be generated
  *                          to hold.
  */
-static int _shop_num_items(shop_type type, const shop_spec &spec)
+static int _shop_num_items(const shop_spec &spec)
 {
     if (spec.num_items != -1)
     {
@@ -5788,7 +5813,7 @@ void place_spec_shop(const coord_def& where, shop_spec &spec, int shop_level)
 
     _set_grd(where, DNGN_ENTER_SHOP);
 
-    const int num_items = _shop_num_items(shop.type, spec);
+    const int num_items = _shop_num_items(spec);
 
     // For books shops, store how many copies of a given book are on display.
     // This increases the diversity of books in a shop.
@@ -5973,7 +5998,7 @@ static void _place_specific_trap(const coord_def& where, trap_spec* spec,
     trap_def t;
     t.type = spec_type;
     t.pos = where;
-    grd(where) = trap_category(spec_type);
+    grd(where) = trap_feature(spec_type);
     t.prepare_ammo(charges);
     env.trap[where] = t;
     dprf("placed a %s trap", trap_name(spec_type).c_str());
@@ -6864,8 +6889,7 @@ int vault_placement::connect(bool spotty) const
     for (auto c : exits)
     {
         if (spotty && _connect_spotty(c, _feat_is_wall_floor_liquid)
-            || player_in_branch(BRANCH_SHOALS)
-               && dgn_shoals_connect_point(c, _feat_is_wall_floor_liquid)
+            || player_in_branch(BRANCH_SHOALS) && dgn_shoals_connect_point(c)
             || _connect_vault_exit(c))
         {
             exits_placed++;
@@ -6926,20 +6950,21 @@ static dungeon_feature_type _vault_inspect(vault_placement &place,
     if (mapsp && mapsp->replaces_glyph())
         return _vault_inspect_mapspec(place, *mapsp);
     else
-        return _vault_inspect_glyph(place, vgrid);
+        return _vault_inspect_glyph(vgrid);
 }
 
 static dungeon_feature_type _vault_inspect_mapspec(vault_placement &place,
                                                    keyed_mapspec& mapsp)
 {
+    UNUSED(place);
     dungeon_feature_type found = NUM_FEATURES;
     const feature_spec f = mapsp.get_feat();
     if (f.trap)
-        found = trap_category(f.trap->tr_type);
+        found = trap_feature(f.trap->tr_type);
     else if (f.feat >= 0)
         found = static_cast<dungeon_feature_type>(f.feat);
     else if (f.glyph >= 0)
-        found = _vault_inspect_glyph(place, f.glyph);
+        found = _vault_inspect_glyph(f.glyph);
     else if (f.shop)
         found = DNGN_ENTER_SHOP;
     else
@@ -6948,13 +6973,12 @@ static dungeon_feature_type _vault_inspect_mapspec(vault_placement &place,
     return found;
 }
 
-static dungeon_feature_type _vault_inspect_glyph(vault_placement &place,
-                                                 int vgrid)
+static dungeon_feature_type _vault_inspect_glyph(int vgrid)
 {
     // Get the base feature according to the glyph
     dungeon_feature_type found = NUM_FEATURES;
     if (vgrid != -1)
-        found = _glyph_to_feat(vgrid, &place);
+        found = _glyph_to_feat(vgrid);
 
     // If it's an altar for an unavailable god then it will get turned into floor by _vault_grid_glyph
     if (feat_is_altar(found)
@@ -6966,8 +6990,9 @@ static dungeon_feature_type _vault_inspect_glyph(vault_placement &place,
     return found;
 }
 
-static void _remember_vault_placement(const vault_placement &place, bool extra)
+static void _remember_vault_placement(const vault_placement &place)
 {
+    UNUSED(place);
 #ifdef DEBUG_STATISTICS
     _you_all_vault_list.push_back(place.map.name);
 #endif

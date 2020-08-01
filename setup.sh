@@ -20,7 +20,7 @@ make docs
 cd ../docs/
 # These files need to be brought up from the root directory
 ln -sv ../CREDITS.txt
-ln -sv ../INSTALL.txt
+ln -sv ../INSTALL.md
 
 echo "Running perl scripts..."
 echo ""

@@ -31,7 +31,9 @@ function trove.get_trove_item(e, value, base_item)
     sub_type="",
     ego_type=false,
     plus1=false,
-    plus2=false, -- #if TAG_MAJOR_VERSION == 34
+-- start TAG_MAJOR_VERSION == 34
+    plus2=false,
+-- end TAG_MAJOR_VERSION
     artefact_name=false,
   }
 
@@ -97,6 +99,8 @@ function trove.get_trove_item(e, value, base_item)
   -- currently 20% armour, 15% weapon, 50% consumable, 15% miscellaneous
   local prices = {
        {base="scroll", type="acquirement", quant=2},
+       {base="scroll", type="fear", quant=2+d(3)+d(3)},
+       {base="scroll", type="fog", quant=2+d(3)+d(3)},
        {base="miscellaneous", type="rune of Zot", quant=3, name="slimy rune of Zot"},
        {base="miscellaneous", type="rune of Zot", quant=11, name="abyssal rune of Zot"},
        {base="miscellaneous", type="horn of Geryon"} }
@@ -126,8 +130,7 @@ function trove.get_trove_item(e, value, base_item)
   end
 
   local pots = {
-       {base="potion", type="resistance", quant=2+d(3)},
-       {base="potion", type="agility", quant=4+d(3)+d(2)} }
+       {base="potion", type="resistance", quant=2+d(3)} }
 
   local heal_pots = {
        {base="potion", type="curing", quant=12+d(4)+d(4)},
@@ -574,7 +577,7 @@ KITEM:   f = acquire armour w:5 / any useful armour good_item / any armour w:2
 KITEM:   F = acquire weapon w:5 / any useful weapon good_item / any weapon w:2
 KITEM:   B = acquire book / acquire:sif_muna book / any book
 KITEM:   g = potion of curing / potion of heal wounds / potion of experience / \
-             potion of might / potion of agility / potion of brilliance / \
+             potion of might / potion of stabbing / potion of brilliance / \
              potion of resistance / potion of magic / potion of haste
 KFEAT:   w = W
 : trove.setup_features(_G)

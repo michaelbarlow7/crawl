@@ -20,7 +20,6 @@
 #include "env.h"
 #include "exercise.h"
 #include "fight.h"
-#include "god-abil.h"
 #include "god-conduct.h"
 #include "god-passive.h" // passive_t::shadow_attacks
 #include "hints.h"
@@ -40,7 +39,6 @@
 #include "showsymb.h"
 #include "skills.h"
 #include "sound.h"
-#include "spl-summoning.h"
 #include "state.h"
 #include "stringutil.h"
 #include "terrain.h"
@@ -105,7 +103,7 @@ public:
     }
 
     // targeting_behaviour API
-    virtual command_type get_command(int key = -1) override;
+    virtual command_type get_command(int key) override;
     virtual bool should_redraw() const override { return need_redraw; }
     virtual void clear_redraw()        override { need_redraw = false; }
     virtual void update_top_prompt(string* p_top_prompt) override;
@@ -243,9 +241,6 @@ void fire_target_behaviour::display_help()
 
 command_type fire_target_behaviour::get_command(int key)
 {
-    if (key == -1)
-        key = get_key();
-
     if (key == CMD_TARGET_CANCEL)
         chosen_ammo = false;
     else if (!(-key > CMD_NO_CMD && -key < CMD_MIN_SYNTHETIC)
@@ -293,13 +288,13 @@ vector<string> fire_target_behaviour::get_monster_desc(const monster_info& mi)
             if (brand == SPMSL_FRENZY || brand == SPMSL_BLINDING)
             {
                 int chance = _get_dart_chance(mi.hd);
-                bool immune = false;
+                bool immune = brand == SPMSL_FRENZY && !mi.can_go_frenzy;
                 if (mi.holi & (MH_UNDEAD | MH_NONLIVING))
                     immune = true;
 
                 string verb = brand == SPMSL_FRENZY ? "frenzy" : "blind";
 
-                string chance_string = immune ? "immune to darts" :
+                string chance_string = immune ? "immune" :
                                        make_stringf("chance to %s on hit: %d%%",
                                                     verb.c_str(), chance);
                 descs.emplace_back(chance_string);
@@ -710,7 +705,7 @@ static bool _setup_missile_beam(const actor *agent, bolt &beam, item_def &item,
     return false;
 }
 
-static void _throw_noise(actor* act, const bolt &pbolt, const item_def &ammo)
+static void _throw_noise(actor* act, const item_def &ammo)
 {
     ASSERT(act); // XXX: change to actor &act
     const item_def* launcher = act->weapon();
@@ -1008,7 +1003,7 @@ bool throw_it(bolt &pbolt, int throw_2, dist *target)
         hit = !pbolt.hit_verb.empty();
 
         // The item can be destroyed before returning.
-        if (returning && thrown_object_destroyed(&item, pbolt.target))
+        if (returning && thrown_object_destroyed(&item))
             returning = false;
     }
 
@@ -1035,7 +1030,7 @@ bool throw_it(bolt &pbolt, int throw_2, dist *target)
             canned_msg(MSG_EMPTY_HANDED_NOW);
     }
 
-    _throw_noise(&you, pbolt, thrown);
+    _throw_noise(&you, thrown);
 
     // ...any monster nearby can see that something has been thrown, even
     // if it didn't make any noise.
@@ -1151,7 +1146,7 @@ bool mons_throw(monster* mons, bolt &beam, int msl, bool teleport)
         mpr(msg);
     }
 
-    _throw_noise(mons, beam, item);
+    _throw_noise(mons, item);
 
     beam.drop_item = !returning;
 
@@ -1171,7 +1166,7 @@ bool mons_throw(monster* mons, bolt &beam, int msl, bool teleport)
         beam.fire();
 
         // The item can be destroyed before returning.
-        if (returning && thrown_object_destroyed(&item, beam.target))
+        if (returning && thrown_object_destroyed(&item))
             returning = false;
     }
 
@@ -1206,7 +1201,7 @@ bool mons_throw(monster* mons, bolt &beam, int msl, bool teleport)
     return true;
 }
 
-bool thrown_object_destroyed(item_def *item, const coord_def& where)
+bool thrown_object_destroyed(item_def *item)
 {
     ASSERT(item != nullptr);
 

@@ -30,6 +30,7 @@
 #include "items.h"
 #include "message.h"
 #include "mon-act.h"
+#include "mon-death.h"
 #include "mon-place.h"
 #include "mon-util.h"
 #include "player.h"
@@ -40,6 +41,9 @@
 #include "shout.h"
 #include "state.h"
 #include "stringutil.h"
+#include "spl-damage.h"
+#include "spl-selfench.h" // noxious_bog_cell
+#include "target-compass.h"
 #include "terrain.h"
 #include "traps.h"
 #include "travel.h"
@@ -63,7 +67,7 @@ static void _swap_places(monster* mons, const coord_def &loc)
             // We'll fire location effects for 'mons' back in move_player_action,
             // so don't do so here. The toadstool won't get location effects,
             // but the player will trigger those soon enough. This wouldn't
-            // work so well if toadstools were aquatic, had clinging, or were
+            // work so well if toadstools were aquatic, or were
             // otherwise handled specially in monster_swap_places or in
             // apply_location_effects.
             monster_swaps_places(mons, loc - mons->pos(), true, false);
@@ -76,9 +80,19 @@ static void _swap_places(monster* mons, const coord_def &loc)
         }
     }
 
+    // Friendly foxfire dissipates instead of damaging the player.
+    if (mons->type == MONS_FOXFIRE)
+    {
+        simple_monster_message(*mons, " dissipates!",
+                               MSGCH_MONSTER_DAMAGE, MDAM_DEAD);
+        monster_die(*mons, KILL_DISMISSED, NON_MONSTER, true);
+        return;
+    }
+
     mpr("You swap places.");
 
     mons->move_to_pos(loc, true, true);
+
     return;
 }
 
@@ -273,7 +287,7 @@ void open_door_action(coord_def move)
         return;
     }
 
-    dist door_move;
+    coord_def delta;
 
     // The player hasn't picked a direction yet.
     if (move.origin())
@@ -291,23 +305,19 @@ void open_door_action(coord_def move)
 
         // If there's only one door to open, don't ask.
         if (num == 1 && Options.easy_door)
-            door_move.delta = move;
+            delta = move;
         else
         {
-            mprf(MSGCH_PROMPT, "Which direction?");
-            direction_chooser_args args;
-            args.restricts = DIR_DIR;
-            direction(door_move, args);
-
-            if (!door_move.isValid)
+            delta = prompt_compass_direction();
+            if (delta.origin())
                 return;
         }
     }
     else
-        door_move.delta = move;
+        delta = move;
 
     // We got a valid direction.
-    const coord_def doorpos = you.pos() + door_move.delta;
+    const coord_def doorpos = you.pos() + delta;
 
     if (door_vetoed(doorpos))
     {
@@ -375,7 +385,7 @@ void close_door_action(coord_def move)
         return;
     }
 
-    dist door_move;
+    coord_def delta;
 
     if (move.origin())
     {
@@ -389,28 +399,18 @@ void close_door_action(coord_def move)
         }
         // move got set in _check_adjacent
         else if (num == 1 && Options.easy_door)
-            door_move.delta = move;
+            delta = move;
         else
         {
-            mprf(MSGCH_PROMPT, "Which direction?");
-            direction_chooser_args args;
-            args.restricts = DIR_DIR;
-            direction(door_move, args);
-
-            if (!door_move.isValid)
+            delta = prompt_compass_direction();
+            if (delta.origin())
                 return;
-        }
-
-        if (door_move.delta.origin())
-        {
-            mpr("You can't close doors on yourself!");
-            return;
         }
     }
     else
-        door_move.delta = move;
+        delta = move;
 
-    const coord_def doorpos = you.pos() + door_move.delta;
+    const coord_def doorpos = you.pos() + delta;
     const dungeon_feature_type feat = (in_bounds(doorpos) ? grd(doorpos)
                                                           : DNGN_UNSEEN);
 
@@ -517,14 +517,14 @@ void move_player_action(coord_def move)
             you.turn_is_over = true;
             if (you.digging) // no actual damage
             {
-                mprf("Your mandibles retract as you bump into %s",
+                mprf("Your mandibles retract as you bump into %s.",
                      feature_description_at(new_targ, false,
                                             DESC_THE).c_str());
                 you.digging = false;
             }
             else
             {
-                mprf("You bump into %s",
+                mprf("You bump into %s.",
                      feature_description_at(new_targ, false,
                                             DESC_THE).c_str());
             }
@@ -536,17 +536,8 @@ void move_player_action(coord_def move)
     }
 
     const coord_def targ = you.pos() + move;
-    string wall_jump_err;
-    // Don't allow wall jump against close doors via movement -- need to use
-    // the ability. Also, if moving into a closed door, don't call
-    // wu_jian_can_wall_jump, to avoid printing a spurious message (see 11940).
-    bool can_wall_jump = Options.wall_jump_move
-                         && (!in_bounds(targ)
-                             || !feat_is_closed_door(grd(targ)))
-                         && wu_jian_can_wall_jump(targ, wall_jump_err);
-    bool did_wall_jump = false;
     // You can't walk out of bounds!
-    if (!in_bounds(targ) && !can_wall_jump)
+    if (!in_bounds(targ))
     {
         // Why isn't the border permarock?
         if (you.digging)
@@ -684,22 +675,18 @@ void move_player_action(coord_def move)
 
     const bool running = you_are_delayed() && current_delay()->is_run();
 
-    if (!attacking && (targ_pass || can_wall_jump)
-        && moving && !beholder && !fmonger)
+    if (!attacking && targ_pass && moving && !beholder && !fmonger)
     {
         if (you.confused() && is_feat_dangerous(env.grid(targ)))
         {
             mprf("You nearly stumble into %s!",
-                 feature_description_at(targ, false, DESC_THE, false).c_str());
+                 feature_description_at(targ, false, DESC_THE).c_str());
             you.apply_berserk_penalty = true;
             you.turn_is_over = true;
             return;
         }
 
-        // can_wall_jump means `targ` is solid and can be walljumped off of,
-        // so the player will never enter `targ`. Therefore, we don't want to
-        // check exclusions at `targ`.
-        if (!you.confused() && !can_wall_jump && !check_moveto(targ, walkverb))
+        if (!you.confused() && !check_moveto(targ, walkverb))
         {
             stop_running();
             you.turn_is_over = false;
@@ -724,7 +711,7 @@ void move_player_action(coord_def move)
         if (you.digging)
         {
             mprf("You dig through %s.", feature_description_at(targ, false,
-                 DESC_THE, false).c_str());
+                 DESC_THE).c_str());
             destroy_wall(targ);
             noisy(6, you.pos());
             make_hungry(50, true);
@@ -733,19 +720,6 @@ void move_player_action(coord_def move)
 
         if (swap)
             _swap_places(targ_monst, mon_swap_dest);
-        else if (you.duration[DUR_CLOUD_TRAIL])
-        {
-            if (cell_is_solid(you.pos()))
-                ASSERT(you.wizmode_teleported_into_rock);
-            else
-            {
-                auto cloud = static_cast<cloud_type>(
-                    you.props[XOM_CLOUD_TRAIL_TYPE_KEY].get_int());
-                ASSERT(cloud != CLOUD_NONE);
-                check_place_cloud(cloud,you.pos(), random_range(3, 10), &you,
-                                  0, -1);
-            }
-        }
 
         if (running && env.travel_trail.empty())
             env.travel_trail.push_back(you.pos());
@@ -757,35 +731,48 @@ void move_player_action(coord_def move)
         if (you.is_directly_constricted())
             you.stop_being_constricted();
 
+        coord_def old_pos = you.pos();
         // Don't trigger traps when confusion causes no move.
         if (you.pos() != targ && targ_pass)
             move_player_to_grid(targ, true);
-        else if (can_wall_jump && !running)
-        {
-            if (!wu_jian_do_wall_jump(targ, false))
-                return; // wall jump only in the ready state, or cancelled
-            else
-                did_wall_jump = true;
-        }
 
-        // Now it is safe to apply the swappee's location effects. Doing
-        // so earlier would allow e.g. shadow traps to put a monster
-        // at the player's location.
+        // Now it is safe to apply the swappee's location effects and add
+        // trailing effects. Doing so earlier would allow e.g. shadow traps to
+        // put a monster at the player's location.
         if (swap)
             targ_monst->apply_location_effects(targ);
+        else
+        {
 
+            if (you.duration[DUR_NOXIOUS_BOG])
+            {
+                if (cell_is_solid(old_pos))
+                    ASSERT(you.wizmode_teleported_into_rock);
+                else
+                    noxious_bog_cell(old_pos);
+            }
+
+            if (you.duration[DUR_CLOUD_TRAIL])
+            {
+                if (cell_is_solid(old_pos))
+                    ASSERT(you.wizmode_teleported_into_rock);
+                else
+                {
+                    auto cloud = static_cast<cloud_type>(
+                        you.props[XOM_CLOUD_TRAIL_TYPE_KEY].get_int());
+                    ASSERT(cloud != CLOUD_NONE);
+                    check_place_cloud(cloud, old_pos, random_range(3, 10), &you,
+                                      0, -1);
+                }
+            }
+        }
         apply_barbs_damage();
         remove_ice_armour_movement();
 
         if (you_are_delayed() && current_delay()->is_run())
             env.travel_trail.push_back(you.pos());
 
-        // Serpent's Lash = 1 means half of the wall jump time is refunded, so
-        // the modifier is 2 * 1/2 = 1;
-        int wall_jump_modifier =
-            (did_wall_jump && you.attribute[ATTR_SERPENTS_LASH] != 1) ? 2 : 1;
-
-        you.time_taken *= wall_jump_modifier * player_movement_speed();
+        you.time_taken *= player_movement_speed();
         you.time_taken = div_rand_round(you.time_taken, 10);
         you.time_taken += additional_time_taken;
 
@@ -801,15 +788,6 @@ void move_player_action(coord_def move)
         move.reset();
         you.turn_is_over = true;
         request_autopickup();
-    }
-
-    if (!attacking && !targ_pass && !can_wall_jump && !running
-        && moving && !beholder && !fmonger
-        && Options.wall_jump_move
-        && wu_jian_can_wall_jump_in_principle(targ))
-    {
-        // do messaging for a failed wall jump
-        mpr(wall_jump_err);
     }
 
     // BCR - Easy doors single move
@@ -836,7 +814,7 @@ void move_player_action(coord_def move)
         _entered_malign_portal(&you);
         return;
     }
-    else if (!targ_pass && !attacking && !can_wall_jump)
+    else if (!targ_pass && !attacking)
     {
         if (you.is_stationary())
             canned_msg(MSG_CANNOT_MOVE);
@@ -853,14 +831,14 @@ void move_player_action(coord_def move)
         crawl_state.cancel_cmd_repeat();
         return;
     }
-    else if (beholder && !attacking && !can_wall_jump)
+    else if (beholder && !attacking)
     {
         mprf("You cannot move away from %s!",
             beholder->name(DESC_THE).c_str());
         stop_running();
         return;
     }
-    else if (fmonger && !attacking && !can_wall_jump)
+    else if (fmonger && !attacking)
     {
         mprf("You cannot move closer to %s!",
             fmonger->name(DESC_THE).c_str());
@@ -884,12 +862,9 @@ void move_player_action(coord_def move)
 
     bool did_wu_jian_attack = false;
     if (you_worship(GOD_WU_JIAN) && !attacking)
-    {
-        did_wu_jian_attack = wu_jian_post_move_effects(did_wall_jump,
-                                                       initial_position);
-    }
+        did_wu_jian_attack = wu_jian_post_move_effects(false, initial_position);
 
     // If you actually moved you are eligible for amulet of the acrobat.
-    if (!attacking && moving && !did_wu_jian_attack && !did_wall_jump)
+    if (!attacking && moving && !did_wu_jian_attack)
         update_acrobat_status();
 }

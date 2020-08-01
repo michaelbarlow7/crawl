@@ -2,10 +2,10 @@
 
 #include "god-conduct.h"
 
-#include "fight.h"
+#include "areas.h"
+#include "fprop.h"
 #include "god-abil.h" // ru sac key
 #include "god-item.h" // is_*_spell
-#include "god-wrath.h"
 #include "libutil.h"
 #include "message.h"
 #include "monster.h"
@@ -26,6 +26,8 @@ god_conduct_trigger::god_conduct_trigger(
     conduct_type c, int pg, bool kn, const monster* vict)
   : conduct(c), pgain(pg), known(kn), victim(nullptr)
 {
+    did_sanctuary = false;
+
     if (vict)
     {
         victim.reset(new monster);
@@ -36,6 +38,15 @@ god_conduct_trigger::god_conduct_trigger(
 void god_conduct_trigger::set(conduct_type c, int pg, bool kn,
                               const monster* vict)
 {
+    // This conduct only needs to be set once per instance; subsequent calls
+    // would just uselessly update the victim pointer.
+    if (c == DID_ATTACK_IN_SANCTUARY)
+    {
+        if (did_sanctuary)
+            return;
+
+        did_sanctuary = true;
+    }
     conduct = c;
     pgain = pg;
     known = kn;
@@ -49,7 +60,10 @@ void god_conduct_trigger::set(conduct_type c, int pg, bool kn,
 
 god_conduct_trigger::~god_conduct_trigger()
 {
-    if (conduct != NUM_CONDUCTS)
+    // For order of events, let remove_sanctuary() apply the conduct.
+    if (conduct == DID_ATTACK_IN_SANCTUARY)
+        remove_sanctuary(true);
+    else if (conduct != NUM_CONDUCTS)
         did_god_conduct(conduct, pgain, known, victim.get());
 }
 
@@ -64,7 +78,7 @@ static const char *conducts[] =
     "Cause Glowing", "Use Unclean", "Use Chaos", "Desecrate Orcish Remains",
     "Kill Slime", "Kill Plant", "Was Hasty", "Attack In Sanctuary",
     "Kill Artificial", "Exploration", "Desecrate Holy Remains", "Seen Monster",
-    "Sacrificed Love", "Channel", "Hurt Foe",
+    "Sacrificed Love", "Channel", "Hurt Foe", "Use Wizardly Item",
 };
 COMPILE_CHECK(ARRAYSZ(conducts) == NUM_CONDUCTS);
 
@@ -352,6 +366,10 @@ static peeve_map divine_peeves[] =
             "you train magic skills", true,
             1, 0, nullptr, " doesn't appreciate your training magic!"
         } },
+        { DID_WIZARDLY_ITEM, {
+            "you use magical staves or pain-branded weapons", true,
+            1, 0, nullptr, " doesn't appreciate your use of wizardly items!"
+        } },
     },
     // GOD_NEMELEX_XOBEH,
     peeve_map(),
@@ -545,7 +563,7 @@ struct like_response
         if (message)
             simple_god_message(message);
 
-        // this is all very strange, but replicates legacy behavior.
+        // this is all very strange, but replicates legacy behaviour.
         // See the comment on piety_bonus above.
         int denom = piety_denom_bonus + level;
         if (xl_denom)
@@ -657,7 +675,7 @@ static like_response okawaru_kill(const char* desc)
 static const like_response EXPLORE_RESPONSE = {
     "you explore the world", false,
     0, 0, 0, nullptr,
-    [] (int &piety, int &denom, const monster* /*victim*/)
+    [] (int &piety, int &/*denom*/, const monster* /*victim*/)
     {
         // piety = denom = level at the start of the function
         piety = 14;
@@ -710,8 +728,8 @@ static like_map divine_likes[] =
         { DID_KILL_UNDEAD, KILL_UNDEAD_RESPONSE },
         { DID_KILL_DEMON, KILL_DEMON_RESPONSE },
         { DID_KILL_HOLY, _on_kill("you kill holy beings", MH_HOLY, false,
-                                  [](int &piety, int &denom,
-                                     const monster* victim)
+                                  [](int &piety, int &/*denom*/,
+                                     const monster* /*victim*/)
             {
                 piety *= 2;
                 simple_god_message(" appreciates your killing of a holy being.");
@@ -777,7 +795,7 @@ static like_map divine_likes[] =
         { DID_EXPLORATION, {
             "you explore the world", false,
             0, 0, 0, nullptr,
-            [] (int &piety, int &denom, const monster* /*victim*/)
+            [] (int &piety, int &/*denom*/, const monster* /*victim*/)
             {
                 // piety = denom = level at the start of the function
                 piety = 20;
@@ -895,7 +913,7 @@ static like_map divine_likes[] =
     {
         { DID_KILL_LIVING, _on_kill("you kill living beings", MH_NATURAL, false,
                                   [](int &piety, int &denom,
-                                     const monster* victim)
+                                     const monster* /*victim*/)
             {
                 piety *= 4;
                 denom *= 3;
@@ -912,7 +930,7 @@ static like_map divine_likes[] =
         { DID_HURT_FOE, {
             "you hurt your foes; however, effects that cause damage over "
             "time do not interest Uskayaw", true, 1, 1, 0, nullptr,
-            [] (int &piety, int &denom, const monster* /*victim*/)
+            [] (int &/*piety*/, int &denom, const monster* /*victim*/)
             {
                 denom = 1;
             }
@@ -1023,6 +1041,10 @@ void set_attack_conducts(god_conduct_trigger conduct[3], const monster &mon,
     else if (mon.neutral())
         conduct[0].set(DID_ATTACK_NEUTRAL, 5, known, &mon);
 
+    // Penance value is handled by remove_sanctuary().
+    if (is_sanctuary(mon.pos()) || is_sanctuary(you.pos()))
+        conduct[1].set(DID_ATTACK_IN_SANCTUARY, -1, known, &mon);
+
     if (mon.is_holy() && !mon.is_illusion())
     {
         conduct[2].set(DID_ATTACK_HOLY, mon.get_experience_level(), known,
@@ -1126,6 +1148,7 @@ void did_hurt_conduct(conduct_type thing_done,
                       const monster &victim,
                       int damage_done)
 {
+    UNUSED(thing_done);
     // Currently only used by Uskayaw; initially planned to use god conduct
     // logic more heavily, but the god seems to need something different.
 

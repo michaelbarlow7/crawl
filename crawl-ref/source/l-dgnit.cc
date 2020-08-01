@@ -6,7 +6,6 @@
 #include "l-libs.h"
 
 #include "cluautil.h"
-#include "coord.h"
 #include "dungeon.h"
 #include "item-status-flag-type.h"
 #include "items.h"
@@ -32,7 +31,7 @@ static item_list _lua_get_ilist(lua_State *ls, int ndx)
     {
         item_list **ilist =
             clua_get_userdata<item_list*>(ls, ITEMLIST_METATABLE, ndx);
-        if (ilist)
+        if (ilist && *ilist)
             return **ilist;
 
         luaL_argerror(ls, ndx, "Expected item list object or string");

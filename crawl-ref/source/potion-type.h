@@ -7,7 +7,7 @@ enum potion_type
     POT_HASTE,
     POT_MIGHT,
     POT_BRILLIANCE,
-    POT_AGILITY,
+    POT_STABBING,
 #if TAG_MAJOR_VERSION == 34
     POT_GAIN_STRENGTH,
     POT_GAIN_DEXTERITY,
@@ -48,6 +48,31 @@ enum potion_type
     POT_LIGNIFY,
 #if TAG_MAJOR_VERSION == 34
     POT_BENEFICIAL_MUTATION,
+    POT_DUMMY_AGILITY,
 #endif
     NUM_POTIONS
 };
+
+#if TAG_MAJOR_VERSION == 34
+#define CASE_REMOVED_POTIONS(pot) \
+case POT_GAIN_STRENGTH: \
+case POT_GAIN_DEXTERITY: \
+case POT_GAIN_INTELLIGENCE: \
+case POT_POISON: \
+case POT_SLOWING: \
+case POT_PORRIDGE: \
+case POT_DECAY: \
+case POT_WATER: \
+case POT_RESTORE_ABILITIES: \
+case POT_STRONG_POISON: \
+case POT_CURE_MUTATION: \
+case POT_BLOOD: \
+case POT_BLOOD_COAGULATED: \
+case POT_BENEFICIAL_MUTATION: \
+case POT_DUMMY_AGILITY: \
+{ \
+    die("Removed potion type %d!", static_cast<int>(pot)); \
+}
+#else
+#define CASE_REMOVED_POTIONS(pot)
+#endif

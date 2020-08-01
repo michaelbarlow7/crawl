@@ -238,8 +238,8 @@ Place
   will read "Dungeon:1" for a new character.
 
 Noise
-  This is a colored bar indicating the loudness of noise that you heard on your
-  last turn. The color provides a rough guide to how far away the noise it
+  This is a coloured bar indicating the loudness of noise that you heard on your
+  last turn. The colour provides a rough guide to how far away the noise it
   indicates might be audible. If the bar is gray, the sound is less likely to
   be audible outside of your line of sight (at least in an open area); if it is
   yellow, the sound is likely to be audible outside of your line of sight; and
@@ -1026,8 +1026,8 @@ a while (resulting in a waste of magic and possibly dangerous side-effects).
 Your chance of failing to cast a spell properly depends on your skills, your
 intelligence, the level of the spell and whether you are wearing heavy armour.
 The chance of miscasting a spell is displayed on the spell screen, and coloured
-based on potential severity (with yellow representing a moderate chance, and red
-representing a severe chance).
+based on severity (yellow for moderate damage, light red for major
+damage, red for extreme damage, and magenta for potentially lethal damage).
 
 Be careful of magic-using enemies! Some of them can use magic just as well as
 you, if not better, and often use it intelligently.
@@ -1771,7 +1771,7 @@ Vampires (Vp)
 Demigods (Dg)
   Demigods are mortals with some divine or angelic ancestry, however distant;
   they can be created by a number of processes, including magical experiments
-  and the time-honoured practice of interplanar miscegenation.
+  and the time-honoured practise of interplanar miscegenation.
 
   Demigods look more or less like members of their mortal part's species, but
   have excellent attributes (Str, Int, Dex) and are extremely robust; they can
@@ -2024,7 +2024,7 @@ though usually excel at neither. They start with a book of spells, and usually
 with some way of defending themselves.
 
 Skalds
-  Formidable warriors in their own rights, Skalds practice a form of augmenting
+  Formidable warriors in their own rights, Skalds practise a form of augmenting
   battle magic that is either chanted or sung. Unique to the highlands in which
   they originate, these spells and formulae are second nature: they can either
   inspire greatness in themselves and their allies, or fear in the hearts of
@@ -2039,7 +2039,7 @@ Transmuters
   and a robe.
 
 Warpers
-  Warpers specialise in translocation magic, and are experts in traveling long
+  Warpers specialise in translocation magic, and are experts in travelling long
   distances and positioning themselves precisely and use this to their advantage
   in melee or missile combat. They start with a scroll of blinking, the Book of
   Spatial Translocations, some dispersal tomahawks, a simple weapon of their

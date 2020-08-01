@@ -29,7 +29,6 @@
 #include "makeitem.h"
 #include "mapdef.h"
 #include "message.h"
-#include "misc.h"
 #include "mon-death.h"
 #include "options.h"
 #include "orb-type.h"
@@ -508,7 +507,7 @@ static bool _make_book_randart(item_def &book)
     do
     {
         mprf(MSGCH_PROMPT, "Make book fixed [t]heme or fixed [l]evel? ");
-        type = toalower(getchk());
+        type = toalower(getch_ck());
     }
     while (type != 't' && type != 'l');
 
@@ -757,6 +756,14 @@ static void _forget_item(item_def &item)
     unset_ident_flags(item, ISFLAG_IDENT_MASK);
     item.flags &= ~(ISFLAG_SEEN | ISFLAG_HANDLED | ISFLAG_THROWN
                     | ISFLAG_DROPPED | ISFLAG_NOTED_ID | ISFLAG_NOTED_GET);
+    if (is_artefact(item) && item.props.exists(KNOWN_PROPS_KEY))
+    {
+        ASSERT(item.props.exists(KNOWN_PROPS_KEY));
+        CrawlVector &known = item.props[KNOWN_PROPS_KEY].get_vector();
+        ASSERT(known.size() == ART_PROPERTIES);
+        for (vec_size i = 0; i < ART_PROPERTIES; i++)
+            known[i] = static_cast<bool>(false);
+    }
 }
 
 void wizard_unidentify_pack()
@@ -914,16 +921,15 @@ static void _debug_acquirement_stats(FILE *ostat)
     {
         if (kbhit())
         {
-            getchk();
+            getch_ck();
             mpr("Stopping early due to keyboard input.");
             break;
         }
 
-        int item_index = NON_ITEM;
+        const int item_index = acquirement_create_item(type, AQ_WIZMODE, true,
+                you.pos());
 
-        if (!acquirement(type, AQ_WIZMODE, true, &item_index, true)
-            || item_index == NON_ITEM
-            || !mitm[item_index].defined())
+        if (item_index == NON_ITEM || !mitm[item_index].defined())
         {
             mpr("Acquirement failed, stopping early.");
             break;
@@ -1191,9 +1197,7 @@ static void _debug_acquirement_stats(FILE *ostat)
             "resistance",
             "positive energy",
             "archmagi",
-#if TAG_MAJOR_VERSION == 34
             "preservation",
-#endif
             "reflection",
             "spirit shield",
             "archery",
@@ -1201,7 +1205,10 @@ static void _debug_acquirement_stats(FILE *ostat)
             "jumping",
 #endif
             "repulsion",
+#if TAG_MAJOR_VERSION == 34
             "cloud immunity",
+#endif
+            "harm",
         };
 
         const int non_art = acq_calls - num_arts;
@@ -1386,7 +1393,7 @@ static void _debug_rap_stats(FILE *ostat)
     {
         if (kbhit())
         {
-            getchk();
+            getch_ck();
             mpr("Stopping early due to keyboard input.");
             break;
         }
@@ -1652,7 +1659,7 @@ void wizard_identify_all_items()
         object_class_type i = (object_class_type)ii;
         if (!item_type_has_ids(i))
             continue;
-        for (int j = 0; j < get_max_subtype(i); j++)
+        for (const auto j : all_item_subtypes(i))
             set_ident_type(i, j, true);
     }
 }
@@ -1671,7 +1678,7 @@ void wizard_unidentify_all_items()
         object_class_type i = (object_class_type)ii;
         if (!item_type_has_ids(i))
             continue;
-        for (int j = 0; j < get_max_subtype(i); j++)
+        for (const auto j : all_item_subtypes(i))
             set_ident_type(i, j, false);
     }
 }

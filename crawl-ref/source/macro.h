@@ -37,8 +37,7 @@ private:
     vector<bool> prev_pause_status;
 };
 
-int getchm(int (*rgetch)() = nullptr);       // keymaps applied (ie for prompts)
-int getchm(KeymapContext context, int (*rgetch)() = nullptr);
+int getchm(KeymapContext context = KMC_DEFAULT);
 
 int get_ch();
 
@@ -80,6 +79,21 @@ string get_userfunction(int key);
 
 void add_key_recorder(key_recorder* recorder);
 void remove_key_recorder(key_recorder* recorder);
+
+class key_recorder_raii
+{
+public:
+    key_recorder_raii(key_recorder* recorder) : m_recorder(recorder)
+    {
+        add_key_recorder(m_recorder);
+    }
+    ~key_recorder_raii()
+    {
+        remove_key_recorder(m_recorder);
+    }
+private:
+    key_recorder *m_recorder;
+};
 
 bool is_processing_macro();
 bool has_pending_input();

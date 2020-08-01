@@ -10,6 +10,15 @@ all-seeing. Devoted worshippers are allowed to grasp shreds of this knowledge
 and foresight, but be warned: to Ashenzari, power and blessing and curse are
 all the same thing.
 %%%%
+Ashenzari extra
+
+Ashenzari provides worshippers with a bounty of knowledge about their
+surroundings. Followers are able to glimpse the shape of the dungeon around
+them, and can sense portals to other realms. They can detect nearby items and
+traps, and can sense monsters and gain an indication of how dangerous they
+are. While equipped with cursed equipment, they can also identify on sight the
+properties of other items of that type that are found.
+%%%%
 Beogh
 
 Beogh is an evil deity, worshipped by the cave orcs native to the dungeon. Only
@@ -268,7 +277,7 @@ Plants and fungi will not attack Fedhas' worshippers without provocation.
 Worshippers may walk through plants or fungi, and even fire missiles or spells
 through them without causing harm. Fedhas grants powers to temporarily grow a
 menagerie of plant allies whose strength and duration increase with Invocations
-skill. Worshipers may grow a protective wall of briar patches as well as
+skill. Worshippers may grow a protective wall of briar patches as well as
 ballistomycetes that fire damaging spores whose explosions confuse living
 creatures. Devout followers can overgrow a stretch of solid terrain with a
 cluster of plant allies or even summon a mighty oklob plant.
@@ -316,10 +325,10 @@ Kikubaaqudgha powers
 
 Kikubaaqudgha will send corpses to followers, and enhance servants' necromantic
 prowess with gifts of spellbooks. Kikubaaqudgha will protect followers from the
-effects of necromantic miscasts, and may even shield them from unholy torment.
-Especially fervent followers may invoke torment themselves by sacrificing a
-cadaver, and Kikubaaqudgha will eventually allow followers to either receive
-the Necronomicon, or to have their weapon imbued with pain.
+effects of necromantic miscasts, death curses, and may even shield them from
+unholy torment. Especially fervent followers may invoke torment themselves by
+sacrificing a cadaver, and Kikubaaqudgha will eventually allow followers to
+either receive the Necronomicon, or to have their weapon imbued with pain.
 %%%%
 Lugonu powers
 
@@ -392,10 +401,10 @@ Ru's sacrificants increases in strength with more piety from more sacrifices.
 Sif Muna powers
 
 Sif Muna grants followers the ability to rapidly restore their magical energy,
-and to forget spells at will, so as to learn new ones. Worshipers can call upon
-the Loreminder to help cast any spell they've discovered, even if it's well
-beyond their current magical training. Over time, devout followers will receive
-spellbooks containing a vast range of spells.
+and to forget spells at will, so as to learn new ones. Worshippers can call
+upon the Loreminder to help cast any spell they've discovered, even if it's
+well beyond their current magical training. Over time, devout followers will
+receive spellbooks containing a vast range of spells.
 %%%%
 the Shining One powers
 
@@ -623,7 +632,7 @@ Uskayaw wrath
 Uskayaw's wrath turns the powers of the dance against the offender. The prude
 will find their foes going berserk and will be forced to helplessly watch as
 foes execute their own solos. When the dance is getting too slow, Uskayaw will
-cause noise to attract more revelers.
+cause noise to attract more revellers.
 %%%%
 Vehumet wrath
 
@@ -658,8 +667,8 @@ Wu Jian extra
   .......       .......
 
   .......       ...<lightred>@</lightred>... (*) <lightred>Whirlwind</lightred>: Move between two tiles adjacent to
-  ...<lightred>@</lightred>O..  -->  ....O.. an enemy to strike them lightly. The dizzying
-  .......       ....... motion pins monsters in place for one action.
+  ...<lightred>@</lightred>O..  -->  ....O.. an enemy to strike them lightly. Multiple adjacent
+  .......       ....... foes can be attacked simultaneously this way.
 
   ..#....       ..#.... (**) <lightred>Wall Jump</lightred>: Vault off a nearby wall and
   ..#<lightred>@</lightred>O..  -->  ..#.O<lightred>@</lightred>. strike enemies adjacent to the landing spot. Vaulting

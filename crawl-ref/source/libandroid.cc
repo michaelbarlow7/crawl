@@ -523,7 +523,7 @@ int get_number_of_cols(void)
     return (COLS);
 }
 
-void clrscr()
+void clrscr_sys()
 {
     textcolour(LIGHTGREY);
     textbackground(BLACK);

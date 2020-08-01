@@ -26,23 +26,20 @@
 #include "lookup-help.h"
 #include "macro.h"
 #include "message.h"
-#include "output.h"
 #include "prompt.h"
 #include "scroller.h"
 #include "showsymb.h"
-#include "sound.h"
 #include "state.h"
 #include "stringutil.h"
 #include "syscalls.h"
 #include "unicode.h"
 #include "version.h"
 #include "viewchar.h"
-#include "view.h"
 
 using namespace ui;
 
 #ifdef USE_TILE
- #include "tiledef-gui.h"
+ #include "rltiles/tiledef-gui.h"
 #endif
 
 static const char *features[] =
@@ -101,10 +98,7 @@ static string _get_version_features()
     {
         if (you.fully_seeded)
         {
-            result += make_stringf(
-                "Game seed: %" PRIu64 ", levelgen mode: %s",
-                crawl_state.seed, you.deterministic_levelgen
-                                                ? "deterministic" : "classic");
+            result += seed_description();
             if (Version::history_size() > 1)
                 result += " (seed may be affected by game upgrades)";
         }
@@ -224,7 +218,7 @@ static void _print_version()
     title->set_margin_for_sdl(0, 0, 0, 10);
     title_hbox->add_child(move(title));
 
-    title_hbox->align_cross = Widget::CENTER;
+    title_hbox->set_cross_alignment(Widget::CENTER);
     title_hbox->set_margin_for_crt(0, 0, 1, 0);
     title_hbox->set_margin_for_sdl(0, 0, 20, 0);
     vbox->add_child(move(title_hbox));
@@ -239,10 +233,9 @@ static void _print_version()
     auto popup = make_shared<ui::Popup>(vbox);
 
     bool done = false;
-    popup->on(Widget::slots.event, [&done, &scroller](wm_event ev) {
-        if (scroller->on_event(ev))
-            return true;
-        return done = ev.type == WME_KEYDOWN;
+    popup->on_keydown_event([&](const KeyEvent& ev) {
+        done = !scroller->on_event(ev);
+        return true;
     });
 
 #ifdef USE_TILE_WEB
@@ -251,13 +244,10 @@ static void _print_version()
     tiles.json_write_string("features", feats);
     tiles.json_write_string("changes", changes);
     tiles.push_ui_layout("version", 0);
+    popup->on_layout_pop([](){ tiles.pop_ui_layout(); });
 #endif
 
     ui::run_layout(move(popup), done);
-
-#ifdef USE_TILE_WEB
-    tiles.pop_ui_layout();
-#endif
 }
 
 void list_armour()
@@ -799,7 +789,7 @@ static void _add_formatted_keyhelp(column_composer &cols)
                          { CMD_USE_ABILITY });
     _add_command(cols, 0, CMD_CAST_SPELL, "cast spell, abort without targets", 2);
     _add_command(cols, 0, CMD_FORCE_CAST_SPELL, "cast spell, no matter what", 2);
-    _add_command(cols, 0, CMD_DISPLAY_SPELLS, "list all memorized spells", 2);
+    _add_command(cols, 0, CMD_DISPLAY_SPELLS, "list all memorised spells", 2);
     _add_command(cols, 0, CMD_MEMORISE_SPELL, "Memorise a spell from your library", 2);
 
     _add_insert_commands(cols, 0, 2, CMD_SHOUT,
@@ -1125,7 +1115,7 @@ static formatted_string _col_conv(void (*func)(column_composer &))
     for (const auto& line : cols.formatted_lines())
     {
         contents += line;
-        contents += formatted_string("\n");
+        contents += "\n";
     }
     contents.ops.pop_back();
     return contents;
@@ -1153,7 +1143,7 @@ static int _get_help_section(int section, formatted_string &header_out, formatte
             ASSERTM(fp, "Failed to open '%s'!", fname.c_str());
             while (fgets(buf, sizeof buf, fp))
             {
-                text += formatted_string(buf);
+                text += string(buf);
                 if (next_is_hotkey && (isaupper(buf[0]) || isadigit(buf[0])))
                 {
                     int hotkey = tolower_safe(buf[0]);

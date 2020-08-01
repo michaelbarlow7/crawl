@@ -191,6 +191,13 @@ static inline double pow(int x, double y) { return std::pow((double)x, y); }
 # define IMMUTABLE
 #endif
 
+// /usr/bin is not writable on OSX 10.11+ due to System Integrity Protection
+#ifdef TARGET_OS_MACOSX
+# define GDB_PATH "/usr/local/bin/gdb"
+#else
+# define GDB_PATH "/usr/bin/gdb"
+#endif
+
 
 // =========================================================================
 //  Defines for dgamelaunch-specific things.
@@ -400,6 +407,11 @@ static inline double pow(int x, double y) { return std::pow((double)x, y); }
 
 template < class T >
 static inline void UNUSED(const volatile T &)
+{
+}
+
+template <class... T>
+static inline void UNUSED(const volatile T &...)
 {
 }
 

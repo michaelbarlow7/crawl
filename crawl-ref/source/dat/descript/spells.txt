@@ -3,6 +3,11 @@ Abjuration spell
 
 Reduces the remaining duration of any nearby hostile summoned creatures.
 %%%%
+Absolute Zero spell
+
+Entirely removes the heat from the enemy nearest the caster, instantly
+freezing it into a block of solid ice.
+%%%%
 Acid Splash spell
 
 Spits a glob of acid at a nearby creature, covering it in corrosive slime
@@ -10,13 +15,19 @@ for a short time. It may also splash onto other nearby creatures on impact.
 %%%%
 Agony spell
 
+Cuts the resilience of an adjacent creature in half. This damage is never
+directly lethal.
+%%%%
+Agony Range spell
+
 Cuts the resilience of a target creature in half. This damage is never directly
 lethal.
 %%%%
 Airstrike spell
 
 Causes the air around a creature to twist itself into a whirling vortex of
-meteorological fury. It is especially effective against flying enemies.
+meteorological fury. It does more damage to targets surrounded by empty space.
+It is especially effective against flying enemies.
 %%%%
 Alistair's Intoxication spell
 
@@ -321,7 +332,10 @@ exploding.
 %%%%
 Conjure Flame spell
 
-Creates a blazing column of flame in a targeted empty location.
+Create a cloud of magically sustained fire at the caster's feet. The fire takes
+a moment to begin burning with vigor and in its fragile initial state is easily
+smothered by either the caster or a wandering monster. Re-casting the spell
+will bring the fire fully to life, but will burn the caster.
 %%%%
 Controlled Blink spell
 
@@ -338,8 +352,8 @@ affected creature appreciably easier to hit.
 Corpse Rot spell
 
 Rapidly accelerates the decomposition of any corpses lying around the caster,
-emitting in the process a foul miasmic vapour, which eats away at the life
-force of any creature it envelops.
+and gathers the foul miasmic vapour around the caster. The clouds eat away at
+the life force of any creature they envelop.
 %%%%
 Corrosive Bolt spell
 
@@ -363,10 +377,10 @@ Darkness spell
 
 Dims the light of the dungeon, reducing the range of vision.
 %%%%
-Dazzling Spray spell
+Dazzling Flash spell
 
-Fires a spread of scintillating energy bolts from the caster's fingertips. Any
-living creature they strike may be dazzled and left stumbling blindly.
+The caster erupts in a scintillating display of light. Any living creature
+nearby may be dazzled and left stumbling blindly.
 %%%%
 Death Channel spell
 
@@ -391,13 +405,6 @@ are already undead.
 Debugging Ray spell
 
 Fires a ray which does massive damage (1500 hp) and always hits.
-%%%%
-Deflect Missiles spell
-
-Protects the caster from all kinds of projectile attacks, making them
-significantly easier to dodge. It is highly effective against both
-single-target and penetrating attacks. Each time a missile is deflected the
-spell has a chance of expiring, with a lower chance of expiry at high power.
 %%%%
 Dig spell
 
@@ -427,6 +434,11 @@ the distance from the caster, being nearly certain when directly adjacent. It
 causes magical contamination when cast.
 %%%%
 Dispel Undead spell
+
+Harms an adjacent undead creature greatly by interfering with the forces
+binding it together.
+%%%%
+Dispel Undead Range spell
 
 Harms an undead creature greatly by interfering with the forces binding it
 together.
@@ -489,8 +501,6 @@ reserves. After the call ends, it cannot be issued again for a short time.
 %%%%
 Drain Life spell
 
-# Note: this description duplicates part of the Drain Life ability description.
-
 Drains the life force of any nearby creatures, healing the user depending on
 the damage dealt.
 %%%%
@@ -539,6 +549,15 @@ target will be unable to be put to sleep again for some time.
 Entropic Weave spell
 
 Corrodes the target, with no direct line of fire required.
+%%%%
+Eringya's Noxious Bog spell
+
+Causes the caster to release a torrent of sludge, which transforms the dungeon
+into a toxic bog in the caster's wake. The sludge damages and poisons all
+monsters, even those resistant to poison. The sludge is temporary, cannot
+replace deep water or lava, and cannot be sustained out of the caster's sight.
+Spellpower will increase both the duration of the torrent and how long the
+sludge lingers.
 %%%%
 Excruciating Wounds spell
 
@@ -594,6 +613,12 @@ Summons some of the lesser threats from one of the Lair of Beasts, the Snake
 Pit, the Spider Nest, the Swamp, the Shoals, the Orcish Mines, the Elven Halls,
 the Vaults, or the Crypt; the specific branch varies with the caster.
 %%%%
+Foxfire spell
+
+Conjures two balls of burning swamp gas adjacent to the caster. The balls will
+rapidly seek the nearest monster and burn them. They will dissipate harmlessly
+if unable to reach a target or if the caster swaps places with them.
+%%%%
 Freeze spell
 
 Freezes an adjacent creature, dealing damage that bypasses any armour the
@@ -602,6 +627,15 @@ target may have. This may temporarily slow cold-blooded creatures.
 Freezing Cloud spell
 
 Conjures up a large cloud of lethally cold vapour.
+%%%%
+Frozen Ramparts spell
+
+Encases surrounding walls with ice for a short time. Victims that wander near
+the icy walls will be damaged, and this may temporarily slow cold-blooded
+creatures. The damage dealt bypasses any armour the target may have. Each
+victim is only ever affected by one icy wall at a time.
+
+The caster and any allies can walk safely past icy walls.
 %%%%
 Fulminant Prism spell
 
@@ -647,7 +681,16 @@ out of view.
 %%%%
 Greater Servant of Makhleb spell
 
-<Greater Servant of Makhleb ability>
+Summons a major demon.
+%%%%
+%%%%
+Hailstorm spell
+
+Conjures a cannonade of hail. The peculiarities of the magic involved in
+creating the hail prevent the spell from hitting monsters adjacent to the
+caster. Due to the strong impact and cutting edges a significant portion of its
+damage bypasses cold resistance. However, creatures made of pure ice are
+immune.
 %%%%
 Haste Other spell
 
@@ -761,8 +804,9 @@ Releases a thick cloud of ink to obscure vision.
 %%%%
 Inner Flame spell
 
-Fills an enemy with an intense fire, to be explosively released upon death. The
-size of the explosion caused is dependent on the size of the target.
+Fills an enemy with an intense fire. This fire is released any time the target
+is hit, and explosively released upon death. The size of the explosion caused
+is dependent on the size of the target.
 %%%%
 Invisibility spell
 
@@ -795,18 +839,19 @@ and deals more damage per volley.
 %%%%
 Iskenderun's Mystic Blast spell
 
-Throws a crackling sphere of destructive energy. The sphere will sometimes
-explode on impact, and the chance of it doing so is higher if the sphere has
-traveled less distance.
+Detonates a crackling sphere of destructive energy. The explosion will hit all
+nearby monsters with physical force, knocking them back if damage is done.
 %%%%
 Leda's Liquefaction spell
 
 Liquefies the ground around the caster, making it difficult to move through.
-Any movement through liquefied ground will be slowed, and attempts to attack
+Any movement through liquefied ground will be slowed, and creatures stuck in
+the liquefied ground will be unable to fly. Attempts to attack the caster
 in melee may fail.
 
 The effect starts out with a radius depending on power, which will then shrink,
-eventually covering only the caster, before it times out.
+eventually covering only the caster, before it times out. Maintaining the
+connection to the ground slows the caster's movement, even if they are flying.
 %%%%
 Lee's Rapid Deconstruction spell
 
@@ -844,7 +889,7 @@ Fires a small bolt of magical energy which never misses.
 %%%%
 Major Destruction spell
 
-<Major Destruction ability>
+Shoots a random harmful beam or explosion at the targeted creature.
 %%%%
 Major Healing spell
 
@@ -1072,12 +1117,6 @@ Recall spell
 Recalls any friendly creatures on the same level to a position adjacent to the
 caster, over a short duration.
 %%%%
-Regeneration spell
-
-Reanimates parts of the caster's wounds. This unnatural act dramatically but
-temporarily increases the caster's health regeneration, while also speeding
-their metabolism.
-%%%%
 Repel Missiles spell
 
 Reduces the chance of projectile attacks striking the caster, making them
@@ -1126,11 +1165,10 @@ the caster from traversing them.
 %%%%
 Searing Ray spell
 
-Fires a continuous ray of arcane energy from the caster's hands. Though
-initially mild, so long as the caster maintains focus upon the spell and
-supplies it with magical power (by waiting in place and not taking any other
-actions), the ray will grow in strength until it becomes a surging bolt able to
-tear clean through the ranks of the caster's foes.
+Fires a continuous piercing ray of arcane energy from the caster's hands. So
+long as the caster maintains focus upon the spell and supplies it with magical
+power (by waiting in place and not taking any other actions), the ray will
+follow the caster's target if it should move.
 %%%%
 Searing Breath spell
 
@@ -1215,7 +1253,7 @@ Fires a sharp dart of hardened chitin.
 %%%%
 Smiting spell
 
-<Smiting ability>
+Smites any targeted enemy within sight, with no direct line of fire required.
 %%%%
 Song of Slaying spell
 
@@ -1282,6 +1320,12 @@ Sprint spell
 
 Causes the caster to move across terrain more rapidly for a short duration.
 %%%%
+Starburst spell
+
+Releases penetrating bolts of fire from the caster in every direction.
+The range of each bolt is decreased by one for every creature
+it strikes.
+%%%%
 Static Discharge spell
 
 Releases electrical charges against those next to the caster. These may arc to
@@ -1327,7 +1371,10 @@ begin to form again as normal.
 %%%%
 Sting spell
 
-Fires a magical dart of poison.
+Briefly transforms one of the caster's limbs into a long insectoid stinger,
+which lashes out at the target. The stinger's impact will always poison a
+susceptible target. Even resistant targets have a chance to be poisoned and
+immune monsters will be damaged by the physical impact of the stinger.
 %%%%
 Stone Arrow spell
 
@@ -1366,8 +1413,7 @@ dragons at once.
 %%%%
 Summon Drakes spell
 
-Summons multiple drakes, and possibly one true dragon of some kind, barring the
-most powerful ones.
+Summons multiple drakes, komodo dragons, and lindwurms.
 %%%%
 Summon Earth Elementals spell
 
@@ -1401,6 +1447,8 @@ Summon Greater Demon spell
 Calls forth one of the greater demons of Pandemonium to serve the caster. With
 high power, the summoned demon will be less likely to be initially hostile —
 but the strongest demons may eventually turn against their summoner regardless.
+Unlike other summons, greater demons will not be dismissed when attacked by
+their summoner - they will become hostile.
 %%%%
 Summon Guardian Golem spell
 

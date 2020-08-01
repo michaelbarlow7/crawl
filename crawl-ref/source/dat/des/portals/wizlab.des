@@ -982,9 +982,8 @@ ENDMAP
 NAME:       wizlab_iskenderun
 TAGS:       no_rotate patrolling
 MONS:       deep elf mage spells:magic_dart.11.wizard;\
-                                 force_lance.11.wizard;\
-                                 iskenderun's_battlesphere.22.wizard;\
-                                 iskenderun's_mystic_blast.11.wizard
+                                 force_lance.22.wizard;\
+                                 iskenderun's_battlesphere.22.wizard
 MONS:       statue hd:12 spells:orb_of_destruction.62.magical \
             tile:mons_statue_mage col:vehumet name:conjurer n_adj
 KMONS:      3DEF = purple draconian
@@ -1198,7 +1197,7 @@ LROCKCOL:   darkgrey
 ITEM:       potion of experience q:1
 ITEM:       manual of fighting / manual of armour / manual of spellcasting / \
             manual of staves / manual of fighting / manual of dodging
-ITEM:       book of enchantments
+ITEM:       book of hexes
 SHUFFLE:    defg
 LFLOORCOL:  white
 
@@ -1247,9 +1246,9 @@ MARKER:     ' = lua:props_marker {veto_dig="veto", \
                                   veto_shatter="veto" }
 MARKER:     c = lua:props_marker {veto_dig="veto", \
                                   veto_shatter="veto" }
-MARKER:     t = lua:props_marker {veto_dig="veto", \
-                                  veto_shatter="veto", \
-                                  veto_fire="veto" }
+MARKER:     t = lua:props_marker {veto_shatter="veto", \
+                                  veto_fire="veto", \
+                                  veto_tornado="veto" }
 :           wizlab_setup(_G)
 :           set_border_fill_type("tree")
 :           set_random_mon_list([[shadow w:6 / flayed ghost w:2 / hungry ghost w:2 / ]]
@@ -1510,7 +1509,7 @@ MARKER:     ! = lua:fog_machine { \
 # player complete the rest of the map.
 ITEM:       potion of haste / potion of resistance w:5 / any potion w:20 \
             / scroll of silence w:5 / scroll of fog w:5 / any scroll w:20
-ITEM:       scarf ego:cloud_immunity / book of clouds / fan of gales \
+ITEM:       scarf ego:repulsion / book of clouds / wand of clouds \
             / staff of air
 # Main loot, including some thematic items that are good even if you don't care
 # about flight.
@@ -1758,12 +1757,10 @@ ENDMAP
 
 NAME:       wizlab_lehudib
 KPROP:      ` = no_tele_into
-
 : item(dgn.loot_scrolls .. " / " .. dgn.loot_potions)
 ITEM:       potion of mutation
-ITEM:       any randart jewellery w:60 / cloak good_item / scarf good_item \
-            / helmet good_item / hat good_item / gloves good_item \
-            / pair of boots good_item
+# Equall chance between randart jewellery and good aux armour.
+: item("any randart jewellery w:60" .. " / " .. dgn.good_aux_armour)
 ITEM:       randbook owner:Lehudib disc:earth disc2:transmutation \
                      spells:lehudib's_crystal_spear \
             / randbook owner:Lehudib disc:earth disc2:translocation \

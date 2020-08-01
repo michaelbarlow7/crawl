@@ -30,13 +30,11 @@
 #include "dgn-overview.h"
 #include "english.h"
 #include "env.h"
-#include "fight.h"
 #include "files.h"
 #include "food.h"
 #include "format.h"
 #include "god-abil.h"
 #include "god-passive.h"
-#include "god-prayer.h"
 #include "hints.h"
 #include "item-name.h"
 #include "item-prop.h"
@@ -216,15 +214,12 @@ static inline bool _is_safe_cloud(const coord_def& c)
 static inline int _feature_traverse_cost(dungeon_feature_type feature)
 {
     if (feat_is_closed_door(feature)
-        // Higher cost for shallow water if species doesn't like water or if
-        // they are merfolk, since those will prefer to avoid melding their
-        // boots during travel.
-        || feature == DNGN_SHALLOW_WATER
-           && (!player_likes_water(true) || you.species == SP_MERFOLK))
+        // Higher cost for shallow water if species doesn't like water
+        || feature == DNGN_SHALLOW_WATER && (!player_likes_water(true)))
     {
         return 2;
     }
-    else if (feat_is_trap(feature))
+    else if (feat_is_trap(feature) && feature != DNGN_TRAP_SHAFT)
         return 3;
 
     return 1;
@@ -258,6 +253,10 @@ bool feat_is_traversable_now(dungeon_feature_type grid, bool try_fallback)
 {
     if (!ignore_player_traversability)
     {
+        // Don't auto travel through toxic bogs
+        if (grid == DNGN_TOXIC_BOG)
+            return false;
+
         // If the feature is in travel_avoid_terrain, respect that.
         if (forbidden_terrain[grid])
             return false;
@@ -268,6 +267,10 @@ bool feat_is_traversable_now(dungeon_feature_type grid, bool try_fallback)
         {
             return true;
         }
+
+        // The player can safely walk over shafts.
+        if (grid == DNGN_TRAP_SHAFT)
+            return true;
 
         // Permanently flying players can cross most hostile terrain.
         if (grid == DNGN_DEEP_WATER || grid == DNGN_LAVA)
@@ -284,7 +287,7 @@ bool feat_is_traversable(dungeon_feature_type feat, bool try_fallback)
     if (feat_is_trap(feat) && feat != DNGN_PASSAGE_OF_GOLUBRIA)
     {
         if (ignore_player_traversability)
-            return !(feat == DNGN_TRAP_SHAFT || feat == DNGN_TRAP_TELEPORT);
+            return !(feat == DNGN_TRAP_SHAFT || feat == DNGN_TRAP_TELEPORT || feat == DNGN_TRAP_TELEPORT_PERMANENT);
         return false;
     }
 #if TAG_MAJOR_VERSION == 34
@@ -861,7 +864,7 @@ static command_type _get_non_move_command()
     if (level_target == curr)
         return CMD_NO_CMD;
 
-    // If we we're not at our running position and we're not traveled to a
+    // If we we're not at our running position and we're not travelled to a
     // transporter, simply stop running.
     if (fell_short && grd(you.pos()) != DNGN_TRANSPORTER)
         return CMD_NO_CMD;
@@ -1252,7 +1255,7 @@ coord_def travel_pathfind::pathfind(run_mode_type rmode, bool fallback_explore)
     // How many points we'll consider next iteration.
     next_iter_points = 0;
 
-    // How far we've traveled from (start_x, start_y), in moves (a diagonal move
+    // How far we've travelled from (start_x, start_y), in moves (a diagonal move
     // is no longer than an orthogonal move).
     traveled_distance = 1;
 
@@ -1490,7 +1493,7 @@ bool travel_pathfind::path_flood(const coord_def &c, const coord_def &dc)
 
                 if (need_for_greed && Options.explore_item_greed > 0)
                 {
-                    // Penalize distance to favor item pickup
+                    // Penalize distance to favour item pickup
                     dist += Options.explore_item_greed;
                 }
 
@@ -1498,7 +1501,7 @@ bool travel_pathfind::path_flood(const coord_def &c, const coord_def &dc)
                 {
                     dist += Options.explore_wall_bias * 4;
 
-                    // Favor squares directly adjacent to walls
+                    // Favour squares directly adjacent to walls
                     for (int dir = 0; dir < 8; dir += 2)
                     {
                         const coord_def ddc = dc + Compass[dir];
@@ -1518,7 +1521,7 @@ bool travel_pathfind::path_flood(const coord_def &c, const coord_def &dc)
         }
 
         // Short-circuit if we can. If traveled_distance (the current
-        // distance from the center of the floodfill) is greater
+        // distance from the centre of the floodfill) is greater
         // than the adjusted distance to the nearest greedy explore
         // target, we have a target. Note the adjusted distance is
         // the distance with explore_item_greed applied (if
@@ -1833,8 +1836,7 @@ void find_travel_pos(const coord_def& youpos,
 
 extern map<branch_type, set<level_id> > stair_level;
 
-static void _find_parent_branch(branch_type br, int depth,
-                                branch_type *pb, int *pd)
+static void _find_parent_branch(branch_type br, branch_type *pb, int *pd)
 {
     *pb = parent_branch(br);   // Check depth before using *pb.
 
@@ -1874,7 +1876,7 @@ static void _trackback(vector<level_id> &vec, branch_type branch, int subdepth)
     {
         branch_type pb;
         int pd;
-        _find_parent_branch(branch, subdepth, &pb, &pd);
+        _find_parent_branch(branch, &pb, &pd);
         if (pd)
             _trackback(vec, pb, pd);
     }
@@ -1932,8 +1934,7 @@ int level_distance(level_id first, level_id second)
     {
         distance += first.depth;
 
-        _find_parent_branch(first.branch, first.depth,
-                            &first.branch, &first.depth);
+        _find_parent_branch(first.branch, &first.branch, &first.depth);
         if (!first.depth)
             return -1;
     }
@@ -2004,8 +2005,7 @@ static int _get_nearest_level_depth(uint8_t branch)
     level_id id = level_id::current();
     do
     {
-        _find_parent_branch(id.branch, id.depth,
-                            &id.branch, &id.depth);
+        _find_parent_branch(id.branch, &id.branch, &id.depth);
         if (id.depth && id.branch == branch)
         {
             depth = id.depth;
@@ -2353,8 +2353,7 @@ level_id find_up_level(level_id curr, bool up_branch)
         if (curr.branch != BRANCH_DUNGEON && curr.branch != root_branch)
         {
             level_id parent;
-            _find_parent_branch(curr.branch, curr.depth,
-                                &parent.branch, &parent.depth);
+            _find_parent_branch(curr.branch, &parent.branch, &parent.depth);
             if (parent.depth > 0)
                 return parent;
             else if (curr.branch == BRANCH_VESTIBULE)
@@ -2783,7 +2782,7 @@ static int _target_distance_from(const coord_def &pos)
  * populated with a floodout call to find_travel_pos starting from the player's
  * location.
  *
- * This function has undefined behavior when the target position is not
+ * This function has undefined behaviour when the target position is not
  * traversable.
  */
 static int _find_transtravel_stair(const level_id &cur,
@@ -3042,7 +3041,7 @@ static bool _find_transtravel_square(const level_pos &target, bool verbose)
 
     // either off-level, or traversable and on-level
     // TODO: actually check this when the square is off-level? The current
-    // behavior is that it will go to the level and then fail.
+    // behaviour is that it will go to the level and then fail.
     const bool maybe_traversable = (target.id != current
                                     || (in_bounds(target.pos)
                                         && feat_is_traversable_now(env.map_knowledge(target.pos).feat())));
@@ -3054,7 +3053,7 @@ static bool _find_transtravel_square(const level_pos &target, bool verbose)
                                 best_level_distance, best_stair);
         dprf("found stair at %d,%d", best_stair.x, best_stair.y);
     }
-    // even without _find_transtravel_stair called, the values are initalized
+    // even without _find_transtravel_stair called, the values are initialized
     // enough for the rest of this to go forward.
 
     if (best_stair.x != -1 && best_stair.y != -1)
@@ -4157,9 +4156,7 @@ bool TravelCache::is_known_branch(uint8_t branch) const
 
 void TravelCache::save(writer& outf) const
 {
-    // Travel cache version information
-    marshallUByte(outf, TAG_MAJOR_VERSION);
-    marshallUByte(outf, TAG_MINOR_VERSION);
+    write_save_version(outf, save_version::current());
 
     // Write level count.
     marshallShort(outf, levels.size());
@@ -4179,8 +4176,8 @@ void TravelCache::load(reader& inf, int minorVersion)
     levels.clear();
 
     // Check version. If not compatible, we just ignore the file altogether.
-    int major = unmarshallUByte(inf),
-        minor = unmarshallUByte(inf);
+    const auto version = get_save_version(inf);
+    const auto major = version.major, minor = version.minor;
     if (major != TAG_MAJOR_VERSION || minor > TAG_MINOR_VERSION)
         return;
 
@@ -4527,6 +4524,7 @@ string explore_discoveries::cleaned_feature_description(
     const coord_def &pos) const
 {
     string s = lowercase_first(feature_description_at(pos));
+    // TODO: can feature_description_at()'s return value still end in '.'?
     if (s.length() && s[s.length() - 1] == '.')
         s.erase(s.length() - 1);
     if (starts_with(s, "a "))
@@ -4657,7 +4655,7 @@ void explore_discoveries::found_feature(const coord_def &pos,
         if (!feat_stop.empty())
         {
             string desc = lowercase_first(feature_description_at(pos));
-            marked_feats.push_back(desc);
+            marked_feats.push_back(desc + ".");
             return;
         }
     }

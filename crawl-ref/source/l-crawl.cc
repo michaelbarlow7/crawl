@@ -11,6 +11,7 @@
 #include "cluautil.h"
 #include "command.h"
 #include "delay.h"
+#include "directn.h"
 #include "dlua.h"
 #include "end.h"
 #include "english.h"
@@ -132,6 +133,8 @@ LUAFN(crawl_dpr)
     const char *text = luaL_checkstring(ls, 1);
     if (crawl_state.io_inited)
         dprf("%s", text);
+#else
+    UNUSED(ls);
 #endif
     return 0;
 }
@@ -208,13 +211,34 @@ static int crawl_c_input_line(lua_State *ls)
     return 1;
 }
 
+/*** Prompt the user to choose a location via the targeting screen.
+ * This is useful for scripts that require a user-selected target. For example,
+ * one could imagine a "mark dangerous monster" script that would place a large
+ * exclusion around a user-chosen monster that would then be deleted if the
+ * monster moved or died. This function could be used for the user to select
+ * a target monster.
+ * @treturn int, int the relative position of the chosen location to the user
+ * @function get_target
+ */
+LUAFN(crawl_get_target) {
+    coord_def out;
+
+    if (!get_look_position(&out))
+        return 0;
+
+    lua_pushinteger(ls, out.x - you.position.x);
+    lua_pushinteger(ls, out.y - you.position.y);
+
+    return 2;
+}
+
 /*** Get input key (combo).
  * @treturn int the key (combo) input
  * @function getch */
 LUARET1(crawl_getch, number, getchm())
 /*** Check for pending input.
  * @return int 1 if there is, 0 otherwise
- * function kbhit
+ * @function kbhit
  */
 LUARET1(crawl_kbhit, number, kbhit())
 /*** Flush the input buffer (typeahead).
@@ -696,8 +720,11 @@ static int crawl_regex_find(lua_State *ls)
 {
     text_pattern **pattern =
             clua_get_userdata< text_pattern* >(ls, REGEX_METATABLE);
-    if (!pattern)
+    if (!pattern || !*pattern)
+    {
+        luaL_argerror(ls, 1, "Invalid regex object");
         return 0;
+    }
 
     const char *text = luaL_checkstring(ls, -1);
     if (!text)
@@ -719,7 +746,15 @@ static int crawl_regex_equals(lua_State *ls)
             clua_get_userdata< text_pattern* >(ls, REGEX_METATABLE);
     text_pattern **arg =
             clua_get_userdata< text_pattern* >(ls, REGEX_METATABLE, 2);
-    lua_pushboolean(ls, pattern && arg && **pattern == **arg);
+
+    if (!pattern || !*pattern || !arg || !*arg)
+    {
+        // TODO: explain which one
+        luaL_error(ls, "Invalid regex object");
+        return 0;
+    }
+
+    lua_pushboolean(ls, **pattern == **arg);
     return 1;
 }
 static const luaL_reg crawl_regex_ops[] =
@@ -767,8 +802,11 @@ static int crawl_messf_matches(lua_State *ls)
 {
     message_filter **mf =
             clua_get_userdata< message_filter* >(ls, MESSF_METATABLE);
-    if (!mf)
+    if (!mf || !*mf)
+    {
+        luaL_argerror(ls, 1, "Invalid message filter object");
         return 0;
+    }
 
     const char *pattern = luaL_checkstring(ls, 2);
     int ch = luaL_safe_checkint(ls, 3);
@@ -793,7 +831,13 @@ static int crawl_messf_equals(lua_State *ls)
             clua_get_userdata< message_filter* >(ls, MESSF_METATABLE);
     message_filter **arg =
             clua_get_userdata< message_filter* >(ls, MESSF_METATABLE, 2);
-    lua_pushboolean(ls, mf && arg && **mf == **arg);
+    if (!mf || !*mf || !arg || !*arg)
+    {
+        // TODO: explain which one
+        luaL_error(ls, "Invalid message filter object");
+        return 0;
+    }
+    lua_pushboolean(ls, **mf == **arg);
     return 1;
 }
 
@@ -870,8 +914,8 @@ static int crawl_string_compare(lua_State *ls)
  *  - "plain": just give the name
  *  - "the": use the definite article
  *  - "a": use the indefinite article
- *  - "your": use the second person posessive
- *  - "its": use the third person posessive
+ *  - "your": use the second person possessive
+ *  - "its": use the third person possessive
  *  - "worn": how it is equipped
  *  - "inv": describe something carried
  *  - "none": return the empty string
@@ -892,7 +936,7 @@ static int _crawl_grammar(lua_State *ls)
     description_level_type ndesc = DESC_PLAIN;
     if (lua_isstring(ls, 2))
         ndesc = description_type_by_name(lua_tostring(ls, 2));
-    PLUARET(string, thing_do_grammar(ndesc, false, false, luaL_checkstring(ls, 1)).c_str()); }
+    PLUARET(string, thing_do_grammar(ndesc, luaL_checkstring(ls, 1)).c_str()); }
 
 /*** Correctly attach the article 'a'.
  * @tparam string s
@@ -1383,6 +1427,7 @@ static const struct luaL_reg crawl_clib[] =
 
     { "redraw_screen",      crawl_redraw_screen },
     { "c_input_line",       crawl_c_input_line},
+    { "get_target",         crawl_get_target },
     { "getch",              crawl_getch },
     { "yesno",              crawl_yesno },
     { "yesnoquit",          crawl_yesnoquit },
@@ -1475,11 +1520,7 @@ LUAFN(_crawl_milestone)
  * @within dlua
  * @function redraw_view
  */
-LUAFN(_crawl_redraw_view)
-{
-    viewwindow();
-    return 0;
-}
+LUAWRAP(_crawl_redraw_view, viewwindow())
 
 /*** Redraw the player stats.
  * You probably want @{redraw_screen} unless you specifically want only the
@@ -1489,6 +1530,8 @@ LUAFN(_crawl_redraw_view)
  */
 LUAFN(_crawl_redraw_stats)
 {
+    UNUSED(ls);
+
     you.wield_change         = true;
     you.redraw_title         = true;
     you.redraw_quiver        = true;
@@ -1529,7 +1572,7 @@ LUAFN(_crawl_millis)
 #endif
     return 1;
 }
-static string _crawl_make_name(lua_State *ls)
+static string _crawl_make_name(lua_State */*ls*/)
 {
     // A quick wrapper around itemname:make_name.
     return make_name();

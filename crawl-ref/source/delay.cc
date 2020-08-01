@@ -13,7 +13,6 @@
 #include "ability.h"
 #include "areas.h"
 #include "artefact.h"
-#include "attitude-change.h"
 #include "bloodspatter.h"
 #include "butcher.h"
 #include "clua.h"
@@ -24,18 +23,12 @@
 #include "directn.h"
 #include "dungeon.h"
 #include "english.h"
-#include "enum.h"
 #include "env.h"
-#include "exclude.h"
-#include "exercise.h"
 #include "fineff.h"
 #include "food.h"
 #include "fprop.h"
-#include "god-abil.h"
 #include "god-companions.h"
-#include "god-conduct.h"
 #include "god-passive.h"
-#include "god-prayer.h"
 #include "god-wrath.h"
 #include "hints.h"
 #include "invent.h"
@@ -62,14 +55,11 @@
 #include "prompt.h"
 #include "random.h"
 #include "religion.h"
-#include "rot.h"
 #include "shout.h"
 #include "sound.h"
-#include "spl-other.h"
 #include "spl-selfench.h"
 #include "spl-util.h"
 #include "stairs.h"
-#include "stash.h"
 #include "state.h"
 #include "stringutil.h"
 #include "teleport.h"
@@ -77,7 +67,6 @@
 #include "transform.h"
 #include "traps.h"
 #include "travel.h"
-#include "view.h"
 #include "xom.h"
 
 int interrupt_block::interrupts_blocked = 0;
@@ -360,11 +349,11 @@ bool player_stair_delay()
 }
 
 /**
- * Is the player currently in the middle of memorizing a spell?
+ * Is the player currently in the middle of memorising a spell?
  *
- * @param spell     A specific spell, or -1 to check if we're memorizing any
+ * @param spell     A specific spell, or -1 to check if we're memorising any
  *                  spell at all.
- * @return          Whether the player is currently memorizing the given type
+ * @return          Whether the player is currently memorising the given type
  *                  of spell.
  */
 bool already_learning_spell(int spell)
@@ -455,7 +444,6 @@ static bool _auto_eat()
            && Options.autopickup_on > 0
            && (player_likes_chunks(true)
                || !you.gourmand()
-               || you.duration[DUR_GOURMAND] >= GOURMAND_MAX / 4
                || you.hunger_state < HS_SATIATED);
 }
 

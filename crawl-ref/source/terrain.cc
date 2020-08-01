@@ -12,6 +12,7 @@
 #include <sstream>
 
 #include "areas.h"
+#include "attack.h"
 #include "branch.h"
 #include "cloud.h"
 #include "coord.h"
@@ -29,10 +30,9 @@
 #include "items.h"
 #include "level-state-type.h"
 #include "libutil.h"
-#include "map-knowledge.h"
 #include "mapmark.h"
 #include "message.h"
-#include "misc.h"
+#include "mon-behv.h"
 #include "mon-place.h"
 #include "mon-poly.h"
 #include "mon-util.h"
@@ -500,7 +500,8 @@ bool feat_is_water(dungeon_feature_type feat)
 {
     return feat == DNGN_SHALLOW_WATER
            || feat == DNGN_DEEP_WATER
-           || feat == DNGN_OPEN_SEA;
+           || feat == DNGN_OPEN_SEA
+           || feat == DNGN_TOXIC_BOG;
 }
 
 /** Does this feature have enough water to keep water-only monsters alive in it?
@@ -887,8 +888,21 @@ void slime_wall_damage(actor* act, int delay)
     }
 }
 
+int count_adjacent_icy_walls(const coord_def &pos)
+{
+    int count = 0;
+    for (adjacent_iterator ai(pos); ai; ++ai)
+        if (is_icecovered(*ai))
+            count++;
+
+    return count;
+}
+
 void feat_splash_noise(dungeon_feature_type feat)
 {
+    if (crawl_state.generating_level)
+        return;
+
     switch (feat)
     {
     case DNGN_SHALLOW_WATER:
@@ -1147,15 +1161,10 @@ static void _dgn_check_terrain_items(const coord_def &pos, bool preserve_items)
     }
 }
 
-static bool _dgn_check_terrain_monsters(const coord_def &pos)
+static void _dgn_check_terrain_monsters(const coord_def &pos)
 {
     if (monster* m = monster_at(pos))
-    {
         m->apply_location_effects(pos);
-        return true;
-    }
-    else
-        return false;
 }
 
 // Clear blood or off of terrain that shouldn't have it. Also clear of blood if
@@ -1224,8 +1233,17 @@ void dungeon_terrain_changed(const coord_def &pos,
 {
     if (grd(pos) == nfeat)
         return;
-    if (_dgn_check_terrain_monsters(pos) && feat_is_wall(nfeat))
+    if (feat_is_wall(nfeat) && monster_at(pos))
         return;
+    if (feat_is_trap(nfeat) && env.trap.find(pos) == env.trap.end())
+    {
+        // TODO: create a trap_def in env for this case?
+        mprf(MSGCH_ERROR,
+            "Attempting to change terrain to a trap without a corresponding"
+            " trap_def!");
+        nfeat = DNGN_FLOOR;
+    }
+
 
     _dgn_check_terrain_covering(pos, grd(pos), nfeat);
 
@@ -1251,6 +1269,7 @@ void dungeon_terrain_changed(const coord_def &pos,
     }
 
     _dgn_check_terrain_items(pos, preserve_items);
+    _dgn_check_terrain_monsters(pos);
     if (!wizmode)
         _dgn_check_terrain_player(pos);
     if (!temporary && feature_mimic_at(pos))
@@ -1268,8 +1287,7 @@ static void _announce_swap_real(coord_def orig_pos, coord_def dest_pos)
 
     const string orig_name =
         feature_description_at(dest_pos, false,
-                            you.see_cell(orig_pos) ? DESC_THE : DESC_A,
-                            false);
+                            you.see_cell(orig_pos) ? DESC_THE : DESC_A);
 
     string prep = feat_preposition(orig_feat, false);
 
@@ -1631,27 +1649,7 @@ void fall_into_a_pool(dungeon_feature_type terrain)
          (terrain == DNGN_DEEP_WATER) ? "water"
                                       : "programming rift");
     // included in default force_more_message
-
-    clear_messages();
-    if (terrain == DNGN_LAVA)
-    {
-        if (you.species == SP_MUMMY)
-            mpr("You burn to ash...");
-        else
-            mpr("The lava burns you to a cinder!");
-        ouch(INSTANT_DEATH, KILLED_BY_LAVA);
-    }
-    else if (terrain == DNGN_DEEP_WATER)
-    {
-        mpr("You sink like a stone!");
-
-        if (you.is_nonliving() || you.undead_state())
-            mpr("You fall apart...");
-        else
-            mpr("You drown...");
-
-        ouch(INSTANT_DEATH, KILLED_BY_WATER);
-    }
+    enable_emergency_flight();
 }
 
 typedef map<string, dungeon_feature_type> feat_desc_map;
@@ -1674,13 +1672,10 @@ dungeon_feature_type feat_by_desc(string desc)
 {
     lowercase(desc);
 
-    if (desc[desc.size() - 1] != '.')
-        desc += ".";
-
 #if TAG_MAJOR_VERSION == 34
     // hard-coded because all the dry fountain variants match this description,
     // and they have a lower enum value, so the first is incorrectly returned
-    if (desc == "a dry fountain.")
+    if (desc == "a dry fountain")
         return DNGN_DRY_FOUNTAIN;
 #endif
 
@@ -1855,68 +1850,6 @@ void destroy_wall(const coord_def& p)
     env.level_map_mask(p) |= MMT_TURNED_TO_FLOOR;
 }
 
-/**
- * Check if an actor can cling to a cell.
- *
- * Wall clinging is done only on orthogonal walls.
- *
- * @param pos The coordinates of the cell.
- *
- * @return Whether the cell is clingable.
- */
-bool cell_is_clingable(const coord_def pos)
-{
-    for (orth_adjacent_iterator ai(pos); ai; ++ai)
-        if (feat_is_wall(env.grid(*ai)) || feat_is_closed_door(env.grid(*ai)))
-            return true;
-
-    return false;
-}
-
-/**
- * Check if an actor can cling from a cell to another.
- *
- * "clinging" to a wall means being orthogonally (left, right, up, down) next
- * to it. A spider can cling to several squares. A move is allowed if the
- * spider clings to an adjacent wall square or the same wall square before and
- * after moving. Being over floor or shallow water and next to a wall counts as
- * clinging to that wall (no further action needed).
- *
- * Example:
- * ~ = deep water
- * * = deep water the spider can reach
- *
- *  #####
- *  ~~#~~
- *  ~~~*~
- *  **s#*
- *  #####
- *
- * Look at Mantis #2704 for more examples.
- *
- * @param from The coordinates of the starting position.
- * @param to The coordinates of the destination.
- *
- * @return Whether it is possible to cling from one cell to another.
- */
-bool cell_can_cling_to(const coord_def& from, const coord_def to)
-{
-    if (!in_bounds(to))
-        return false;
-
-    for (orth_adjacent_iterator ai(from); ai; ++ai)
-    {
-        if (feat_is_wall(env.grid(*ai)))
-        {
-            for (orth_adjacent_iterator ai2(to, false); ai2; ++ai2)
-                if (feat_is_wall(env.grid(*ai2)) && distance2(*ai, *ai2) <= 1)
-                    return true;
-        }
-    }
-
-        return false;
-}
-
 const char* feat_type_name(dungeon_feature_type feat)
 {
     if (feat_is_door(feat))
@@ -1985,10 +1918,6 @@ void set_terrain_changed(const coord_def p)
     dungeon_events.fire_position_event(DET_FEAT_CHANGE, p);
 
     los_terrain_changed(p);
-
-    for (orth_adjacent_iterator ai(p); ai; ++ai)
-        if (actor *act = actor_at(*ai))
-            act->check_clinging(false, feat_is_door(grd(p)));
 }
 
 /**
@@ -2183,6 +2112,8 @@ bool revert_terrain_change(coord_def pos, terrain_change_type ctype)
 
     if (newfeat != DNGN_UNSEEN)
     {
+        if (ctype == TERRAIN_CHANGE_BOG)
+            env.map_knowledge(pos).set_feature(newfeat, colour);
         dungeon_terrain_changed(pos, newfeat, false, true);
         env.grid_colours(pos) = colour;
         return true;
@@ -2418,4 +2349,42 @@ void dgn_open_door(const coord_def &dest)
     }
     else
         grd(dest) = DNGN_OPEN_DOOR;
+}
+
+void ice_wall_damage(monster &mons, int delay)
+{
+    if (!you.duration[DUR_FROZEN_RAMPARTS]
+        || !you.see_cell_no_trans(mons.pos())
+        || mons_aligned(&you, &mons))
+    {
+        return;
+    }
+
+    const int walls = count_adjacent_icy_walls(mons.pos());
+    if (!walls)
+        return;
+
+    const int pow = calc_spell_power(SPELL_FROZEN_RAMPARTS, true);
+    const int orig_dam = div_rand_round(
+            delay * roll_dice(1, 2 + div_rand_round(pow, 5)), BASELINE_DELAY);
+
+    bolt beam;
+    beam.flavour = BEAM_COLD;
+    beam.thrower = KILL_YOU;
+    int dam = mons_adjust_flavoured(&mons, beam, orig_dam);
+    mprf("The wall freezes %s%s%s",
+         you.can_see(mons) ? mons.name(DESC_THE).c_str() : "something",
+         dam ? "" : " but do no damage",
+         attack_strength_punctuation(dam).c_str());
+
+    if (dam > 0)
+    {
+        mons.hurt(&you, dam, BEAM_COLD);
+
+        if (mons.alive())
+        {
+            behaviour_event(&mons, ME_WHACK, &you);
+            mons.expose_to_element(BEAM_COLD, orig_dam);
+        }
+    }
 }

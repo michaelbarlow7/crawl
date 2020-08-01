@@ -2,7 +2,6 @@
 
 #include "ng-setup.h"
 
-#include "ability.h"
 #include "adjust.h"
 #include "dungeon.h"
 #include "end.h"
@@ -136,7 +135,7 @@ item_def* newgame_make_item(object_class_type base,
         if (item.sub_type == ARM_HELMET || item.sub_type == ARM_HAT)
             item.sub_type = ARM_HAT;
         else if (item.sub_type == ARM_BUCKLER)
-            item.sub_type = ARM_SHIELD;
+            item.sub_type = ARM_KITE_SHIELD;
         else if (is_shield(item))
             item.sub_type = ARM_BUCKLER;
         else
@@ -361,14 +360,12 @@ static void _give_basic_knowledge()
     // Removed item types are handled in _set_removed_types_as_identified.
 }
 
-static void _setup_normal_game();
-static void _setup_tutorial(const newgame_def& ng);
-static void _setup_sprint(const newgame_def& ng);
-static void _setup_hints();
-static void _setup_generic(const newgame_def& ng);
+static void _setup_generic(const newgame_def& ng,
+                          bool normal_dungeon_setup /*for catch2-tests*/);
 
 // Initialise a game based on the choice stored in ng.
-void setup_game(const newgame_def& ng)
+void setup_game(const newgame_def& ng,
+                bool normal_dungeon_setup /*for catch2-tests */)
 {
     crawl_state.type = ng.type; // by default
     if (Options.seed_from_rc && ng.type != GAME_TYPE_CUSTOM_SEED)
@@ -395,16 +392,11 @@ void setup_game(const newgame_def& ng)
     {
     case GAME_TYPE_NORMAL:
     case GAME_TYPE_CUSTOM_SEED:
-        _setup_normal_game();
-        break;
     case GAME_TYPE_TUTORIAL:
-        _setup_tutorial(ng);
-        break;
     case GAME_TYPE_SPRINT:
-        _setup_sprint(ng);
         break;
     case GAME_TYPE_HINTS:
-        _setup_hints();
+        init_hints();
         break;
     case GAME_TYPE_ARENA:
     default:
@@ -412,39 +404,7 @@ void setup_game(const newgame_def& ng)
         end(-1);
     }
 
-    _setup_generic(ng);
-}
-
-/**
- * Special steps that normal game needs;
- */
-static void _setup_normal_game()
-{
-    make_hungry(0, true);
-}
-
-/**
- * Special steps that tutorial game needs;
- */
-static void _setup_tutorial(const newgame_def& ng)
-{
-    make_hungry(0, true);
-}
-
-/**
- * Special steps that sprint needs;
- */
-static void _setup_sprint(const newgame_def& ng)
-{
-    // nothing currently
-}
-
-/**
- * Special steps that hints mode needs;
- */
-static void _setup_hints()
-{
-    init_hints();
+    _setup_generic(ng, normal_dungeon_setup);
 }
 
 static void _free_up_slot(char letter)
@@ -470,7 +430,8 @@ void initial_dungeon_setup()
     initialise_item_descriptions();
 }
 
-static void _setup_generic(const newgame_def& ng)
+static void _setup_generic(const newgame_def& ng,
+                           bool normal_dungeon_setup /*for catch2-tests*/)
 {
     rng::reset(); // initialize rng from Options.seed
     _init_player();
@@ -581,7 +542,8 @@ static void _setup_generic(const newgame_def& ng)
     set_hp(you.hp_max);
     set_mp(you.max_magic_points);
 
-    initial_dungeon_setup();
+    if (normal_dungeon_setup)
+        initial_dungeon_setup();
 
     // Generate the second name of Jiyva
     fix_up_jiyva_name();

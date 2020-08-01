@@ -16,11 +16,9 @@
 #include "dgn-overview.h"
 #include "dungeon.h"
 #include "files.h"
-#include "items.h"
 #include "libutil.h"
 #include "maps.h"
 #include "message.h"
-#include "misc.h"
 #include "place.h"
 #include "prompt.h"
 #include "religion.h"
@@ -150,7 +148,7 @@ static void _wizard_go_to_level(const level_pos &pos)
     viewwindow();
 
     // Tell stash-tracker and travel that we've changed levels.
-    trackers_init_new_level(true);
+    trackers_init_new_level();
 }
 
 void wizard_interlevel_travel()
@@ -785,7 +783,7 @@ void wizard_recreate_level()
     seen_monsters_react();
     viewwindow();
 
-    trackers_init_new_level(true);
+    trackers_init_new_level();
 }
 
 void wizard_clear_used_vaults()

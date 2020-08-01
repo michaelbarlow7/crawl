@@ -2,7 +2,6 @@
 airstrike AIRSTRIKE
 chain_lightning CHAIN_LIGHTNING
 conjure_ball_lightning CONJURE_BALL_LIGHTNING
-deflect_missiles DEFLECT_MISSILES
 lightning_bolt LIGHTNING_BOLT
 repel_missiles REPEL_MISSILES
 shock SHOCK
@@ -66,6 +65,8 @@ sticky_flame STICKY_FLAME
 throw_flame THROW_FLAME
 inner_flame INNER_FLAME
 ignition IGNITION
+starburst STARBURST
+foxfire FOXFIRE
 
 %sdir gui/spells/ice
 bolt_of_cold BOLT_OF_COLD
@@ -79,6 +80,8 @@ metabolic_englaciation METABOLIC_ENGLACIATION
 ozocubus_armour OZOCUBUS_ARMOUR
 ozocubus_refrigeration OZOCUBUS_REFRIGERATION
 throw_frost THROW_FROST
+frozen_ramparts FROZEN_RAMPARTS
+hailstorm HAILSTORM
 
 %sdir gui/spells/necromancy
 agony AGONY
@@ -94,7 +97,6 @@ excruciating_wounds EXCRUCIATING_WOUNDS
 haunt HAUNT
 necromutation NECROMUTATION
 pain PAIN
-regeneration REGENERATION
 simulacrum SIMULACRUM
 sublimation_of_blood SUBLIMATION_OF_BLOOD
 symbol_of_torment SYMBOL_OF_TORMENT
@@ -112,6 +114,7 @@ spider_form SPIDER_FORM
 sting STING
 venom_bolt VENOM_BOLT
 poisonous_vapours POISONOUS_VAPOURS
+noxious_bog NOXIOUS_BOG
 
 %sdir gui/spells/summoning
 mass_abjuration MASS_ABJURATION
@@ -162,7 +165,6 @@ paralyse PARALYSE
 bolt_thunder THUNDERBOLT
 cloud_cone CLOUD_CONE
 bolt_random RANDOM_BOLT
-scattershot SCATTERSHOT
 bolt_corrosive CORROSIVE_BOLT
 iceblast ICEBLAST
 bolt_energy ENERGY_BOLT

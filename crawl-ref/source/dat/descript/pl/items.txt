@@ -1,36 +1,8 @@
 %%%%
-amulet of conservation
-
-Ten amulet ochrania zwoje i eliksiry przed zniszczeniem, niestety nie jest
-niezawodny.
-%%%%
 amulet of inaccuracy
 
 Ten amulet mocno utrudnia swemu nosicielowi celowanie — tak w walce wręcz,
 strzelaniu jak i przy rzucaniu czarów.
-%%%%
-amulet of rage
-
-Ten amulet pozwala swemu nosicielowi wprowadzić się w bitewny szał — osławioną
-furię berserkerów.
-%%%%
-amulet of resist mutation
-
-Ten amulet chroni swego nosiciela przed mutacjami, aczkolwiek nie jest
-niezawodny.
-%%%%
-amulet of stasis
-
-Ten amulet zupełnie blokuje efekty które spowodowałyby teleportację, magiczne
-spowolnienie lub przyspieszenie, łącznie z całkowitym paraliżem. Nie wpływa on
-jednak na środki nie manipulujące czasoprzestrzenią — jak na przykład przemianę
-w kamień. Nie działa on także na przejścia do innych światów, włącznie z
-rzuceniem w Otchłań.
-%%%%
-amulet of warding
-
-Ten amulet odrzuca część ataków magicznie przywołanych istot, a także daje
-trochę ochrony przed zagrożeniami ze strony nekromancji.
 %%%%
 animal skin
 
@@ -99,15 +71,15 @@ book of dreams
 
 Przejrzysta książka. Promienie światła dziwnie grają na jej powierzchni.
 %%%%
-book of enchantments
-
-Księga czarów.
-%%%%
 book of fixed level
 
 Księga czarów.
 %%%%
 book of fixed theme
+
+Księga czarów.
+%%%%
+book of hexes
 
 Księga czarów.
 %%%%
@@ -225,12 +197,6 @@ eveningstar
 
 Wariant morgenszterna.
 %%%%
-fan of gales
-
-Ten zaklęty wachlarz jest zamieszkały przez przyjazne duchy powietrza.
-Machnięcie rozwartym wachlarzem wywoła mocny powiew wichru, oraz wyzwoli te
-duchy pozwalając im dobrać się do twych wrogów.
-%%%%
 fire dragon scales
 
 Ta zbroja została wykonana skóry smoka właściwego. Zapewnia ona wspaniałą
@@ -304,12 +270,6 @@ Bardzo rzadka i wyjątkowo efektywna zamorska broń, składająca się z dwóch 
 kosy osadzonych na sztorc na obu końcach drzewca. Wymaga ona pewnych
 umiejętności aby jej dobrze użyć, jednak w rękach zręcznego wojownika walka
 stanowi morderczy dla wrogów taniec.
-%%%%
-lamp of fire
-
-Magiczna lampa zamieszkała przez przyjazne duchy ognia. Otwarcie pokrywy
-wyzwoli te duchy, pozwalając im spowić twych wrogów w ogniu, po czym dobrać się
-tym wrogom do skóry.
 %%%%
 large rock
 
@@ -625,7 +585,7 @@ scythe
 
 Narzędzie rolnicze, niezbyt przydatne do walki.
 %%%%
-shield
+kite shield
 
 Kawał metalu, z uchwytem i paskami umożliwiającymi przyczepienie do ramienia.
 Pozwala blokować ciosy, jednak utrudnia ruchy co spowalnia szybkość ataków oraz

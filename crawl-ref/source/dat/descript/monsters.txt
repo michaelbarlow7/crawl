@@ -297,6 +297,14 @@ This tall and powerful demon is Mara, Lord of Illusions, mighty among dreamers.
 He is capable of creating intricately detailed illusions, so real that they are
 almost as deadly as the creatures they impersonate.
 %%%%
+Maggie
+
+A former Hell Knight apprentice. Impatient with the progress she was making
+with her former master, Maggie entered the Dungeon in search of a shortcut to
+fame and fortune. Lacking any sort of imagination on how to achieve this, she
+has settled on trying to slay a dragon - or two or three dragons, if one is not
+enough.
+%%%%
 Margery
 
 A lithe spellcaster in service to the powers of Hell; it is her duty to ensure
@@ -1140,6 +1148,11 @@ formicid
 
 A sentient ant that walks upright and is competent at digging.
 %%%%
+foxfire
+
+A thin wisp of flaming swamp gas. It will burn anything that ventures too
+close, friend or foe.
+%%%%
 freezing wraith
 
 An incorporeal skeletal form surrounded by a cloud of freezing air, likely the
@@ -1550,8 +1563,7 @@ at passers-by.
 %%%%
 leopard gecko
 
-A brightly-coloured lizard with huge, sharp teeth. The pads on its toes allow
-it to cling to walls and ceilings.
+A brightly-coloured lizard with huge, sharp teeth.
 %%%%
 lich
 
@@ -1703,6 +1715,12 @@ nagaraja
 
 A magnificent example of the naga. It is an expert at both martial and magical
 arts.
+%%%%
+nameless horror
+
+A malign force from the space between planes. It is hostile to the magic forces
+that removed it from its home. These horrors are often the result of mistaken
+summoning spells and have slain many aspiring wizards.
 %%%%
 necromancer
 

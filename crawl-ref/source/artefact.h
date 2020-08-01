@@ -16,6 +16,7 @@
 #define ARTEFACT_APPEAR_KEY "artefact_appearance"
 
 #define DAMNATION_BOLT_KEY "damnation_bolt"
+#define EMBRACE_ARMOUR_KEY "embrace_armour"
 
 struct bolt;
 
@@ -30,7 +31,7 @@ enum unrand_flag_type
     UNRAND_FLAG_CHAOTIC          = 0x20,
                               // = 0x40,  // was UNRAND_FLAG_CORPSE_VIOLATING
     UNRAND_FLAG_NOGEN            = 0x80,
-    UNRAND_FLAG_RANDAPP          =0x100,
+                              // =0x100,  // was UNRAND_FLAG_RANDAPP
     UNRAND_FLAG_UNIDED           =0x200,
     UNRAND_FLAG_SKIP_EGO         =0x400,
     // Please make sure it fits in unrandart_entry.flags (currently 16 bits).
@@ -79,7 +80,6 @@ bool is_artefact(const item_def &item);
 bool is_random_artefact(const item_def &item);
 bool is_unrandom_artefact(const item_def &item, int which = 0);
 bool is_special_unrandom_artefact(const item_def &item);
-bool is_randapp_artefact(const item_def &item);
 void autoid_unrand(item_def &item);
 
 void artefact_fixup_props(item_def &item);
@@ -102,22 +102,19 @@ int find_okay_unrandart(uint8_t aclass, uint8_t atype = OBJ_RANDOM,
 typedef FixedVector< int, ART_PROPERTIES >  artefact_properties_t;
 typedef FixedVector< bool, ART_PROPERTIES > artefact_known_props_t;
 
-void artefact_desc_properties(const item_def        &item,
-                              artefact_properties_t &proprt,
+void artefact_desc_properties(const item_def         &item,
+                              artefact_properties_t  &proprt,
                               artefact_known_props_t &known);
 
-void artefact_properties(const item_def       &item,
-                         artefact_properties_t &proprt,
-                         artefact_known_props_t &known);
+void artefact_known_properties(const item_def        &item,
+                              artefact_known_props_t &known);
 
 void artefact_properties(const item_def &item,
-                         artefact_properties_t &proprt);
-
-int artefact_property(const item_def &item, artefact_prop_type prop,
-                      bool &known);
+                              artefact_properties_t  &proprt);
 
 int artefact_property(const item_def &item, artefact_prop_type prop);
 
+bool artefact_property_known(const item_def &item, artefact_prop_type prop);
 int artefact_known_property(const item_def &item, artefact_prop_type prop);
 
 void artefact_learn_prop(item_def &item, artefact_prop_type prop);

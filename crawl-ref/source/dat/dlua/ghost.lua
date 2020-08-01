@@ -142,18 +142,31 @@ end
 -- auxiliary armour item, or a jewellery item. The latter two can be good_item
 -- and then randart with increasing depth.
 --
--- This function is mostly used by the more challenging ghost vaults that place
--- many additional monsters as a way to make attempting the vault more
--- worthwhile.
-function ghost_good_loot(e)
-    -- Possible loot items.
-    jewellery = "any jewellery"
-    good_jewellery = "any jewellery good_item"
-    randart_jewellery = "any jewellery randart"
-    aux = dgn.aux_armour
+-- This function is used by the more challenging ghost vaults that place many
+-- additional monsters as a way to make attempting the vault more worthwhile.
+--
+-- @tparam table e environment
+-- @tparam string kglyphs If nil, use 'd' and 'e' item slots. Otherwise, define
+--                        KITEMs on the two characters supplied in kglyphs.
+function ghost_good_loot(e, kglyphs)
 
-    first_item = true
-    second_item = false
+    local item1fn, item2fn
+    if kglyphs == nil then
+        item1fn = e.item
+        item2fn = e.item
+    else
+        item1fn = function(def) e.kitem(kglyphs:sub(1, 1) .. " = " .. def) end
+        item2fn = function(def) e.kitem(kglyphs:sub(2, 2) .. " = " .. def) end
+    end
+
+    -- Possible loot items.
+    local jewellery = "any jewellery"
+    local good_jewellery = "any jewellery good_item"
+    local randart_jewellery = "any jewellery randart"
+    local aux = dgn.aux_armour
+
+    local first_item = true
+    local second_item = false
     if you.in_branch("D") then
         if you.depth() < 9 then
             first_item = false
@@ -222,27 +235,29 @@ function ghost_good_loot(e)
     end
 
     -- Define loot tables of potential item defs.
-    first_loot = { {name = "scrolls", def = dgn.loot_scrolls, weight = 20},
+    local first_loot = {
+                   {name = "scrolls", def = dgn.loot_scrolls, weight = 20},
                    {name = "potions", def = dgn.loot_potions, weight = 20},
                    {name = "aux", def = aux, weight = 10},
                    {name = "jewellery", def = jewellery, weight = 10},
                    {name = "manual", def = "any manual", weight = 5} }
-    second_loot = { {name = "scrolls", def = dgn.loot_scrolls, weight = 10},
+    local second_loot = {
+                    {name = "scrolls", def = dgn.loot_scrolls, weight = 10},
                     {name = "potions", def = dgn.loot_potions, weight = 10} }
 
     -- If we're upgrading the first item , choose a class, define the item
     -- slot, otherwise the slot becomes the usual '|*' definition.
     if first_item then
         chosen = util.random_weighted_from("weight", first_loot)
-        e.item(chosen["def"])
+        item1fn(chosen["def"])
     else
-        e.item("superb_item / star_item")
+        item1fn("superb_item / star_item")
     end
     if second_item then
         chosen = util.random_weighted_from("weight", second_loot)
-        e.item(chosen["def"])
+        item2fn(chosen["def"])
     else
-        e.item("superb_item / star_item")
+        item2fn("superb_item / star_item")
     end
 end
 
@@ -356,6 +371,54 @@ ghost_knight_weap = {
     ["dire flail"] = 10, ["great mace"] = 10, ["lajatang"] = 5
 }
 
+-- Randomized weapon sets for ghost vault monsters. Many are based on the sets
+-- mon-gear.cc, but some have more variety (e.g. ogre) and some are more
+-- favourable for the better weapon types.
+ghost_monster_weapons = {
+    ["kobold"] =      {["dagger"] = 5, ["short sword"] = 10, ["rapier"] = 5,
+                       ["whip"] = 10},
+    ["gnoll"] =       {["spear"] = 10, ["halberd"] = 5, ["whip"] = 5,
+                       ["flail"] = 5},
+    ["sergeant"] =    {["spear"] = 5, ["trident"] = 10},
+    ["ogre"] =        {["dire flail"] = 5, ["great mace"] = 10,
+                       ["giant club"] = 10, ["giant spiked club"] = 10},
+    ["warrior"] =     ghost_warrior_weap,
+    ["knight"] =      ghost_knight_weap,
+    ["spriggan"] =    {["dagger"] = 1, ["short sword"] = 1, ["rapier"] = 2},
+    ["rider"] =       {["spear"] = 5, ["trident"] = 10, ["demon trident"] = 2},
+    ["druid"] =       {["quarterstaff"] = 10, ["lajatang"] = 10},
+    ["berserker"] =   {["rapier"] = 10, ["quick blade"] = 5, ["war axe"] = 5,
+                       ["broad axe"] = 10, ["morningstar"] = 10,
+                       ["morningstar"] = 10, ["demon whip"] = 5,
+                       ["quarterstaff"] = 10, ["lajatang"] = 5},
+    ["impaler"] =     {["trident"] = 15, ["demon trident"] = 5},
+    ["elf knight"] =  {["long sword"] = 10, ["scimitar"] = 20,
+                       ["demon blade"] = 5},
+    ["defender"] =    {["rapier"] = 10, ["quick blade"] = 10,
+                       ["morningstar"] = 10, ["demon whip"] = 10,
+                       ["lajatang"] = 10},
+    ["blademaster"] = {["rapier"] = 20, ["quick blade"] = 5},
+}
+
+-- Set up a monster equipment string based on the table of monster class weapon
+-- weights above.
+--
+-- @param class     A string, which should be a key in the ghost_monster_table
+--                  above.
+-- @param egos      An optional table with ego names as keys and weights as
+--                  values.
+-- @param args      An optional string giving modifiers to add to every item
+--                  entry in the final item definition. Typically either
+--                  'randart' or 'good_item'
+-- @returns A string containing the item definition.
+function ghost_monster_weapon(class, egos, quality)
+    if ghost_monster_weapons[class] == nil  then
+        error("Unknown weapon class: " .. class)
+    end
+    local weap = ghost_monster_weapons[class]
+    return random_item_def(weap, egos, quality, '|')
+end
+
 -- Set up equipment for the fancier orc warriors, knights, and warlord in
 -- biasface_ghost_orc_armoury and biasface_vaults_ghost_orc_armoury.
 function setup_armoury_orcs(e)
@@ -372,6 +435,6 @@ function setup_armoury_orcs(e)
             " . chain mail good_item " ..
             "    | chain mail randart | plate armour good_item " ..
             "    | plate armour randart " ..
-            " . shield good_item w:4 | shield randart w:2 " ..
-            "    | large shield good_item w:2 | large shield randart w:1")
+            " . kite shield good_item w:4 | kite shield randart w:2 " ..
+            "    | tower shield good_item w:2 | tower shield randart w:1")
 end

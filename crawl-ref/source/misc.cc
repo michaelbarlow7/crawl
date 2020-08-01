@@ -11,26 +11,19 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#if !defined(__IBMCPP__) && !defined(TARGET_COMPILER_VC)
+#ifdef UNIX
 #include <unistd.h>
 #endif
 
-#include "coordit.h"
 #include "database.h"
 #include "english.h"
-#include "fprop.h"
 #include "items.h"
-#include "item-use.h"
 #include "libutil.h"
-#include "message.h"
 #include "monster.h"
-#include "prompt.h"
 #include "state.h"
 #include "terrain.h"
 #include "tileview.h"
 #include "traps.h"
-#include "view.h"
-#include "xom.h"
 
 string weird_glowing_colour()
 {
@@ -155,8 +148,7 @@ int counted_monster_list::count()
     return nmons;
 }
 
-string counted_monster_list::describe(description_level_type desc,
-                                      bool force_article)
+string counted_monster_list::describe(description_level_type desc)
 {
     string out;
 

@@ -7,7 +7,6 @@
 
 #include "teleport.h"
 
-#include "act-iter.h"
 #include "cloud.h"
 #include "coord.h"
 #include "coordit.h"
@@ -222,8 +221,6 @@ void mons_relocated(monster* mons)
         // this should take care of any tentacles
         monster_die(*tentacle, KILL_RESET, -1, true, false);
     }
-
-    mons->clear_clinging();
 }
 
 void monster_teleport(monster* mons, bool instan, bool silent)

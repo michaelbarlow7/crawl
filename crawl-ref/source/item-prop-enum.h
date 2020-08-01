@@ -40,9 +40,9 @@ enum armour_type
 
     ARM_BUCKLER, // order of shields matters
     ARM_FIRST_SHIELD = ARM_BUCKLER,
-    ARM_SHIELD,
-    ARM_LARGE_SHIELD,
-    ARM_LAST_SHIELD = ARM_LARGE_SHIELD,
+    ARM_KITE_SHIELD,
+    ARM_TOWER_SHIELD,
+    ARM_LAST_SHIELD = ARM_TOWER_SHIELD,
 
 #if TAG_MAJOR_VERSION == 34
     ARM_CRYSTAL_PLATE_ARMOUR,
@@ -224,13 +224,20 @@ enum jewellery_type
     // Currently none.
     // XXX: trying to add one doesn't actually work
 
+#if TAG_MAJOR_VERSION == 34
     AMU_RAGE = 35,
     AMU_FIRST_AMULET = AMU_RAGE,
     AMU_HARM,
+#endif
+#if TAG_MAJOR_VERSION > 34
+    AMU_ACROBAT = 35,
+    AMU_FIRST_AMULET = AMU_ACROBAT,
+#elif TAG_MAJOR_VERSION == 34
     AMU_ACROBAT,
+#endif
     AMU_MANA_REGENERATION,
-    AMU_THE_GOURMAND,
 #if TAG_MAJOR_VERSION == 34
+    AMU_THE_GOURMAND,
     AMU_CONSERVATION,
     AMU_CONTROLLED_FLIGHT,
 #endif
@@ -256,17 +263,15 @@ enum misc_item_type
 {
 #if TAG_MAJOR_VERSION == 34
     MISC_BOTTLED_EFREET,
-#endif
     MISC_FAN_OF_GALES,
     MISC_LAMP_OF_FIRE,
-#if TAG_MAJOR_VERSION == 34
     MISC_STONE_OF_TREMORS,
     MISC_BUGGY_LANTERN_OF_SHADOWS,
 #endif
     MISC_HORN_OF_GERYON,
     MISC_BOX_OF_BEASTS,
-    MISC_CRYSTAL_BALL_OF_ENERGY,
 #if TAG_MAJOR_VERSION == 34
+    MISC_CRYSTAL_BALL_OF_ENERGY,
     MISC_BUGGY_EBONY_CASKET,
 #endif
     MISC_LIGHTNING_ROD,
@@ -290,7 +295,9 @@ enum misc_item_type
     MISC_QUAD_DAMAGE, // Sprint only
 
     MISC_PHIAL_OF_FLOODS,
+#if TAG_MAJOR_VERSION == 34
     MISC_SACK_OF_SPIDERS,
+#endif
     MISC_ZIGGURAT,
 
     MISC_PHANTOM_MIRROR,
@@ -298,6 +305,7 @@ enum misc_item_type
     MISC_DECK_OF_ODDITIES,
     MISC_XOMS_CHESSBOARD,
 #endif
+    MISC_TIN_OF_TREMORSTONES,
 
     NUM_MISCELLANY,
     MISC_DECK_UNKNOWN = NUM_MISCELLANY,
@@ -306,14 +314,22 @@ enum misc_item_type
 // in no particular order (but we need *a* fixed order for dbg-scan)
 const vector<misc_item_type> misc_types =
 {
-    MISC_FAN_OF_GALES, MISC_LAMP_OF_FIRE,
 #if TAG_MAJOR_VERSION == 34
+    MISC_FAN_OF_GALES,
+    MISC_LAMP_OF_FIRE,
     MISC_STONE_OF_TREMORS,
     MISC_BUGGY_LANTERN_OF_SHADOWS,
 #endif
     MISC_HORN_OF_GERYON, MISC_BOX_OF_BEASTS,
-    MISC_CRYSTAL_BALL_OF_ENERGY, MISC_LIGHTNING_ROD, MISC_PHIAL_OF_FLOODS,
-    MISC_QUAD_DAMAGE, MISC_SACK_OF_SPIDERS, MISC_PHANTOM_MIRROR,
+#if TAG_MAJOR_VERSION == 34
+    MISC_CRYSTAL_BALL_OF_ENERGY,
+#endif
+    MISC_LIGHTNING_ROD, MISC_PHIAL_OF_FLOODS,
+    MISC_QUAD_DAMAGE,
+#if TAG_MAJOR_VERSION == 34
+    MISC_SACK_OF_SPIDERS,
+#endif
+    MISC_PHANTOM_MIRROR,
 #if TAG_MAJOR_VERSION == 34
     MISC_XOMS_CHESSBOARD,
 #endif
@@ -434,9 +450,7 @@ enum special_armour_type
     SPARM_RESISTANCE,
     SPARM_POSITIVE_ENERGY,
     SPARM_ARCHMAGI,
-#if TAG_MAJOR_VERSION == 34
     SPARM_PRESERVATION,
-#endif
     SPARM_REFLECTION,
     SPARM_SPIRIT_SHIELD,
     SPARM_ARCHERY,
@@ -444,7 +458,10 @@ enum special_armour_type
     SPARM_JUMPING,
 #endif
     SPARM_REPULSION,
+#if TAG_MAJOR_VERSION == 34
     SPARM_CLOUD_IMMUNE,
+#endif
+    SPARM_HARM,
     NUM_REAL_SPECIAL_ARMOURS,
     NUM_SPECIAL_ARMOURS,
 };
@@ -468,8 +485,8 @@ enum special_missile_type // to separate from weapons in general {dlb}
     SPMSL_PENETRATION,
 #endif
     SPMSL_DISPERSAL,
+    SPMSL_EXPLODING,                   // Only used by Damnation crossbow
 #if TAG_MAJOR_VERSION == 34
-    SPMSL_EXPLODING,
     SPMSL_STEEL,
 #endif
     SPMSL_SILVER,
@@ -480,8 +497,8 @@ enum special_missile_type // to separate from weapons in general {dlb}
     SPMSL_CONFUSION,
     SPMSL_SICKNESS,
 #endif
-    SPMSL_FRENZY,
-    SPMSL_BLINDING,
+    SPMSL_FRENZY,                      // Datura
+    SPMSL_BLINDING,                    // Atropa
     NUM_REAL_SPECIAL_MISSILES,
     NUM_SPECIAL_MISSILES = NUM_REAL_SPECIAL_MISSILES,
 };
@@ -495,7 +512,9 @@ enum special_ring_type // jewellery mitm[].special values
 enum stave_type
 {
     STAFF_WIZARDRY,
+#if TAG_MAJOR_VERSION == 34
     STAFF_POWER,
+#endif
     STAFF_FIRE,
     STAFF_COLD,
     STAFF_POISON,
@@ -714,7 +733,9 @@ enum wand_type
     WAND_RANDOM_EFFECTS,
     WAND_DISINTEGRATION,
     WAND_CLOUDS,
-    WAND_SCATTERSHOT,
+#if TAG_MAJOR_VERSION == 34
+    WAND_SCATTERSHOT_REMOVED,
+#endif
     NUM_WANDS
 };
 

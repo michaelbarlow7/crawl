@@ -15,10 +15,8 @@
 #include <cstring>
 #include <functional>
 
-#include "areas.h"
 #include "branch.h"
 #include "colour.h"
-#include "coordit.h"
 #include "database.h"
 #include "god-item.h"
 #include "item-name.h"
@@ -132,18 +130,15 @@ static bool _god_fits_artefact(const god_type which_god, const item_def &item,
         break;
 
     case GOD_TROG:
-        // Anti-magic god: no spell use, no enhancing magic.
-        if (brand == SPWPN_PAIN) // Pain involves necromantic spell use.
+        // Limited selection of brands.
+        if (brand != SPWPN_VORPAL
+            && brand != SPWPN_FLAMING
+            && brand != SPWPN_ANTIMAGIC)
+        {
             return false;
+        }
 
         if (artefact_property(item, ARTP_MAGICAL_POWER) > 0)
-            return false;
-        break;
-
-    case GOD_FEDHAS:
-        // Fedhas forbids necromancy involving corpses, only reaping
-        // really applies.
-        if (brand == SPWPN_REAPING)
             return false;
         break;
 
@@ -291,19 +286,12 @@ bool is_special_unrandom_artefact(const item_def &item)
            && (_seekunrandart(item)->flags & UNRAND_FLAG_SPECIAL);
 }
 
-bool is_randapp_artefact(const item_def &item)
-{
-    return item.flags & ISFLAG_UNRANDART
-           && !(item.flags & ISFLAG_KNOW_TYPE)
-           && (_seekunrandart(item)->flags & UNRAND_FLAG_RANDAPP);
-}
-
 void autoid_unrand(item_def &item)
 {
     if (!(item.flags & ISFLAG_UNRANDART) || item.flags & ISFLAG_KNOW_TYPE)
         return;
     const uint16_t uflags = _seekunrandart(item)->flags;
-    if (uflags & UNRAND_FLAG_RANDAPP || uflags & UNRAND_FLAG_UNIDED)
+    if (uflags & UNRAND_FLAG_UNIDED)
         return;
 
     set_ident_flags(item, ISFLAG_IDENT_MASK | ISFLAG_NOTED_ID);
@@ -315,9 +303,22 @@ unique_item_status_type get_unique_item_status(int art)
     return you.unique_items[art - UNRAND_START];
 }
 
-static void _set_unique_item_status(int art, unique_item_status_type status)
+static void _set_unique_item_status(int art, bool exists)
 {
     ASSERT_RANGE(art, UNRAND_START + 1, UNRAND_LAST);
+
+    const unique_item_status_type status = !exists
+        ? UNIQ_NOT_EXISTS
+        : !crawl_state.generating_level
+                // treat unrands that generate in these branches as if they
+                // were acquired. TODO: there's a potential bug here if every
+                // octopus king ring generates and the last is acquired. Also,
+                // I suspect that these getting lost in the abyss isn't handled
+                // right
+                || level_id::current().branch == BRANCH_TROVE
+                || level_id::current().branch == BRANCH_ABYSS
+            ? UNIQ_EXISTS_NONLEVELGEN
+            : UNIQ_EXISTS;
     you.unique_items[art - UNRAND_START] = status;
 }
 
@@ -358,10 +359,8 @@ struct jewellery_fake_artp
 };
 
 static map<jewellery_type, vector<jewellery_fake_artp>> jewellery_artps = {
-    { AMU_RAGE, { { ARTP_BERSERK, 1 } } },
     { AMU_REGENERATION, { { ARTP_REGENERATION, 1 } } },
-    { AMU_REFLECTION, { { ARTP_SHIELDING, 0 } } },
-    { AMU_HARM, { { ARTP_DRAIN, 1 } } },
+    { AMU_REFLECTION, { { ARTP_SHIELDING, AMU_REFLECT_SH / 2} } },
 
     { RING_MAGICAL_POWER, { { ARTP_MAGICAL_POWER, 9 } } },
     { RING_FLIGHT, { { ARTP_FLY, 1 } } },
@@ -449,7 +448,8 @@ void artefact_desc_properties(const item_def &item,
         return;
 
     // actual artefact properties
-    artefact_properties(item, proprt, known);
+    artefact_properties(item, proprt);
+    artefact_known_properties(item, known);
 
     // fake artefact properties (intrinsics)
     _populate_item_intrinsic_artps(item, proprt, known);
@@ -572,8 +572,9 @@ static bool _artp_can_go_on_item(artefact_prop_type prop, const item_def &item,
             // and obv we shouldn't generate contradictory props
         case ARTP_PREVENT_TELEPORTATION:
             return !extant_props[ARTP_BLINK]
-                   && !extant_props[ARTP_CAUSE_TELEPORTATION];
-            // no contradictory props
+                   && !extant_props[ARTP_CAUSE_TELEPORTATION]
+                   && item_class == OBJ_ARMOUR;
+            // armour only, and no contradictory props
         case ARTP_BLINK:
             return !extant_props[ARTP_PREVENT_TELEPORTATION];
             // no contradictory props
@@ -587,8 +588,8 @@ static bool _artp_can_go_on_item(artefact_prop_type prop, const item_def &item,
                    && (item_class != OBJ_JEWELLERY
                        || jewellery_is_amulet(item));
         case ARTP_HARM:
-            return item_class != OBJ_JEWELLERY && extant_props[ARTP_DRAIN];
-            // only get harm with *Drain
+            return item_class == OBJ_ARMOUR;
+            // only get harm on delay equipment
         default:
             return true;
     }
@@ -726,7 +727,7 @@ static const artefact_prop_data artp_data[] =
     { "Fragile", ARTP_VAL_BOOL, 25, // ARTP_FRAGILE,
         nullptr, []() { return 1; }, 0, 0 },
     { "SH", ARTP_VAL_ANY, 0, nullptr, nullptr, 0, 0 }, // ARTP_SHIELDING,
-    { "Harm", ARTP_VAL_BOOL, 0, // ARTP_HARM,
+    { "Harm", ARTP_VAL_BOOL, 25, // ARTP_HARM,
         []() {return 1;}, nullptr, 0, 0},
 };
 COMPILE_CHECK(ARRAYSZ(artp_data) == ARTP_NUM_PROPERTIES);
@@ -983,12 +984,11 @@ static bool _init_artefact_properties(item_def &item)
     return true;
 }
 
-void artefact_properties(const item_def &item,
-                         artefact_properties_t  &proprt,
-                         artefact_known_props_t &known)
+void artefact_known_properties(const item_def &item,
+                               artefact_known_props_t &known)
 {
     ASSERT(is_artefact(item));
-    if (!item.props.exists(KNOWN_PROPS_KEY))
+    if (!item.props.exists(KNOWN_PROPS_KEY)) // randbooks
         return;
 
     const CrawlStoreValue &_val = item.props[KNOWN_PROPS_KEY];
@@ -1008,6 +1008,13 @@ void artefact_properties(const item_def &item,
         for (vec_size i = 0; i < ART_PROPERTIES; i++)
             known[i] = known_vec[i];
     }
+}
+
+void artefact_properties(const item_def &item,
+                         artefact_properties_t  &proprt)
+{
+    ASSERT(is_artefact(item));
+    ASSERT(item.props.exists(ARTEFACT_PROPS_KEY) || is_unrandom_artefact(item));
 
     if (item.props.exists(ARTEFACT_PROPS_KEY))
     {
@@ -1020,60 +1027,60 @@ void artefact_properties(const item_def &item,
         for (vec_size i = 0; i < ART_PROPERTIES; i++)
             proprt[i] = rap_vec[i].get_short();
     }
-    else if (is_unrandom_artefact(item))
+    else // if (is_unrandom_artefact(item))
     {
         const unrandart_entry *unrand = _seekunrandart(item);
 
         for (int i = 0; i < ART_PROPERTIES; i++)
             proprt[i] = static_cast<short>(unrand->prpty[i]);
     }
-    else
-        _get_randart_properties(item, proprt);
-}
-
-void artefact_properties(const item_def &item,
-                         artefact_properties_t &proprt)
-{
-    artefact_known_props_t known;
-
-    artefact_properties(item, proprt, known);
-}
-
-int artefact_property(const item_def &item, artefact_prop_type prop,
-                      bool &_known)
-{
-    artefact_properties_t  proprt;
-    artefact_known_props_t known;
-    proprt.init(0);
-    known.init(0);
-
-    artefact_properties(item, proprt, known);
-
-    _known = known[prop];
-
-    return proprt[prop];
 }
 
 int artefact_property(const item_def &item, artefact_prop_type prop)
 {
-    bool known;
+    ASSERT(is_artefact(item));
+    ASSERT(item.props.exists(ARTEFACT_PROPS_KEY) || is_unrandom_artefact(item));
 
-    return artefact_property(item, prop, known);
+    if (item.props.exists(ARTEFACT_PROPS_KEY))
+    {
+        const CrawlVector &rap_vec =
+            item.props[ARTEFACT_PROPS_KEY].get_vector();
+        return rap_vec[prop].get_short();
+    }
+    else // if (is_unrandom_artefact(item))
+    {
+        const unrandart_entry *unrand = _seekunrandart(item);
+        return static_cast<short>(unrand->prpty[prop]);
+
+    }
 }
 
+/**
+ * Check whether a particular property's value is known to the player.
+ */
+bool artefact_property_known(const item_def &item, artefact_prop_type prop)
+{
+    ASSERT(is_artefact(item));
+    if (item_ident(item, ISFLAG_KNOW_PROPERTIES))
+        return true;
+
+    if (!item.props.exists(KNOWN_PROPS_KEY)) // randbooks
+        return false;
+
+    const CrawlVector &known_vec = item.props[KNOWN_PROPS_KEY].get_vector();
+    ASSERT(known_vec.get_type()     == SV_BOOL);
+    ASSERT(known_vec.size()         == ART_PROPERTIES);
+
+    return known_vec[prop].get_bool();
+}
+
+/**
+ * check what the player knows about an a particular property.
+ */
 int artefact_known_property(const item_def &item, artefact_prop_type prop)
 {
-    artefact_properties_t  proprt;
-    artefact_known_props_t known;
-    proprt.init(0);
-    known.init(0);
-
-    artefact_properties(item, proprt, known);
-
-    if (known[prop])
-        return proprt[prop];
-    else
-        return 0;
+    return artefact_property_known(item, prop) ? artefact_property(item, prop)
+                                               : 0;
 }
 
 static int _artefact_num_props(const artefact_properties_t &proprt)
@@ -1174,8 +1181,7 @@ string make_artefact_name(const item_def &item, bool appearance)
         const unrandart_entry *unrand = _seekunrandart(item);
         if (!appearance)
             return unrand->name;
-        if (!(unrand->flags & UNRAND_FLAG_RANDAPP))
-            return unrand->unid_name;
+        return unrand->unid_name;
     }
 
     string lookup;
@@ -1335,8 +1341,11 @@ int find_okay_unrandart(uint8_t aclass, uint8_t atype, bool in_abyss)
 {
     int ret = -1;
 
-    // Pick randomly among not-yet-existing unrandarts with the proper
-    // base_type and sub_type.
+    // Pick randomly among unrandarts with the proper
+    // base_type and sub_type. This will rule out unrands that have already
+    // placed as part of levelgen, but may find unrands that have been acquired.
+    // because of this, the caller needs to properly set up a fallback randart
+    // in some cases: see makeitem.cc:_setup_fallback_randart.
     for (int i = 0, count = 0; i < NUM_UNRANDARTS; i++)
     {
         const int              index = i + UNRAND_START;
@@ -1350,7 +1359,11 @@ int find_okay_unrandart(uint8_t aclass, uint8_t atype, bool in_abyss)
             get_unique_item_status(index);
 
         if (in_abyss && status != UNIQ_LOST_IN_ABYSS
-            || !in_abyss && status != UNIQ_NOT_EXISTS)
+            || !in_abyss && status != UNIQ_NOT_EXISTS
+               // for acquired items, ignore them in the random calculations
+               // here and let fallback artefacts replace them.
+               // TODO: abyss? double check trove
+               && status != UNIQ_EXISTS_NONLEVELGEN)
         {
             continue;
         }
@@ -1487,10 +1500,6 @@ static bool _randart_is_redundant(const item_def &item,
         provides = ARTP_RCORR;
         break;
 
-    case AMU_RAGE:
-        provides = ARTP_BERSERK;
-        break;
-
     case AMU_INACCURACY:
         provides = ARTP_SLAYING;
         break;
@@ -1501,10 +1510,6 @@ static bool _randart_is_redundant(const item_def &item,
 
     case AMU_REFLECTION:
         provides = ARTP_SHIELDING;
-        break;
-
-    case AMU_HARM:
-        provides = ARTP_DRAIN;
         break;
     }
 
@@ -1557,10 +1562,6 @@ static bool _randart_is_conflicting(const item_def &item,
     case RING_TELEPORT_CONTROL:
 #endif
         conflicts = ARTP_PREVENT_TELEPORTATION;
-        break;
-
-    case AMU_RAGE:
-        conflicts = ARTP_STEALTH;
         break;
     }
 
@@ -1752,12 +1753,14 @@ static void _make_octoring(item_def &item)
 
     // If there are any types left, unset the 'already found' flag
     if (you.octopus_king_rings != 0xff)
-        _set_unique_item_status(UNRAND_OCTOPUS_KING_RING, UNIQ_NOT_EXISTS);
+        _set_unique_item_status(UNRAND_OCTOPUS_KING_RING, false);
 }
 
 bool make_item_unrandart(item_def &item, int unrand_index)
 {
     ASSERT_RANGE(unrand_index, UNRAND_START + 1, (UNRAND_START + NUM_UNRANDARTS));
+    rng::subgenerator item_rng; // for safety's sake, this is sometimes called
+                                // directly
 
     item.unrand_idx = unrand_index;
 
@@ -1772,15 +1775,9 @@ bool make_item_unrandart(item_def &item, int unrand_index)
 
     // get artefact appearance
     ASSERT(!item.props.exists(ARTEFACT_APPEAR_KEY));
-    if (!(unrand->flags & UNRAND_FLAG_RANDAPP))
-        item.props[ARTEFACT_APPEAR_KEY].get_string() = unrand->unid_name;
-    else
-    {
-        item.props[ARTEFACT_APPEAR_KEY].get_string() = make_artefact_name(item, true);
-        item_colour(item);
-    }
+    item.props[ARTEFACT_APPEAR_KEY].get_string() = unrand->unid_name;
 
-    _set_unique_item_status(unrand_index, UNIQ_EXISTS);
+    _set_unique_item_status(unrand_index, true);
 
     if (unrand_index == UNRAND_FAERIE)
         _make_faerie_armour(item);
@@ -1793,8 +1790,7 @@ bool make_item_unrandart(item_def &item, int unrand_index)
         item.sub_type = WPN_BROAD_AXE;
     }
 
-    if (!(unrand->flags & UNRAND_FLAG_RANDAPP)
-        && !(unrand->flags & UNRAND_FLAG_UNIDED)
+    if (!(unrand->flags & UNRAND_FLAG_UNIDED)
         && !strcmp(unrand->name, unrand->unid_name))
     {
         set_ident_flags(item, ISFLAG_IDENT_MASK | ISFLAG_NOTED_ID);

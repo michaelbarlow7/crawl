@@ -16,9 +16,7 @@ spret cast_chain_spell(spell_type spell_cast, int pow,
 spret trace_los_attack_spell(spell_type spell, int pow,
                                   const actor* agent);
 spret fire_los_attack_spell(spell_type spell, int pow, const actor* agent,
-                                 actor* defender = nullptr,
-                                 bool fail = false,
-                                 int* damage_done = nullptr);
+                            bool fail = false, int* damage_done = nullptr);
 void sonic_damage(bool scream);
 bool mons_shatter(monster* caster, bool actual = true);
 void shillelagh(actor *wielder, coord_def where, int pow);
@@ -51,9 +49,7 @@ void forest_message(const coord_def pos, const string &msg,
                     msg_channel_type ch = MSGCH_PLAIN);
 void forest_damage(const actor *mon);
 
-vector<bolt> get_spray_rays(const actor *caster, coord_def aim, int range,
-                            int max_rays, int max_spacing = 3);
-spret cast_dazzling_spray(int pow, coord_def aim, bool fail);
+spret cast_dazzling_flash(int pow, bool fail, bool tracer = false);
 
 spret cast_toxic_radiance(actor *caster, int pow, bool fail = false,
                                bool mon_tracer = false);
@@ -68,10 +64,18 @@ spret cast_glaciate(actor *caster, int pow, coord_def aim,
 
 spret cast_random_bolt(int pow, bolt& beam, bool fail = false);
 
-size_t shotgun_beam_count(int pow);
-spret cast_scattershot(const actor *caster, int pow, const coord_def &pos,
-                            bool fail = false);
-
 spret cast_ignition(const actor *caster, int pow, bool fail);
 
-spret cast_borgnjors_vile_clutch(int pow, bolt &beam, bool fail);
+spret cast_starburst(int pow, bool fail, bool tracer=false);
+
+void foxfire_attack(const monster *foxfire, const actor *target);
+
+spret cast_hailstorm(int pow, bool fail, bool tracer=false);
+
+spret cast_imb(int pow, bool fail);
+
+void actor_apply_toxic_bog(actor *act);
+
+spret cast_frozen_ramparts(int pow, bool fail);
+
+spret cast_absolute_zero(int pow, bool fail, bool tracer = false);

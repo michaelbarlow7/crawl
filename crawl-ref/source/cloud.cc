@@ -36,7 +36,7 @@
 #include "state.h"
 #include "stringutil.h"
 #include "terrain.h"
-#include "tiledef-main.h"
+#include "rltiles/tiledef-main.h"
 #include "unwind.h"
 
 cloud_struct* cloud_at(coord_def pos)
@@ -289,6 +289,16 @@ static const cloud_data clouds[] = {
       BEAM_NONE, {},                              // beam & damage
       true,                                       // opacity
     },
+    // CLOUD_EMBERS,
+    { "smoldering embers", "embers",
+        ETC_SMOKE,
+        { TILE_CLOUD_BLACK_SMOKE, CTVARY_NONE },
+    },
+    // CLOUD_FLAME,
+    { "wisps of flame", nullptr,          // terse, verbose name
+      ETC_FIRE,                                // colour
+      { TILE_CLOUD_FLAME, CTVARY_RANDOM },   // tile
+    },
 };
 COMPILE_CHECK(ARRAYSZ(clouds) == NUM_CLOUD_TYPES);
 
@@ -437,8 +447,11 @@ static void _spread_fire(const cloud_struct &cloud)
 
         // forest fire doesn't spread in all directions at once,
         // every neighbouring square gets a separate roll
-        if (!feat_is_tree(grd(*ai)) || x_chance_in_y(19, 20))
+        if (!feat_is_tree(grd(*ai)) || is_temp_terrain(*ai)
+            || x_chance_in_y(19, 20))
+        {
             continue;
+        }
 
         if (env.markers.property_at(*ai, MAT_ANY, "veto_fire") == "veto")
             continue;
@@ -477,6 +490,36 @@ static void _cloud_interacts_with_terrain(const cloud_struct &cloud)
                                         cloud.source, -1);
             _los_cloud_changed(p, env.cloud[p].type, old);
         }
+    }
+}
+
+/**
+ * Convert timing out embers to conjured flames.
+ *
+ * @param cloud     The cloud in question.
+ * @return          Whether a flame cloud has been created.
+ */
+static bool _handle_conjure_flame(const cloud_struct &cloud)
+{
+    if (cloud.type != CLOUD_EMBERS)
+        return false;
+
+    if (you.pos() == cloud.pos)
+    {
+        mpr("You smother the flame.");
+        return false;
+    }
+    else if (monster_at(cloud.pos))
+    {
+        mprf("%s smothers the flame.",
+             monster_at(cloud.pos)->name(DESC_THE).c_str());
+        return false;
+    }
+    else
+    {
+        mpr("The fire ignites!");
+        place_cloud(CLOUD_FIRE, cloud.pos, you.props["cflame_dur"], &you);
+        return true;
     }
 }
 
@@ -521,7 +564,7 @@ static void _dissipate_cloud(cloud_struct& cloud)
     }
 
     // Check for total dissipation and handle accordingly.
-    if (cloud.decay < 1)
+    if (cloud.decay < 1 && !_handle_conjure_flame(cloud))
         delete_cloud(cloud.pos);
 }
 
@@ -555,7 +598,8 @@ static void _handle_spectral_cloud(const cloud_struct& cloud)
                              (cloud.whose == KC_OTHER ?
                                 BEH_HOSTILE :
                                 BEH_FRIENDLY), cloud.pos,
-                             (agent ? agent->foe : MHITYOU), MG_FORCE_PLACE)
+                             (agent ? agent->foe : short{MHITYOU}),
+                             MG_FORCE_PLACE)
                     .set_base(basetype)
                     .set_summoned(actor_by_mid(cloud.source), 1,
                                   SPELL_SPECTRAL_CLOUD));
@@ -720,10 +764,24 @@ static bool _cloud_is_stronger(cloud_type ct, const cloud_struct& cloud)
            || ct == CLOUD_TORNADO; // soon gone
 }
 
-//   Places a cloud with the given stats. Will overwrite an old
-//   cloud under some circumstances.
+/*
+ * Places a cloud with the given stats. Will overwrite an old cloud under some
+ * circumstances.
+ *
+ * @param cl_type     The type of cloud to place.
+ * @param ctarget     The location of the cloud.
+ * @param cl_range    How many turns the cloud will take to decay.
+ * @param agent       Any agent that may have caused the cloud. If this is the
+ *                    player, god conducts are applied.
+ * @param spread_rate How quickly the cloud spreads.
+ * @param excl_rad    How large of an exclusion radius to make around the
+ *                    cloud.
+ * @param do_conducts If true, apply any relevant god conducts for flame
+ *                    placement.
+*/
 void place_cloud(cloud_type cl_type, const coord_def& ctarget, int cl_range,
-                 const actor *agent, int _spread_rate, int excl_rad)
+                 const actor *agent, int spread_rate, int excl_rad,
+                 bool do_conducts)
 {
     if (is_sanctuary(ctarget) && !is_harmless_cloud(cl_type))
         return;
@@ -738,13 +796,36 @@ void place_cloud(cloud_type cl_type, const coord_def& ctarget, int cl_range,
         return;
     }
 
+    const monster * const mons = monster_at(ctarget);
+
+    // Fedhas protects plants from damaging clouds placed by the player.
+    if (agent
+        && agent->deity() == GOD_FEDHAS
+        && fedhas_protects(mons)
+        && !actor_cloud_immune(*mons, cl_type))
+    {
+        return;
+    }
+
     ASSERT(!cell_is_solid(ctarget));
 
+    god_conduct_trigger conducts[3];
     kill_category whose = KC_OTHER;
     killer_type killer  = KILL_MISC;
     mid_t source        = MID_NOBODY;
     if (agent && agent->is_player())
-        whose = KC_YOU, killer = KILL_YOU_MISSILE, source = MID_PLAYER;
+    {
+        if (do_conducts
+            && mons && mons->alive()
+            && !actor_cloud_immune(*mons, cl_type))
+        {
+            set_attack_conducts(conducts, *mons, you.can_see(*mons));
+        }
+
+        whose = KC_YOU;
+        killer = KILL_YOU_MISSILE;
+        source = MID_PLAYER;
+    }
     else if (agent && agent->is_monster())
     {
         if (agent->as_monster()->friendly())
@@ -756,18 +837,17 @@ void place_cloud(cloud_type cl_type, const coord_def& ctarget, int cl_range,
     }
 
     // There's already a cloud here. See if we can overwrite it.
-    if (cloud_at(ctarget) && !_cloud_is_stronger(cl_type, *cloud_at(ctarget)))
+    const cloud_struct *cloud = cloud_at(ctarget);
+    if (cloud && !_cloud_is_stronger(cl_type, *cloud))
         return;
 
-    // if the old cloud was opaque, may need to recalculate los.
-    // It *is* possible to overwrite an opaque cloud with a non-opaque one; OOD will do this.
-    const cloud_type old = cloud_type_at(ctarget);
-
-    const int spread_rate = _actual_spread_rate(cl_type, _spread_rate);
-
+    // If the old cloud was opaque, may need to recalculate los. It *is*
+    // possible to overwrite an opaque cloud with a non-opaque one; OOD will do
+    // this.
+    const cloud_type old = cloud ? cloud->type : CLOUD_NONE;
     env.cloud[ctarget] = cloud_struct(ctarget, cl_type, cl_range * 10,
-                                      spread_rate, whose, killer, source,
-                                      excl_rad);
+            _actual_spread_rate(cl_type, spread_rate), whose, killer, source,
+            excl_rad);
     _los_cloud_changed(ctarget, env.cloud[ctarget].type, old);
 }
 
@@ -912,7 +992,7 @@ bool actor_cloud_immune(const actor &act, const cloud_struct &cloud)
 
     if (!player
         && (you_worship(GOD_FEDHAS)
-            && fedhas_protects(*act.as_monster())
+            && fedhas_protects(act.as_monster())
             || testbits(act.as_monster()->flags, MF_DEMONIC_GUARDIAN))
         && (cloud.whose == KC_YOU || cloud.whose == KC_FRIENDLY)
         && (act.as_monster()->friendly() || act.as_monster()->neutral()))
@@ -1379,6 +1459,10 @@ bool is_damaging_cloud(cloud_type type, bool accept_temp_resistances, bool yours
 static bool _mons_avoids_cloud(const monster* mons, const cloud_struct& cloud,
                                bool extra_careful)
 {
+    // Friendlies avoid snuffing the player's conjured flames
+    if (mons->attitude == ATT_FRIENDLY && cloud.type == CLOUD_EMBERS)
+        return true;
+
     // clouds you're immune to are inherently safe.
     if (actor_cloud_immune(*mons, cloud))
         return false;

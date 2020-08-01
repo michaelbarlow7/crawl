@@ -15,6 +15,7 @@
 #include "coordit.h"
 #include "env.h"
 #include "fprop.h"
+#include "god-abil.h"
 #include "god-conduct.h"
 #include "god-passive.h" // passive_t::umbra
 #include "libutil.h"
@@ -79,6 +80,7 @@ void invalidate_agrid(bool recheck_new)
 
 void areas_actor_moved(const actor* act, const coord_def& oldpos)
 {
+    UNUSED(oldpos);
     if (act->alive() &&
         (you.entering_level
          || act->halo_radius() > -1 || act->silence_radius() > -1
@@ -278,12 +280,25 @@ static void _remove_sanctuary_property(const coord_def& where)
     env.pgrid(where) &= ~(FPROP_SANCTUARY_1 | FPROP_SANCTUARY_2);
 }
 
+bool sanctuary_exists()
+{
+    return in_bounds(env.sanctuary_pos);
+}
+
+/*
+ * Remove any sanctuary from the level.
+ *
+ * @param did_attack If true, the sanctuary removal was the result of a player
+ *                   attack, so we apply penance. Otherwise the sanctuary is
+ *                   removed with no penance.
+ * @returns True if we removed an existing sanctuary, false otherwise.
+ */
 bool remove_sanctuary(bool did_attack)
 {
     if (env.sanctuary_time)
         env.sanctuary_time = 0;
 
-    if (!in_bounds(env.sanctuary_pos))
+    if (!sanctuary_exists())
         return false;
 
     const int radius = 4;
@@ -456,14 +471,12 @@ void create_sanctuary(const coord_def& center, int time)
         mpr("The monsters scatter in all directions!");
 }
 
-/////////////
-// Silence
-
-// radius, calculated from remaining duration
+// Range calculation for spells whose radius shrinks over time with remaining
+// duration.
 // dur starts at 10 (low power) and is capped at 100
 // maximal range: 5
-// last 6 turns: range 0, hence only the player silenced
-static int _silence_range(int dur)
+// last 6 turns: range 0, hence only the player affected
+static int _shrinking_aoe_range(int dur)
 {
     if (dur <= 0)
         return -1;
@@ -471,9 +484,12 @@ static int _silence_range(int dur)
     return isqrt(max(0, min(3*(dur - 5)/4, 25)));
 }
 
+/////////////
+// Silence
+
 int player::silence_radius() const
 {
-    return _silence_range(duration[DUR_SILENCE]);
+    return _shrinking_aoe_range(duration[DUR_SILENCE]);
 }
 
 int monster::silence_radius() const
@@ -488,7 +504,7 @@ int monster::silence_radius() const
     // The below is arbitrarily chosen to make monster decay look reasonable.
     const int moddur = BASELINE_DELAY
                        * max(7, stepdown_value(dur * 10 - 60, 10, 5, 45, 100));
-    return _silence_range(moddur);
+    return _shrinking_aoe_range(moddur);
 }
 
 bool silenced(const coord_def& p)
@@ -530,8 +546,8 @@ int player::halo_radius() const
 
     if (player_equip_unrand(UNRAND_EOS))
         size = max(size, 3);
-    else if (you.attribute[ATTR_HEAVENLY_STORM] > 0)
-        size = max(size, 1);
+    else if (you.props.exists(WU_JIAN_HEAVENLY_STORM_KEY))
+        size = max(size, 2);
 
     return size;
 }
@@ -582,7 +598,7 @@ int monster::halo_radius() const
 
 int player::liquefying_radius() const
 {
-    return _silence_range(duration[DUR_LIQUEFYING]);
+    return _shrinking_aoe_range(duration[DUR_LIQUEFYING]);
 }
 
 int monster::liquefying_radius() const
@@ -593,7 +609,7 @@ int monster::liquefying_radius() const
     // The below is arbitrarily chosen to make monster decay look reasonable.
     const int moddur = BASELINE_DELAY *
         max(7, stepdown_value(dur * 10 - 60, 10, 5, 45, 100));
-    return _silence_range(moddur);
+    return _shrinking_aoe_range(moddur);
 }
 
 bool liquefied(const coord_def& p, bool check_actual)
@@ -604,7 +620,7 @@ bool liquefied(const coord_def& p, bool check_actual)
     if (!_agrid_valid)
         _update_agrid();
 
-    if (feat_is_water(grd(p)))
+    if (feat_is_water(grd(p)) || feat_is_lava(grd(p)))
         return false;
 
     // "actually" liquefied (ie, check for movement)

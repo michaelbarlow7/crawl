@@ -88,6 +88,7 @@ public:
         int prism_charge;      ///< Turns this prism has existed
         int battlecharge;      ///< Charges of battlesphere
         int move_spurt;        ///< Sixfirhy/jiangshi/kraken black magic
+        int steps_remaining;   ///< Foxfire remaining moves
         mid_t tentacle_connect;///< mid of monster this tentacle is
                                //   connected to: for segments, this is the
                                //   tentacle; for tentacles, the head.
@@ -151,6 +152,7 @@ public:
                                 int killernum = -1) override;
     void self_destruct() override;
 
+    void set_position(const coord_def &c) override;
     void moveto(const coord_def& c, bool clear_net = true) override;
     bool move_to_pos(const coord_def &newpos, bool clear_net = true,
                      bool force = false) override;
@@ -183,7 +185,7 @@ public:
     // Has ENCH_SHAPESHIFTER or ENCH_GLOWING_SHAPESHIFTER.
     bool is_shapeshifter() const;
 
-#ifdef DEBUG_DIAGNOSTICS
+#ifdef DEBUG_ENCH_CACHE_DIAGNOSTICS
     bool has_ench(enchant_type ench) const; // same but validated
 #else
     bool has_ench(enchant_type ench) const { return ench_cache[ench]; }
@@ -282,7 +284,7 @@ public:
         override;
     int scan_artefacts(artefact_prop_type which_property,
                        bool calc_unid = true,
-                       vector<item_def> *_unused_matches = nullptr) const
+                       vector<const item_def *> *_unused_matches = nullptr) const
         override;
 
     item_def *slot_item(equipment_type eq, bool include_melded=false) const
@@ -382,7 +384,7 @@ public:
     int res_cold() const override;
     int res_elec() const override;
     int res_poison(bool temp = true) const override;
-    int res_rotting(bool /*temp*/ = true) const override;
+    rot_resistance res_rotting(bool /*temp*/ = true) const override;
     int res_water_drowning() const override;
     bool res_sticky_flame() const override;
     int res_holy_energy() const override;
@@ -402,7 +404,6 @@ public:
     bool cloud_immune(bool calc_unid = true, bool items = true) const override;
 
     bool airborne() const override;
-    bool can_cling_to_walls() const override;
     bool is_banished() const override;
     bool is_web_immune() const override;
     bool invisible() const override;
@@ -511,8 +512,8 @@ public:
     int     shield_block_penalty() const override;
     void    shield_block_succeeded(actor *foe) override;
     int     shield_bypass_ability(int tohit) const override;
-    int     missile_deflection() const override;
-    void    ablate_deflection() override;
+    bool    missile_repulsion() const override;
+    void    ablate_repulsion() override;
 
     // Combat-related class methods
     int     unadjusted_body_armour_penalty() const override { return 0; }
@@ -545,7 +546,7 @@ public:
     void struggle_against_net();
     bool has_usable_tentacle() const override;
 
-    bool check_clarity(bool silent) const;
+    bool check_clarity() const;
 
     bool is_child_tentacle() const;
     bool is_child_tentacle_of(const monster* mons) const;

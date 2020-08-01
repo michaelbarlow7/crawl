@@ -32,7 +32,6 @@
 #include "food.h"
 #include "fprop.h"
 #include "ghost.h"
-#include "god-abil.h"
 #include "god-item.h"
 #include "god-passive.h"
 #include "item-name.h"
@@ -42,7 +41,6 @@
 #include "mapmark.h"
 #include "message.h"
 #include "mgen-data.h"
-#include "misc.h"
 #include "mon-abil.h"
 #include "mon-behv.h"
 #include "mon-book.h"
@@ -58,19 +56,17 @@
 #include "religion.h"
 #include "showsymb.h"
 #include "species.h"
-#include "spl-summoning.h"
 #include "spl-util.h"
 #include "state.h"
 #include "stringutil.h"
 #include "terrain.h"
-#include "tiledef-player.h"
+#include "rltiles/tiledef-player.h"
 #include "tilepick.h"
 #include "tileview.h"
 #include "timed-effects.h"
 #include "traps.h"
 #include "unicode.h"
 #include "unwind.h"
-#include "view.h"
 
 static FixedVector < int, NUM_MONSTERS > mon_entry;
 
@@ -278,7 +274,7 @@ void init_monster_symbols()
     // Let those follow the feature settings, unless specifically overridden.
     monster_symbols[MONS_ANIMATED_TREE].glyph = get_feat_symbol(DNGN_TREE);
     for (monster_type mc = MONS_0; mc < NUM_MONSTERS; ++mc)
-        if (mons_genus(mc) == MONS_STATUE)
+        if (get_monster_data(mc)->genus == MONS_STATUE)
             monster_symbols[mc].glyph = get_feat_symbol(DNGN_GRANITE_STATUE);
 
     // Validate all glyphs, even those which didn't come from an override.
@@ -399,7 +395,7 @@ int get_mons_resist(const monster& mon, mon_resist_flags res)
 }
 
 // Returns true if the monster successfully resists this attempt to poison it.
-const bool monster_resists_this_poison(const monster& mons, bool force)
+bool monster_resists_this_poison(const monster& mons, bool force)
 {
     const int res = mons.res_poison();
     if (res >= 3)
@@ -481,14 +477,13 @@ int monster::wearing(equipment_type slot, int sub_type, bool calc_unid) const
         break;
 
     case EQ_AMULET:
-    case EQ_AMULET_PLUS:
     case EQ_RINGS:
     case EQ_RINGS_PLUS:
         item = mslot_item(MSLOT_JEWELLERY);
         if (item && item->is_type(OBJ_JEWELLERY, sub_type)
             && (calc_unid || item_type_known(*item)))
         {
-            if (slot == EQ_RINGS_PLUS || slot == EQ_AMULET_PLUS)
+            if (slot == EQ_RINGS_PLUS)
                 ret += item->plus;
             else
                 ret++;
@@ -568,8 +563,8 @@ int monster::wearing_ego(equipment_type slot, int special, bool calc_unid) const
     return ret;
 }
 
-int monster::scan_artefacts(artefact_prop_type ra_prop, bool calc_unid,
-                            vector<item_def> *matches) const
+int monster::scan_artefacts(artefact_prop_type ra_prop, bool /*calc_unid*/,
+                            vector<const item_def *> *matches) const
 {
     UNUSED(matches); //TODO: implement this when it will be required somewhere
 
@@ -840,18 +835,6 @@ bool mons_is_projectile(monster_type mc)
 bool mons_is_projectile(const monster& mon)
 {
     return mons_is_projectile(mon.type);
-}
-
-static bool _mons_class_is_clingy(monster_type type)
-{
-    return mons_genus(type) == MONS_SPIDER || type == MONS_LEOPARD_GECKO
-        || type == MONS_GIANT_COCKROACH || type == MONS_DEMONIC_CRAWLER
-        || type == MONS_DART_SLUG;
-}
-
-bool mons_can_cling_to_walls(const monster& mon)
-{
-    return _mons_class_is_clingy(mon.type);
 }
 
 // Conjuration or Hexes. Summoning and Necromancy make the monster a creature
@@ -1434,11 +1417,7 @@ bool mons_can_shout(monster_type mc)
 
 bool mons_is_ghost_demon(monster_type mc)
 {
-    return mons_class_flag(mc, M_GHOST_DEMON)
-#if TAG_MAJOR_VERSION == 34
-           || mc == MONS_CHIMERA;
-#endif
-           ;
+    return mons_class_flag(mc, M_GHOST_DEMON);
 }
 
 bool mons_is_pghost(monster_type mc)
@@ -1723,7 +1702,8 @@ bool mons_class_can_use_stairs(monster_type mc)
            && mc != MONS_SILENT_SPECTRE
            && mc != MONS_GERYON
            && mc != MONS_ROYAL_JELLY
-           && mc != MONS_BALL_LIGHTNING;
+           && mc != MONS_BALL_LIGHTNING
+           && mc != MONS_FOXFIRE;
 }
 
 bool mons_class_can_use_transporter(monster_type mc)
@@ -2004,6 +1984,10 @@ mon_attack_def mons_attack_spec(const monster& m, int attk_number,
             attk.damage = max(1, you.skill_rdiv(SK_UNARMED_COMBAT, 10, 20));
     }
 
+    // summoning miscast monster; hd scaled with miscast severity
+    if (mon.type == MONS_NAMELESS && attk_number == 0)
+        attk.damage = mon.get_hit_dice() * 2;
+
     if (!base_flavour)
     {
         // TODO: randomization here is not the greatest way of doing any of
@@ -2084,7 +2068,6 @@ string mon_attack_name(attack_type attack, bool with_object)
     COMPILE_CHECK(ARRAYSZ(attack_types) == NUM_ATTACK_TYPES - AT_FIRST_ATTACK);
 
     const int verb_index = attack - AT_FIRST_ATTACK;
-    dprf("verb index: %d", verb_index);
     ASSERT(verb_index < (int)ARRAYSZ(attack_types));
 
     if (with_object)
@@ -2409,7 +2392,7 @@ int exper_value(const monster& mon, bool real)
             case SPELL_IRON_SHOT:
             case SPELL_IOOD:
             case SPELL_FIREBALL:
-            case SPELL_AGONY:
+            case SPELL_AGONY_RANGE:
             case SPELL_LRD:
             case SPELL_DIG:
             case SPELL_FAKE_MARA_SUMMON:
@@ -2547,7 +2530,7 @@ monster_type random_demonspawn_job()
                                 MONS_LAST_NONBASE_DEMONSPAWN);
 }
 
-// Note: For consistent behavior in player_will_anger_monster(), all
+// Note: For consistent behaviour in player_will_anger_monster(), all
 // spellbooks a given monster can get here should produce the same
 // return values in the following:
 //
@@ -2955,7 +2938,7 @@ void define_monster(monster& mons)
     case MONS_PLAYER_ILLUSION:
     {
         ghost_demon ghost;
-        ghost.init_player_ghost(mcls == MONS_PLAYER_GHOST);
+        ghost.init_player_ghost();
         if (mcls == MONS_PLAYER_GHOST)
         {
             // still don't allow undead ghosts, even mirrored
@@ -3497,9 +3480,9 @@ bool mons_is_influenced_by_sanctuary(const monster& m)
 
 bool mons_is_fleeing_sanctuary(const monster& m)
 {
-    return mons_is_influenced_by_sanctuary(m)
-           && in_bounds(env.sanctuary_pos)
-           && (m.flags & MF_FLEEING_FROM_SANCTUARY);
+    return sanctuary_exists()
+           && (m.flags & MF_FLEEING_FROM_SANCTUARY)
+           && mons_is_influenced_by_sanctuary(m);
 }
 
 bool mons_just_slept(const monster& m)
@@ -3530,7 +3513,7 @@ bool mons_is_removed(monster_type mc)
 bool mons_looks_stabbable(const monster& m)
 {
     const stab_type st = find_stab_type(&you, m, false);
-    return !m.friendly() && stab_bonus_denom(st) == 1; // top-tier stab
+    return stab_bonus_denom(st) == 1; // top-tier stab
 }
 
 bool mons_looks_distracted(const monster& m)
@@ -4069,17 +4052,20 @@ bool monster_senior(const monster& m1, const monster& m2, bool fleeing)
             return false;
     }
 
-    // If they're the same holiness, monsters smart enough to use stairs can
-    // push past monsters too stupid to use stairs (so that e.g. non-zombified
-    // or spectral zombified undead can push past non-spectral zombified
-    // undead).
-    if (m1.holiness() & m2.holiness() && mons_class_can_use_stairs(m1.type)
+    // Monsters smart enough to use stairs can push past monsters too stupid
+    // to use stairs (so that e.g. non-zombified or spectral zombified undead
+    // can push past non-spectral zombified undead).
+    if (mons_class_can_use_stairs(m1.type)
         && !mons_class_can_use_stairs(m2.type))
     {
         return true;
     }
+    // This check assumes that demonicness is always carried at the monster type
+    // level; this is because a full holiness check in such an often-called
+    // function is costly.
     const bool related = mons_genus(m1.type) == mons_genus(m2.type)
-                         || (m1.holiness() & m2.holiness() & MH_DEMONIC);
+                            || (   mons_class_holiness(m1.type) & MH_DEMONIC
+                                && mons_class_holiness(m2.type) & MH_DEMONIC);
 
     // Let all related monsters (all demons are 'related') push past ones that
     // are weaker at all. Unrelated ones have to be quite a bit stronger, to
@@ -4966,11 +4952,8 @@ void debug_mondata()
 
         if (md->speed < 0)
             fails += make_stringf("%s has 0 speed\n", name);
-        else if (md->speed == 0 && !mons_class_is_firewood(mc)
-            && mc != MONS_HYPERACTIVE_BALLISTOMYCETE)
-        {
+        else if (md->speed == 0 && !mons_class_is_firewood(mc))
             fails += make_stringf("%s has 0 speed\n", name);
-        }
 
         const bool male = mons_class_flag(mc, M_MALE);
         const bool female = mons_class_flag(mc, M_FEMALE);
@@ -5247,8 +5230,7 @@ bool mons_is_avatar(monster_type mc)
 
 bool mons_is_player_shadow(const monster& mon)
 {
-    return mon.type == MONS_PLAYER_SHADOW
-           && mon.mname.empty();
+    return mon.type == MONS_PLAYER_SHADOW;
 }
 
 bool mons_has_attacks(const monster& mon)
@@ -5337,10 +5319,13 @@ void update_monster_symbol(monster_type mtype, cglyph_t md)
         monster_symbols[mtype].colour = md.col;
 }
 
-void normalize_spell_freq(monster_spells &spells, int hd)
+int spell_freq_for_hd(int hd)
 {
-    const unsigned int total_freq = (hd + 50);
+    return hd + 50;
+}
 
+void normalize_spell_freq(monster_spells &spells, int total_freq)
+{
     // Not using std::accumulate because slot.freq is only a uint8_t.
     unsigned int total_given_freq = 0;
     for (const auto &slot : spells)

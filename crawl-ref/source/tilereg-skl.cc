@@ -12,10 +12,9 @@
 #include "skills.h"
 #include "stringutil.h"
 #include "tile-inventory-flags.h"
-#include "tiledef-icons.h"
+#include "rltiles/tiledef-icons.h"
 #include "tilepick.h"
 #include "tiles-build-specific.h"
-#include "viewgeom.h"
 #ifdef WIZARD
 #include "wiz-you.h"
 #endif
@@ -54,14 +53,14 @@ void SkillRegion::draw_tag()
     draw_desc(desc.c_str());
 }
 
-int SkillRegion::handle_mouse(MouseEvent &event)
+int SkillRegion::handle_mouse(wm_mouse_event &event)
 {
     unsigned int item_idx;
     if (!place_cursor(event, item_idx))
         return 0;
 
     const skill_type skill = (skill_type) m_items[item_idx].idx;
-    if (event.button == MouseEvent::LEFT)
+    if (event.button == wm_mouse_event::LEFT)
     {
         // TODO: Handle skill transferral using TILES_MOD_SHIFT.
 #ifdef WIZARD
@@ -92,7 +91,7 @@ int SkillRegion::handle_mouse(MouseEvent &event)
         }
         return CK_MOUSE_CMD;
     }
-    else if (skill != NUM_SKILLS && event.button == MouseEvent::RIGHT)
+    else if (skill != NUM_SKILLS && event.button == wm_mouse_event::RIGHT)
     {
         describe_skill(skill);
         redraw_screen();

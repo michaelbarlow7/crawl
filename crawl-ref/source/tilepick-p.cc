@@ -12,8 +12,8 @@
 #include "player.h"
 #include "tile-flags.h"
 #include "tile-player-flag-cut.h"
-#include "tiledef-player.h"
-#include "tiledef-unrand.h"
+#include "rltiles/tiledef-player.h"
+#include "rltiles/tiledef-unrand.h"
 #include "tiledoll.h"
 #include "tilepick.h"
 #include "transform.h"
@@ -24,11 +24,13 @@ static tileidx_t _modrng(int mod, tileidx_t first, tileidx_t last)
     return first + mod % (last - first + 1);
 }
 
+#if TAG_MAJOR_VERSION == 34
 static tileidx_t _mon_mod(tileidx_t tile, int offset)
 {
     int count = tile_player_count(tile);
     return tile + offset % count;
 }
+#endif
 
 tileidx_t tilep_equ_weapon(const item_def &item)
 {
@@ -53,17 +55,14 @@ tileidx_t tilep_equ_weapon(const item_def &item)
         {
 #if TAG_MAJOR_VERSION == 34
         case MISC_BOTTLED_EFREET:             return TILEP_HAND1_BOTTLE;
-#endif
         case MISC_FAN_OF_GALES:               return TILEP_HAND1_FAN;
-#if TAG_MAJOR_VERSION == 34
         case MISC_STONE_OF_TREMORS:           return TILEP_HAND1_STONE;
 #endif
         case MISC_LIGHTNING_ROD:              return 0;
 
-        case MISC_CRYSTAL_BALL_OF_ENERGY:     return TILEP_HAND1_CRYSTAL;
-
-        case MISC_LAMP_OF_FIRE:               return TILEP_HAND1_LANTERN;
 #if TAG_MAJOR_VERSION == 34
+        case MISC_CRYSTAL_BALL_OF_ENERGY:     return TILEP_HAND1_CRYSTAL;
+        case MISC_LAMP_OF_FIRE:               return TILEP_HAND1_LANTERN;
         case MISC_BUGGY_LANTERN_OF_SHADOWS:   return TILEP_HAND1_BONE_LANTERN;
 #endif
         case MISC_HORN_OF_GERYON:             return TILEP_HAND1_HORN;
@@ -280,15 +279,15 @@ tileidx_t tilep_equ_shield(const item_def &item)
 
     switch (item.sub_type)
     {
-        case ARM_SHIELD:
-            return _modrng(item.rnd, TILEP_HAND2_SHIELD_FIRST_NORM,
-                           TILEP_HAND2_SHIELD_LAST_NORM);
+        case ARM_KITE_SHIELD:
+            return _modrng(item.rnd, TILEP_HAND2_KITE_SHIELD_FIRST_NORM,
+                           TILEP_HAND2_KITE_SHIELD_LAST_NORM);
         case ARM_BUCKLER:
             return _modrng(item.rnd, TILEP_HAND2_BUCKLER_FIRST_NORM,
                            TILEP_HAND2_BUCKLER_LAST_NORM);
-        case ARM_LARGE_SHIELD:
-            return _modrng(item.rnd, TILEP_HAND2_LSHIELD_FIRST_NORM,
-                           TILEP_HAND2_LSHIELD_LAST_NORM);
+        case ARM_TOWER_SHIELD:
+            return _modrng(item.rnd, TILEP_HAND2_TOWER_SHIELD_FIRST_NORM,
+                           TILEP_HAND2_TOWER_SHIELD_LAST_NORM);
         default: return 0;
     }
 }
@@ -457,7 +456,7 @@ tileidx_t tilep_equ_boots(const item_def &item)
 
 tileidx_t tileidx_player()
 {
-    int ch = TILEP_PLAYER;
+    tileidx_t ch = TILEP_PLAYER;
 
     // Handle shapechange first
     switch (you.form)
@@ -524,7 +523,16 @@ tileidx_t tileidx_player()
     }
 
     if (you.duration[DUR_POISONING])
-        ch |= TILE_FLAG_POISON;
+    {
+        int pois_perc = (you.hp <= 0) ? 100
+                                  : ((you.hp - max(0, poison_survival())) * 100 / you.hp);
+        if (pois_perc >= 100)
+            ch |= TILE_FLAG_MAX_POISON;
+        else if (pois_perc >= 35)
+            ch |= TILE_FLAG_MORE_POISON;
+        else
+            ch |= TILE_FLAG_POISON;
+    }
 
     return ch;
 }
@@ -943,7 +951,7 @@ void tilep_job_default(int job, dolls_data *doll)
             break;
 
         case JOB_GLADIATOR:
-            parts[TILEP_PART_HAND2] = TILEP_HAND2_SHIELD_ROUND2;
+            parts[TILEP_PART_HAND2] = TILEP_HAND2_KITE_SHIELD_ROUND2;
             parts[TILEP_PART_BODY]  = TILEP_BODY_BELT1;
             parts[TILEP_PART_LEG]   = TILEP_LEG_BELT_GRAY;
             parts[TILEP_PART_BOOTS] = TILEP_BOOTS_MIDDLE_GRAY;

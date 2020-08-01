@@ -18,7 +18,6 @@
 #include "areas.h"
 #include "arena.h"
 #include "beam.h"
-#include "bloodspatter.h"
 #include "cloud.h"
 #include "colour.h"
 #include "coordit.h"
@@ -27,41 +26,29 @@
 #include "directn.h"
 #include "english.h"
 #include "env.h"
-#include "exclude.h"
-#include "fight.h"
 #include "fprop.h"
 #include "item-prop.h"
-#include "items.h"
 #include "libutil.h"
-#include "losglobal.h"
 #include "message.h"
 #include "mgen-data.h"
-#include "misc.h"
 #include "mon-act.h"
 #include "mon-behv.h"
-#include "mon-book.h"
 #include "mon-cast.h"
 #include "mon-death.h"
 #include "mon-pathfind.h"
 #include "mon-place.h"
 #include "mon-poly.h"
-#include "mon-project.h"
-#include "mon-speak.h"
-#include "mon-tentacle.h"
 #include "mon-util.h"
 #include "ouch.h"
 #include "random.h"
 #include "religion.h"
-#include "shout.h"
 #include "spl-damage.h"
-#include "spl-miscast.h"
 #include "spl-util.h"
 #include "state.h"
 #include "stringutil.h"
 #include "target.h"
 #include "teleport.h"
 #include "terrain.h"
-#include "viewchar.h"
 #include "view.h"
 
 static bool _slime_split_merge(monster* thing);
@@ -882,7 +869,7 @@ bool lost_soul_revive(monster& mons, killer_type killer)
             remove_unique_annotation(&mons);
         }
 
-        targeter_los hitfunc(*mi, LOS_SOLID);
+        targeter_radius hitfunc(*mi, LOS_SOLID);
         flash_view_delay(UA_MONSTER, GREEN, 200, &hitfunc);
 
         mons.heal(mons.max_hit_points);
@@ -1022,11 +1009,48 @@ bool mon_special_ability(monster* mons)
 
         for (monster_near_iterator targ(mons, LOS_NO_TRANS); targ; ++targ)
         {
-            if (mons_aligned(mons, *targ) || grid_distance(mons->pos(), targ->pos()) > 2)
+            if (mons_aligned(mons, *targ) || mons_is_firewood(**targ)
+                || grid_distance(mons->pos(), targ->pos()) > 2
+                || !you.see_cell(targ->pos()))
+            {
                 continue;
+            }
 
             if (!cell_is_solid(targ->pos()))
             {
+                mons->suicide();
+                used = true;
+                break;
+            }
+        }
+        break;
+
+    case MONS_FOXFIRE:
+        if (is_sanctuary(mons->pos()))
+            break;
+
+        if (mons->attitude == ATT_HOSTILE
+            && grid_distance(you.pos(), mons->pos()) == 1)
+        {
+            foxfire_attack(mons, &you);
+            check_place_cloud(CLOUD_FLAME, mons->pos(), 2, mons);
+            mons->suicide();
+            used = true;
+            break;
+        }
+
+        for (monster_near_iterator targ(mons, LOS_NO_TRANS); targ; ++targ)
+        {
+            if (mons_aligned(mons, *targ) || mons_is_firewood(**targ)
+                || grid_distance(mons->pos(), targ->pos()) > 1
+                || !you.see_cell(targ->pos()))
+            {
+                continue;
+            }
+
+            if (!cell_is_solid(targ->pos()))
+            {
+                foxfire_attack(mons, *targ);
                 mons->suicide();
                 used = true;
                 break;

@@ -154,8 +154,8 @@ enum enchant_type
     ENCH_GOLD_LUST,
     ENCH_DRAINED,
     ENCH_REPEL_MISSILES,
-    ENCH_DEFLECT_MISSILES,
 #if TAG_MAJOR_VERSION == 34
+    ENCH_DEFLECT_MISSILES,
     ENCH_NEGATIVE_VULN,
     ENCH_CONDENSATION_SHIELD,
 #endif
@@ -175,10 +175,13 @@ enum enchant_type
     ENCH_INFESTATION,
     ENCH_STILL_WINDS,
     ENCH_RING_OF_THUNDER,
+#if TAG_MAJOR_VERSION == 34
     ENCH_WHIRLWIND_PINNED,
+#endif
     ENCH_VORTEX,
     ENCH_VORTEX_COOLDOWN,
     ENCH_VILE_CLUTCH,
+    ENCH_WATERLOGGED,
     // Update enchant_names[] in mon-ench.cc when adding or removing
     // enchantments.
     NUM_ENCHANTMENTS

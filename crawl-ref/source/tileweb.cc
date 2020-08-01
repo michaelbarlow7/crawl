@@ -6,11 +6,14 @@
 
 #include <cerrno>
 #include <cstdarg>
+
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/un.h>
+#if defined(UNIX) || defined(TARGET_COMPILER_MINGW)
 #include <unistd.h>
+#endif
 
 #include "artefact.h"
 #include "branch.h"
@@ -42,16 +45,17 @@
 #include "throw.h"
 #include "tile-flags.h"
 #include "tile-player-flag-cut.h"
-#include "tiledef-dngn.h"
-#include "tiledef-gui.h"
-#include "tiledef-icons.h"
-#include "tiledef-main.h"
-#include "tiledef-player.h"
+#include "rltiles/tiledef-dngn.h"
+#include "rltiles/tiledef-gui.h"
+#include "rltiles/tiledef-icons.h"
+#include "rltiles/tiledef-main.h"
+#include "rltiles/tiledef-player.h"
 #include "tilepick.h"
 #include "tilepick-p.h"
 #include "tileview.h"
 #include "transform.h"
 #include "travel.h"
+#include "ui.h"
 #include "unicode.h"
 #include "unwind.h"
 #include "version.h"
@@ -408,6 +412,19 @@ wint_t TilesFramework::_handle_control_message(sockaddr_un addr, string data)
         if (Options.note_chat_messages)
             take_note(Note(NOTE_MESSAGE, MSGCH_PLAIN, 0, content->string_));
     }
+    else if (msgtype == "server_announcement")
+    {
+        JsonWrapper content = json_find_member(obj.node, "content");
+        content.check(JSON_STRING);
+        string m = "<red>Serverwide announcement:</red> ";
+        m += content->string_;
+
+        mprf(MSGCH_DGL_MESSAGE, "%s", m.c_str());
+        // The following two lines are a magic incantation to get this mprf
+        // to actually render without waiting on player inout
+        flush_prev_message();
+        c = CK_REDRAW;
+    }
     else if (msgtype == "click_travel" &&
              mouse_control::current_mode() == MOUSE_MODE_COMMAND)
     {
@@ -440,6 +457,8 @@ wint_t TilesFramework::_handle_control_message(sockaddr_un addr, string data)
         hotkey.check(JSON_NUMBER);
         OuterMenu::recv_outer_menu_focus(menu_id->string_, (int)hotkey->number_);
     }
+    else if (msgtype == "ui_state_sync")
+        ui::recv_ui_state_change(obj.node);
 
     return c;
 }
@@ -677,6 +696,7 @@ void TilesFramework::push_ui_layout(const string& type, unsigned num_state_slots
     tiles.json_write_string("msg", "ui-push");
     tiles.json_write_string("type", type);
     tiles.json_write_bool("ui-centred", !crawl_state.need_save);
+    tiles.json_write_int("generation_id", ui::layout_generation_id());
     tiles.json_close_object();
     UIStackFrame frame;
     frame.type = UIStackFrame::UI;
@@ -864,6 +884,7 @@ static bool _update_statuses(player_info& c)
 
 player_info::player_info()
 {
+    _state_ever_synced = false;
     for (auto &eq : equip)
         eq = -1;
     position = coord_def(-1, -1);
@@ -880,6 +901,16 @@ player_info::player_info()
 void TilesFramework::_send_player(bool force_full)
 {
     player_info& c = m_current_player_info;
+    if (!c._state_ever_synced)
+    {
+        // force the initial sync to be full: otherwise the _update_blah
+        // functions will incorrectly detect initial values to be ones that
+        // have previously been sent to the client, when they will not have
+        // been. (This is made ever worse by the fact that player_info does
+        // not initialize most of its values...)
+        c._state_ever_synced = true;
+        force_full = true;
+    }
 
     json_open_object();
     json_write_string("msg", "player");
@@ -1258,8 +1289,8 @@ static inline unsigned _get_brand(int col)
            (col & COLFLAG_MAYSTAB)          ? Options.may_stab_brand :
            (col & COLFLAG_FEATURE_ITEM)     ? Options.feature_item_brand :
            (col & COLFLAG_TRAP_ITEM)        ? Options.trap_item_brand :
-           (col & COLFLAG_REVERSE)          ? CHATTR_REVERSE
-                                            : CHATTR_NORMAL;
+           (col & COLFLAG_REVERSE)          ? unsigned{CHATTR_REVERSE}
+                                            : unsigned{CHATTR_NORMAL};
 }
 
 void TilesFramework::write_tileidx(tileidx_t t)
@@ -1596,7 +1627,6 @@ void TilesFramework::_send_map(bool force_full)
                 screen_cell_t *cell = &m_next_view(gc);
 
                 draw_cell(cell, gc, false, m_current_flash_colour);
-                cell->tile.flv = env.tile_flv(gc);
                 pack_cell_overlays(gc, m_next_view);
             }
 
@@ -1771,7 +1801,6 @@ void TilesFramework::load_dungeon(const crawl_view_buffer &vbuf,
             screen_cell_t *cell = &m_next_view(grid);
 
             *cell = ((const screen_cell_t *) vbuf)[x + vbuf.size().x * y];
-            cell->tile.flv = env.tile_flv(grid);
             pack_cell_overlays(grid, m_next_view);
 
             mark_clean(grid); // Remove redraw flag
@@ -1874,6 +1903,8 @@ void TilesFramework::_send_everything()
     update_input_mode(mouse_control::current_mode());
 
     m_text_menu.send(true);
+
+    ui::sync_ui_state();
 }
 
 void TilesFramework::clrscr()
@@ -2016,16 +2047,16 @@ void TilesFramework::place_cursor(cursor_type type, const coord_def &gc)
     }
 }
 
-void TilesFramework::clear_text_tags(text_tag_type type)
+void TilesFramework::clear_text_tags(text_tag_type /*type*/)
 {
 }
 
-void TilesFramework::add_text_tag(text_tag_type type, const string &tag,
-                                  const coord_def &gc)
+void TilesFramework::add_text_tag(text_tag_type /*type*/, const string &/*tag*/,
+                                  const coord_def &/*gc*/)
 {
 }
 
-void TilesFramework::add_text_tag(text_tag_type type, const monster_info& mon)
+void TilesFramework::add_text_tag(text_tag_type /*type*/, const monster_info& /*mon*/)
 {
 }
 
@@ -2153,8 +2184,6 @@ bool TilesFramework::cell_needs_redraw(const coord_def& gc)
 
 void TilesFramework::write_message_escaped(const string& s)
 {
-    m_msg_buf.reserve(m_msg_buf.size() + s.size());
-
     for (unsigned char c : s)
     {
         if (c == '"')
@@ -2168,7 +2197,7 @@ void TilesFramework::write_message_escaped(const string& s)
             m_msg_buf.append(buf);
         }
         else
-            m_msg_buf.append(1, c);
+            m_msg_buf.push_back(c);
     }
 }
 

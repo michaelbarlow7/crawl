@@ -15,11 +15,9 @@
 #include <sstream>
 
 #include "abyss.h"
-#include "acquire.h"
 #include "areas.h"
 #include "art-enum.h"
 #include "branch.h"
-#include "butcher.h"
 #include "chardump.h"
 #include "cleansing-flame-source-type.h"
 #include "cloud.h"
@@ -37,13 +35,10 @@
 #include "god-abil.h"
 #include "god-companions.h"
 #include "god-conduct.h"
-#include "god-prayer.h"
-#include "god-wrath.h"
 #include "hints.h"
 #include "invent.h"
 #include "item-prop.h"
 #include "items.h"
-#include "item-status-flag-type.h"
 #include "item-use.h"
 #include "level-state-type.h"
 #include "libutil.h"
@@ -60,6 +55,7 @@
 #include "potion.h"
 #include "prompt.h"
 #include "religion.h"
+#include "rltiles/tiledef-icons.h"
 #include "skills.h"
 #include "spl-book.h"
 #include "spl-cast.h"
@@ -83,10 +79,6 @@
 #include "uncancel.h"
 #include "unicode.h"
 #include "view.h"
-
-#ifdef USE_TILE
-# include "tiledef-icons.h"
-#endif
 
 enum class abflag
 {
@@ -446,7 +438,7 @@ static const ability_def Ability_List[] =
     { ABIL_TROG_BERSERK, "Berserk",
       0, 0, 600, 0, {fail_basis::invo}, abflag::none },
     { ABIL_TROG_REGEN_MR, "Trog's Hand",
-      0, 0, 200, 2, {fail_basis::invo, piety_breakpoint(2), 0, 1}, abflag::none },
+      0, 0, 250, 2, {fail_basis::invo, piety_breakpoint(2), 0, 1}, abflag::none },
     { ABIL_TROG_BROTHERS_IN_ARMS, "Brothers in Arms",
       0, 0, 250, generic_cost::range(5, 6),
       {fail_basis::invo, piety_breakpoint(5), 0, 1}, abflag::none },
@@ -481,13 +473,13 @@ static const ability_def Ability_List[] =
 
     // Nemelex
     { ABIL_NEMELEX_DRAW_DESTRUCTION, "Draw Destruction",
-      0, 0, 0, 0, {}, abflag::card },
+      0, 0, 0, 0, {fail_basis::invo}, abflag::card },
     { ABIL_NEMELEX_DRAW_ESCAPE, "Draw Escape",
-      0, 0, 0, 0, {}, abflag::card },
+      0, 0, 0, 0, {fail_basis::invo}, abflag::card },
     { ABIL_NEMELEX_DRAW_SUMMONING, "Draw Summoning",
-      0, 0, 0, 0, {}, abflag::card },
+      0, 0, 0, 0, {fail_basis::invo}, abflag::card },
     { ABIL_NEMELEX_DRAW_STACK, "Draw Stack",
-      0, 0, 0, 0, {}, abflag::card },
+      0, 0, 0, 0, {fail_basis::invo}, abflag::card },
     { ABIL_NEMELEX_TRIPLE_DRAW, "Triple Draw",
       2, 0, 0, 6, {fail_basis::invo, 60, 5, 20}, abflag::none },
     { ABIL_NEMELEX_DEAL_FOUR, "Deal Four",
@@ -1365,7 +1357,7 @@ static bool _check_ability_possible(const ability_def& abil, bool quiet = false)
     if ((abil.ability == ABIL_EVOKE_FLIGHT
          || abil.ability == ABIL_TRAN_BAT
          || abil.ability == ABIL_FLY)
-        && !flight_allowed())
+        && !flight_allowed(quiet))
     {
         return false;
     }
@@ -1383,7 +1375,7 @@ static bool _check_ability_possible(const ability_def& abil, bool quiet = false)
         || you.duration[DUR_WATER_HOLD] && !you.res_water_drowning())
     {
         talent tal = get_talent(abil.ability, false);
-        if (tal.is_invocation)
+        if (tal.is_invocation && abil.ability != ABIL_RENOUNCE_RELIGION)
         {
             if (!quiet)
             {
@@ -1560,7 +1552,7 @@ static bool _check_ability_possible(const ability_def& abil, bool quiet = false)
         return true;
 
     case ABIL_SIF_MUNA_DIVINE_EXEGESIS:
-        return can_cast_spells();
+        return can_cast_spells(quiet, true);
 
     case ABIL_ASHENZARI_TRANSFER_KNOWLEDGE:
         if (!trainable_skills(true))
@@ -2153,7 +2145,7 @@ static spret _do_ability(const ability_def& abil, bool fail)
         return cast_blink(fail);
         break;
 
-    case ABIL_EVOKE_BERSERK:    // amulet of rage, randarts
+    case ABIL_EVOKE_BERSERK:    // randarts
         fail_check();
         you.go_berserk(true);
         break;
@@ -2362,7 +2354,7 @@ static spret _do_ability(const ability_def& abil, bool fail)
 
     case ABIL_TSO_CLEANSING_FLAME:
     {
-        targeter_los hitfunc(&you, LOS_SOLID, 2);
+        targeter_radius hitfunc(&you, LOS_SOLID, 2);
         {
             if (stop_attack_prompt(hitfunc, "harm", _cleansing_flame_affects))
                 return spret::abort;
@@ -2460,7 +2452,7 @@ static spret _do_ability(const ability_def& abil, bool fail)
         const spret result =
             fire_los_attack_spell(SPELL_DRAIN_LIFE,
                                   you.skill_rdiv(SK_INVOCATIONS),
-                                  &you, nullptr, fail, &damage);
+                                  &you, fail, &damage);
         if (result != spret::success)
             return result;
 
@@ -3203,20 +3195,13 @@ static spret _do_ability(const ability_def& abil, bool fail)
         return spret::success;
 
     case ABIL_WU_JIAN_HEAVENLY_STORM:
-        fail_check();
-        mprf(MSGCH_GOD, "The air is filled with shimmering golden clouds!");
-        wu_jian_sifu_message(" says: The storm will not cease as long as you "
-                             "keep fighting, disciple!");
-
-        for (radius_iterator ai(you.pos(), 2, C_SQUARE, LOS_SOLID); ai; ++ai)
+        if (you.props.exists(WU_JIAN_HEAVENLY_STORM_KEY))
         {
-            if (!cell_is_solid(*ai))
-                place_cloud(CLOUD_GOLD_DUST, *ai, 5 + random2(5), &you);
+            mpr("You are already engulfed in a heavenly storm!");
+            return spret::abort;
         }
-
-        you.attribute[ATTR_HEAVENLY_STORM] = 12;
-        you.duration[DUR_HEAVENLY_STORM] = WU_JIAN_HEAVEN_TICK_TIME;
-        invalidate_agrid(true);
+        fail_check();
+        wu_jian_heavenly_storm();
         break;
 
     case ABIL_WU_JIAN_WALLJUMP:
@@ -3369,15 +3354,11 @@ int choose_ability_menu(const vector<talent>& talents)
                                         describe_talent(talents[i]),
                                         MEL_ITEM, 1, talents[i].hotkey);
             me->data = &numbers[i];
-#ifdef USE_TILE
             me->add_tile(tile_def(tileidx_ability(talents[i].which), TEX_GUI));
-#endif
             if (!check_ability_possible(talents[i].which, true))
             {
                 me->colour = COL_INAPPLICABLE;
-#ifdef USE_TILE
                 me->add_tile(tile_def(TILEI_MESH, TEX_ICONS));
-#endif
             }
             else if (_check_ability_dangerous(talents[i].which, true))
                 me->colour = COL_DANGEROUS;
@@ -3406,16 +3387,12 @@ int choose_ability_menu(const vector<talent>& talents)
                                             describe_talent(talents[i]),
                                             MEL_ITEM, 1, talents[i].hotkey);
                 me->data = &numbers[i];
-#ifdef USE_TILE
                 me->add_tile(tile_def(tileidx_ability(talents[i].which),
                                       TEX_GUI));
-#endif
                 if (!check_ability_possible(talents[i].which, true))
                 {
                     me->colour = COL_INAPPLICABLE;
-#ifdef USE_TILE
                     me->add_tile(tile_def(TILEI_MESH, TEX_ICONS));
-#endif
                 }
                 else if (_check_ability_dangerous(talents[i].which, true))
                     me->colour = COL_DANGEROUS;
@@ -3847,6 +3824,14 @@ vector<ability_type> get_god_abilities(bool ignore_silence, bool ignore_piety,
             abilities.push_back(static_cast<ability_type>(anc_type));
         }
     }
+    if (you.transfer_skill_points > 0)
+        abilities.push_back(ABIL_ASHENZARI_END_TRANSFER);
+    if (silenced(you.pos()) && you_worship(GOD_WU_JIAN) && piety_rank() >= 2)
+        abilities.push_back(ABIL_WU_JIAN_WALLJUMP);
+
+    if (!ignore_silence && silenced(you.pos()))
+        return abilities;
+    // Remaining abilities are unusable if silenced.
     if (you_worship(GOD_NEMELEX_XOBEH))
     {
         for (int deck = ABIL_NEMELEX_FIRST_DECK;
@@ -3858,14 +3843,7 @@ vector<ability_type> get_god_abilities(bool ignore_silence, bool ignore_piety,
         if (!you.props[NEMELEX_STACK_KEY].get_vector().empty())
             abilities.push_back(ABIL_NEMELEX_DRAW_STACK);
     }
-    if (you.transfer_skill_points > 0)
-        abilities.push_back(ABIL_ASHENZARI_END_TRANSFER);
-    if (silenced(you.pos()) && you_worship(GOD_WU_JIAN) && piety_rank() >= 2)
-        abilities.push_back(ABIL_WU_JIAN_WALLJUMP);
 
-    if (!ignore_silence && silenced(you.pos()))
-        return abilities;
-    // Remaining abilities are unusable if silenced.
     for (const auto& power : get_god_powers(you.religion))
     {
         if (god_power_usable(power, ignore_piety, ignore_penance))

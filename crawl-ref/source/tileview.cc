@@ -15,6 +15,7 @@
 #include "fprop.h"
 #include "items.h"
 #include "kills.h"
+#include "level-state-type.h"
 #include "mon-util.h"
 #include "options.h"
 #include "pcg.h"
@@ -22,8 +23,8 @@
 #include "state.h"
 #include "terrain.h"
 #include "tile-flags.h"
-#include "tiledef-dngn.h"
-#include "tiledef-player.h"
+#include "rltiles/tiledef-dngn.h"
+#include "rltiles/tiledef-player.h"
 #include "tilemcache.h"
 #include "tilepick.h"
 #include "tiles-build-specific.h"
@@ -70,15 +71,17 @@ void tile_new_level(bool first_time, bool init_unseen)
     for (unsigned int x = 0; x < GXM; x++)
         for (unsigned int y = 0; y < GYM; y++)
             tiles.update_minimap(coord_def(x, y));
+#else
+    UNUSED(init_unseen);
 #endif
 }
 
 void tile_init_default_flavour()
 {
-    tile_default_flv(you.where_are_you, you.depth, env.tile_default);
+    tile_default_flv(you.where_are_you, env.tile_default);
 }
 
-void tile_default_flv(branch_type br, int depth, tile_flavour &flv)
+void tile_default_flv(branch_type br, tile_flavour &flv)
 {
     flv.wall    = TILE_WALL_NORMAL;
     flv.floor   = TILE_FLOOR_NORMAL;
@@ -804,9 +807,9 @@ void tile_floor_halo(dungeon_feature_type target, tileidx_t tile)
 
             // TODO: these conditions are guaranteed?
             int right_spc = x < GXM - 1 ? env.tile_flv[x+1][y].floor - tile
-                                        : SPECIAL_FULL;
+                                        : int{SPECIAL_FULL};
             int down_spc  = y < GYM - 1 ? env.tile_flv[x][y+1].floor - tile
-                                        : SPECIAL_FULL;
+                                        : int{SPECIAL_FULL};
 
             if (this_spc == SPECIAL_N && right_spc == SPECIAL_S)
             {
@@ -1167,6 +1170,8 @@ void tile_apply_animations(tileidx_t bg, tile_flavour *flv)
         if (_is_torch(basetile))
             flv->wall = basetile + (flv->wall - basetile + 1) % tile_dngn_count(basetile);
     }
+#else
+    UNUSED(bg, flv);
 #endif
 }
 
@@ -1257,6 +1262,7 @@ static int _get_door_offset(tileidx_t base_tile, bool opened, bool runed,
 void apply_variations(const tile_flavour &flv, tileidx_t *bg,
                       const coord_def &gc)
 {
+    // TODO: there's an awful lot of hardcoding going on here...
     tileidx_t orig = (*bg) & TILE_FLAG_MASK;
     tileidx_t flag = (*bg) & (~TILE_FLAG_MASK);
 
@@ -1342,8 +1348,11 @@ void apply_variations(const tile_flavour &flv, tileidx_t *bg,
     else if (orig == TILE_DNGN_STONE_WALL
              || orig == TILE_DNGN_CRYSTAL_WALL
              || orig == TILE_WALL_PERMAROCK
-             || orig == TILE_WALL_PERMAROCK_CLEAR)
+             || orig == TILE_WALL_PERMAROCK_CLEAR
+             || orig == TILE_DNGN_METAL_WALL
+             || orig == TILE_DNGN_TREE)
     {
+        // TODO: recoloring vaults stone walls from corruption?
         *bg = pick_dngn_tile(tile_dngn_coloured(orig, env.grid_colours(gc)),
                              flv.special);
     }
@@ -1489,5 +1498,27 @@ void tile_apply_properties(const coord_def &gc, packed_cell &cell)
     }
 
     cell.flv = env.tile_flv(gc);
+
+    if (env.level_state & LSTATE_SLIMY_WALL)
+    {
+        for (adjacent_iterator ai(gc); ai; ++ai)
+            if (env.map_knowledge(*ai).feat() == DNGN_SLIMY_WALL)
+            {
+                cell.flv.floor = TILE_FLOOR_SLIME_ACIDIC;
+                break;
+            }
+    }
+    else if (env.level_state & LSTATE_ICY_WALL)
+    {
+        for (adjacent_iterator ai(gc); ai; ++ai)
+        {
+            if (feat_is_wall(env.map_knowledge(*ai).feat())
+                && env.map_knowledge(*ai).flags & MAP_ICY)
+            {
+                cell.flv.floor = TILE_FLOOR_ICY;
+                break;
+            }
+        }
+    }
 }
 #endif

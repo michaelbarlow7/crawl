@@ -85,7 +85,7 @@ static bool _do_build_level()
     watchdog();
 
     no_messages mx;
-    if (kbhit() && key_is_escape(getchk()))
+    if (kbhit() && key_is_escape(getch_ck()))
     {
         mprf(MSGCH_WARN, "User requested cancel");
         return false;
@@ -296,7 +296,7 @@ void mapstat_report_map_success(const string &map_name)
     success_count[map_name]++;
 }
 
-void mapstat_report_error(const map_def &map, const string &err)
+void mapstat_report_error(const map_def &/*map*/, const string &err)
 {
     last_error = err;
 }
@@ -318,7 +318,7 @@ static void _report_available_random_vaults(FILE *outf)
         clear_messages();
         mprf("Examining random maps at %s", lvl.describe().c_str());
         mapstat_report_random_maps(outf, lvl);
-        if (kbhit() && key_is_escape(getchk()))
+        if (kbhit() && key_is_escape(getch_ck()))
             break;
         fprintf(outf, "---------------------------------\n");
     }

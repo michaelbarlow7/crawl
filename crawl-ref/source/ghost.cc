@@ -16,7 +16,7 @@
 #include "god-type.h"
 #include "item-name.h"
 #include "item-prop.h"
-#include "mon-book.h"
+#include "jobs.h"
 #include "mon-cast.h"
 #include "mon-transit.h"
 #include "ng-input.h"
@@ -88,7 +88,7 @@ static spell_type search_order_summon[] =
 // Pan lord misc spell list.
 static spell_type search_order_misc[] =
 {
-    SPELL_DISPEL_UNDEAD,
+    SPELL_DISPEL_UNDEAD_RANGE,
     SPELL_PARALYSE,
     SPELL_SLEEP,
     SPELL_MASS_CONFUSION,
@@ -259,16 +259,16 @@ void ghost_demon::init_pandemonium_lord()
         if (coinflip())
             ADD_SPELL(random_choose(SPELL_SUMMON_DEMON, SPELL_SUMMON_GREATER_DEMON));
 
-        normalize_spell_freq(spells, xl);
+        normalize_spell_freq(spells, spell_freq_for_hd(xl));
     }
 
-    colour = one_chance_in(10) ? ETC_RANDOM : random_monster_colour();
+    colour = one_chance_in(10) ? colour_t{ETC_RANDOM} : random_monster_colour();
 }
 
 static const set<brand_type> ghost_banned_brands =
                 { SPWPN_HOLY_WRATH, SPWPN_CHAOS };
 
-void ghost_demon::init_player_ghost(bool actual_ghost)
+void ghost_demon::init_player_ghost()
 {
     // don't preserve transformations for ghosty purposes
     unwind_var<transformation> form(you.form, transformation::none);
@@ -374,7 +374,7 @@ void ghost_demon::init_player_ghost(bool actual_ghost)
 
     flies = true;
 
-    add_spells(actual_ghost);
+    add_spells();
 }
 
 static colour_t _ugly_thing_assign_colour(colour_t force_colour,
@@ -493,7 +493,7 @@ void ghost_demon::init_ugly_thing(bool very_ugly, bool only_mutate,
     // before.
     colour = _ugly_thing_assign_colour(make_low_colour(force_colour),
                                        only_mutate ? make_low_colour(colour)
-                                                   : COLOUR_UNDEF);
+                                                   : colour_t{COLOUR_UNDEF});
 
     // Pick a compatible attack flavour for this colour.
     att_flav = _ugly_thing_colour_to_flavour(colour);
@@ -618,7 +618,7 @@ void ghost_demon::init_spectral_weapon(const item_def& weapon, int power)
 // Used when creating ghosts: goes through and finds spells for the
 // ghost to cast. Death is a traumatic experience, so ghosts only
 // remember a few spells.
-void ghost_demon::add_spells(bool actual_ghost)
+void ghost_demon::add_spells()
 {
     spells.clear();
 
@@ -635,7 +635,7 @@ void ghost_demon::add_spells(bool actual_ghost)
         }
     }
 
-    normalize_spell_freq(spells, xl);
+    normalize_spell_freq(spells, spell_freq_for_hd(xl));
 }
 
 bool ghost_demon::has_spells() const
@@ -705,6 +705,7 @@ void ghost_demon::find_transiting_ghosts(
 
 void ghost_demon::announce_ghost(const ghost_demon &g)
 {
+    UNUSED(g);
 #if defined(DEBUG_BONES) || defined(DEBUG_DIAGNOSTICS)
     mprf(MSGCH_DIAGNOSTICS, "Saving ghost: %s", g.name.c_str());
 #endif
@@ -760,9 +761,9 @@ bool debug_check_ghost(const ghost_demon &ghost)
         return false;
     if (ghost.brand < SPWPN_NORMAL || ghost.brand > MAX_GHOST_BRAND)
         return false;
-    if (ghost.species < 0 || ghost.species >= NUM_SPECIES)
+    if (!species_type_valid(ghost.species))
         return false;
-    if (ghost.job < JOB_FIGHTER || ghost.job >= NUM_JOBS)
+    if (!job_type_valid(ghost.job))
         return false;
     if (ghost.best_skill < SK_FIGHTING || ghost.best_skill >= NUM_SKILLS)
         return false;

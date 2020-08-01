@@ -32,7 +32,6 @@
 #include "libutil.h"
 #include "mapmark.h"
 #include "maps.h"
-#include "mon-book.h"
 #include "mon-cast.h"
 #include "mon-place.h"
 #include "mutant-beast.h"
@@ -44,8 +43,8 @@
 #include "spl-util.h"
 #include "stringutil.h"
 #include "terrain.h"
-#include "tiledef-dngn.h"
-#include "tiledef-player.h"
+#include "rltiles/tiledef-dngn.h"
+#include "rltiles/tiledef-player.h"
 
 #ifdef DEBUG_TAG_PROFILING
 static map<string,int> _tag_profile;
@@ -2265,6 +2264,31 @@ void map_def::reinit()
     update_cached_tags();
 }
 
+void map_def::reload_epilogue()
+{
+    if (!epilogue.empty())
+        return;
+    // reload the epilogue from the current .des cache; this is because it
+    // isn't serialized but with pregen orderings could need to be run after
+    // vaults have been generated, saved, and reloaded. This can be a tricky
+    // situation in save-compat terms, but is exactly the same as how lua code
+    // triggered by markers is currently handled.
+    const map_def *cache_version = find_map_by_name(name);
+    if (cache_version)
+    {
+        map_def tmp = *cache_version;
+        // TODO: I couldn't reliably get the epilogue to be in vdefs, is there
+        // a way to cache it and not do a full load here? The original idea
+        // was to not clear it out in strip(), but this fails under some
+        // circumstances.
+        tmp.load();
+        epilogue = tmp.epilogue;
+    }
+    // for save compat reasons, fail silently if the map is no longer around.
+    // Probably shouldn't do anything really crucial in the epilogue that you
+    // aren't prepared to deal with save compat for somehow...
+}
+
 bool map_def::map_already_used() const
 {
     return get_uniq_map_names().count(name)
@@ -2341,8 +2365,7 @@ string map_def::desc_or_name() const
 void map_def::write_full(writer& outf) const
 {
     cache_offset = outf.tell();
-    marshallUByte(outf, TAG_MAJOR_VERSION);
-    marshallUByte(outf, TAG_MINOR_VERSION);
+    write_save_version(outf, save_version::current());
     marshallString4(outf, name);
     prelude.write(outf);
     mapchunk.write(outf);
@@ -2352,7 +2375,7 @@ void map_def::write_full(writer& outf) const
     epilogue.write(outf);
 }
 
-void map_def::read_full(reader& inf, bool check_cache_version)
+void map_def::read_full(reader& inf)
 {
     // There's a potential race-condition here:
     // - If someone modifies a .des file while there are games in progress,
@@ -2362,8 +2385,8 @@ void map_def::read_full(reader& inf, bool check_cache_version)
     // reloading the index), but it's easier to save the game at this
     // point and let the player reload.
 
-    const uint8_t major = unmarshallUByte(inf);
-    const uint8_t minor = unmarshallUByte(inf);
+    const auto version = get_save_version(inf);
+    const auto major = version.major, minor = version.minor;
 
     if (major != TAG_MAJOR_VERSION || minor > TAG_MINOR_VERSION)
     {
@@ -2449,7 +2472,7 @@ void map_def::load()
                 make_stringf("Map inf is invalid: %s", name.c_str()));
     }
     inf.advance(cache_offset);
-    read_full(inf, true);
+    read_full(inf);
 
     index_only = false;
 }
@@ -2814,6 +2837,8 @@ bool map_def::has_exit() const
 
 string map_def::validate_map_def(const depth_ranges &default_depths)
 {
+    UNUSED(default_depths);
+
     unwind_bool valid_flag(validating_map_flag, true);
 
     string err = run_lua(true);
@@ -4948,9 +4973,7 @@ int str_to_ego(object_class_type item_type, string ego_str)
         "resistance",
         "positive_energy",
         "archmagi",
-#if TAG_MAJOR_VERSION == 34
         "preservation",
-#endif
         "reflection",
         "spirit_shield",
         "archery",
@@ -4958,7 +4981,10 @@ int str_to_ego(object_class_type item_type, string ego_str)
         "jumping",
 #endif
         "repulsion",
+#if TAG_MAJOR_VERSION == 34
         "cloud_immunity",
+#endif
+        "harm",
         nullptr
     };
     COMPILE_CHECK(ARRAYSZ(armour_egos) == NUM_REAL_SPECIAL_ARMOURS);
@@ -5015,8 +5041,8 @@ int str_to_ego(object_class_type item_type, string ego_str)
         "penetration",
 #endif
         "dispersal",
-#if TAG_MAJOR_VERSION == 34
         "exploding",
+#if TAG_MAJOR_VERSION == 34
         "steel",
 #endif
         "silver",
@@ -5099,9 +5125,7 @@ int item_list::parse_acquirement_source(const string &source)
 
 bool item_list::monster_corpse_is_valid(monster_type *mons,
                                         const string &name,
-                                        bool corpse,
-                                        bool skeleton,
-                                        bool chunk)
+                                        bool skeleton)
 {
     if (*mons == RANDOM_NONBASE_DRACONIAN || *mons == RANDOM_NONBASE_DEMONSPAWN)
     {
@@ -5161,7 +5185,7 @@ bool item_list::parse_corpse_spec(item_spec &result, string s)
     // Get the actual monster spec:
     mons_spec spec = mlist.get_monster(0);
     monster_type mtype = static_cast<monster_type>(spec.type);
-    if (!monster_corpse_is_valid(&mtype, s, corpse, skeleton, chunk))
+    if (!monster_corpse_is_valid(&mtype, s, skeleton))
     {
         error = make_stringf("Requested corpse '%s' is invalid",
                              s.c_str());

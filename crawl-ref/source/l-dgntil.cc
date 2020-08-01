@@ -6,11 +6,10 @@
 #include "l-libs.h"
 
 #include "cluautil.h"
-#include "coord.h"
 #include "env.h"
 #include "mapdef.h"
 #include "stringutil.h"
-#include "tiledef-dngn.h"
+#include "rltiles/tiledef-dngn.h"
 
 tileidx_t get_tile_idx(lua_State *ls, int arg)
 {

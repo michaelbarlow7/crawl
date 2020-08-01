@@ -196,7 +196,7 @@ int get_mons_class_ev(monster_type mc) IMMUTABLE;
 resists_t get_mons_class_resists(monster_type mc) IMMUTABLE;
 resists_t get_mons_resists(const monster& mon);
 int get_mons_resist(const monster& mon, mon_resist_flags res);
-const bool monster_resists_this_poison(const monster& mons, bool force = false);
+bool monster_resists_this_poison(const monster& mons, bool force = false);
 
 void init_monsters();
 void init_monster_symbols();
@@ -415,7 +415,6 @@ int cheibriados_monster_player_speed_delta(const monster& mon);
 bool cheibriados_thinks_mons_is_fast(const monster& mon);
 bool mons_is_projectile(monster_type mc);
 bool mons_is_projectile(const monster& mon);
-bool mons_can_cling_to_walls(const monster& mon);
 bool mons_is_object(monster_type mc);
 bool mons_has_blood(monster_type mc);
 bool mons_is_sensed(monster_type mc);
@@ -534,7 +533,8 @@ monster *choose_random_monster_on_level(
 
 void update_monster_symbol(monster_type mtype, cglyph_t md);
 
-void normalize_spell_freq(monster_spells &spells, int hd);
+int spell_freq_for_hd(int hd);
+void normalize_spell_freq(monster_spells &spells, int total_freq);
 
 enum mon_dam_level_type
 {

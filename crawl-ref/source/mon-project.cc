@@ -43,7 +43,7 @@ spret cast_iood(actor *caster, int pow, bolt *beam, float vx, float vy,
     fail_check();
 
     int mtarg = !beam ? MHITNOT :
-                beam->target == you.pos() ? MHITYOU : mgrd(beam->target);
+                beam->target == you.pos() ? int{MHITYOU} : mgrd(beam->target);
 
     monster *mon = place_monster(mgen_data(MONS_ORB_OF_DESTRUCTION,
                 (is_player) ? BEH_FRIENDLY :
@@ -451,7 +451,7 @@ move_again:
             && you.see_cell(pos)
             && you.see_cell(starting_pos))
         {
-            mprf("%s hits %s", mon.name(DESC_THE, true).c_str(),
+            mprf("%s hits %s.", mon.name(DESC_THE, true).c_str(),
                  feature_description_at(pos, false, DESC_A).c_str());
         }
 
@@ -547,10 +547,10 @@ move_again:
                 {
                     if (shield && shield_reflects(*shield))
                     {
-                        mprf("%s reflects %s with %s %s!",
+                        mprf("%s reflects %s off %s %s!",
                              victim->name(DESC_THE, true).c_str(),
                              mon.name(DESC_THE, true).c_str(),
-                             mon.pronoun(PRONOUN_POSSESSIVE).c_str(),
+                             victim->pronoun(PRONOUN_POSSESSIVE).c_str(),
                              shield->name(DESC_PLAIN).c_str());
                         ident_reflector(shield);
                     }
@@ -567,7 +567,7 @@ move_again:
                 }
                 else
                 {
-                    mprf("%s bounces off thin air!",
+                    mprf("%s bounces off of thin air!",
                          mon.name(DESC_THE, true).c_str());
                 }
             }

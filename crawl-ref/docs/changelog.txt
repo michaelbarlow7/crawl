@@ -1,5 +1,357 @@
-Stone Soup 0.24 (20191024)
+Stone Soup 0.25.1 (20200717)
+----------------------------
+
+Bugfix Release
+--------------
+
+* Artefacts from acquirement now leave a note in morgues.
+* Scarf of harm is fixed.
+* Foxfire will no longer attack out of LoS.
+* Stacking from empty Nemelex decks is no longer possible.
+* Wizlab entry now generates a milestone / note again.
+* Fix a bug where cloud generators triggered on load when no time had passed,
+  leading to a different cloud arrangement from saving + reloading.
+* Seeded play fixes for seed instability in a few cases, as well as crashes
+  related to seed stability and pregeneration code.
+* Several speedups for dungeon rendering, especially in zigs.
+* Sprint 3 cloud generators have been retuned.
+* Improvements to the behavior of restart_after_save (on by default in 0.25.0).
+* Using [] in map view from stairs to view other levels now correctly finds the
+  matching stairs.
+* Crashes to do with annotation, off-level map view, and custom flashes have
+  been fixed.
+* It is no longer possible for a bug to cause the player to drown or fall into
+  lava, emergency flight will be activated instead.
+
+Stone Soup 0.25.0 (20200612)
+----------------------------
+
+Highlights
+----------
+* Spells in many schools have been redesigned to make the schools more
+  distinct.
+* Acquirement scrolls have been despoilered, offering the player a choice of
+  generated items.
+* Effects from spell miscasts, god wrath, death curses, and Zot traps have
+  been overhauled for consistency and simplicity.
+
+Branches, Environment
+---------------------
+* Potions of cancellation now appear as loot in Ziggurats.
+* Boris can now spawn after the player picks up the Orb of Zot.
+* Forest fires and the Tornado spell can no longer destroy temporary trees
+  made by Summon Forest.
+* D:1 Level spawns can no longer generate within LOS distance of the player's
+  starting position.
+* Many arrival vaults have been reworked to allow better player tactics.
+* A new Swamp ending themed as a conflict between Yred and Fedhas that
+  includes an undead version of the Lernaean Hydra.
+* Ziggurats now have level set featuring many player ghosts.
+* Zot traps have had their effect flowchart simplified and focused.
+* Abyss exits that spawn from earning xp can spawn after the initial spawn,
+  instead of every subsequent spawn being a downstair.
+* Troves can now ask for scrolls of fog or scrolls of fear.
+
+Character
+---------
+* Monsters summoned by the player now dismiss when they become hostile.
+* Players can now renounce their religion while silenced.
+* All Evocable items can no longer be used by the player while confused.
+* Formicids can no longer cast Swiftness.
+
+Gods
+----
+* Trog no longer gifts ranged weapons nor ammunition, gifting only melee
+  weapons. These weapons can only have egos of plain, vorpal, flaming, and
+  anti-magic.
+* Trog now hates use of all magical staves and pain weapons.
+* Elyvilon's Divine Protection now always protects exactly at 5* piety instead
+  of protecting at a value between 5* and 6*.
+* Fedhas now protects plant allies from collisions and from ranged attacks by
+  other allies.
+* God conducts for harming allies now apply to spells and items that place
+  harmful clouds.
+* Nemelex abilities can no longer be used while silenced.
+* Nemelex card revisions:
+  - The pain card no longer summons a flayed ghost, instead it torments at high
+    power (the card user is spared).
+  - The cloud card now produces black smoke around enemies in sight, to better
+    fir with the deck of escape.
+* Wu Jian has been tweaked:
+  - Wall jumps are now only activated via the 'a'bility menu.
+  - Whirlwind attacks no longer pin
+  - Heavenly Storm now starts with a slaying bonus of 5, capped at 15, and
+    increases by 1 for each martial attack.
+* Xom no longer inflicts miscast effects.
+* Xom demon summoning is increased in power.
+* Wrath changes
+  - Trog's "firey rage" is now a fireball, instead of a fire miscast. Trog no
+    longer uses rot as retribution.
+  - Lugonu's "translocation wrath" no longer uses translocations miscast.
+    Instead, the player is either teleported to monsters, banished, or set upon
+    by Abyss summons.
+  - Cheibriados' wrath no longer uses miscasts. At very high tension, in
+    addition to sleeping and slowing the player, Chei makes a lot of noise. At
+    low tension, miscasts are replaced by stat damage.
+  - Fedhas' wrath no longer uses elemental miscasts. These are replaced by a
+    choice of corrosive bolt, primal wave, or thorn volley.
+  - Yredelemnul's wrath no longer uses necromancy miscasts, in their place Yred
+    fires a bolt of draining.
+  - Kikubaaqudgha's wrath uses death curses in place of necromancy miscasts.
+* Vehumet is less likely to give duplicate gifts.
+* Xom is stimulated upon worship at a faded altar.
+
+Items
+-----
+* Scroll of Acquirement rework:
+  - Offers players a choice of five fully generated items.
+  - Three of the item categories are randomly chosen and the other two are
+    always gold and food (for species that eat).
+  - Generated items are always useable and not hated by the player's current
+    god.
+  - The Miscellaneous category for evocable items is no longer available.
+* New Potion of Stabbing that gives a 50% chance to upgrade weak stabs (e.g.
+  distracted monsters) to strong ones (e.g. sleeping monsters).
+* Tin of Tremorstones, a new multiuse evocable. Tremorstones have 3 charges
+  which recover over time with XP. When used, it creates a number of radius 2
+  explosions (the number scales with evocations skill) near the center
+  of present monster that are triple-affected by AC (like LRD). The explosions
+  are randomly skewed and may hit the user. Most useful for players with good
+  armour.
+* The chaos brand now has might and agility effects, no longer causes miscast
+  effects, and its cloning effect can create friendly and neutral monsters.
+* Potions of Brilliance now provide a stronger universal spell enhancer and
+  remove spell hunger. They no longer provide an Int bonus nor wizardry.
+* Potions of Might no longer provide a bonus to strength.
+* Scrolls of Magic Mapping now reveal any floor traps on the level.
+* The -Tele property no longer appears on artefact weapons and jewellery.
+* Ordinary shields have been renamed to kite shields and large shields have
+  been renamed to tower shields. This helps make equipment descriptions less
+  ambiguous.
+* The vorpal weapon ego no longer has distinct adjectives for each weapon
+  class. Now all such weapons are described as 'vorpal'.
+* Unrandart changes:
+  - New unrand: Cigotuvi's Embrace, a +4 leather armour with rN+, rRot and
+    *Drain that automatically gathers corpses to increase AC. The AC decays
+    slowly over time but decays more quickly as more corpses are added.
+  - Boots of the Assassin are now called the hood of the Assassin and use the
+    headgear slot.
+  - The demon blade Leech gains *Rage/+Rage and loses its AC-3 and EV-3
+    properties.
+  - The Elemental Staff now acts as an enhancer for all elemental schools,
+    with enhancement applying independently for each school.
+  - Warlock's Mirror can now reflect piercing ranged weapons.
+  - The Staff of Olgreb now has a chance to deal poison-arrow flavored damage
+    on hit, based on evocations skill. It no longer has an additional chance to
+    cast Venom Bolt on top of casting OTR when evoked. It now grants poison
+    immunity to monsters wielding it.
+  - The Dragonskin Cloak now provides rCorr instead of sticky flame
+    resistance.
+  - The scythe of Curses no longer curses items in inventory, and now applies
+    death curses instead of necromancy miscasts.
+  - The plutonium sword still applies transmutations miscasts, but gains a
+    chance to polymorph the target on hit (since this is no longer a miscast
+    effect for monsters).
+  - The brooch of Shielding is now a guardian spirit amulet with SH+8.
+  - Bloodbane has been removed, having been merged into Leech.
+  - Maxwell's Etheric Cage has been removed.
+* Phial of floods now applies a silencing "waterlogged" debuff to all monsters
+  in the flooded area and no longer summons water elementals.
+* Staves of poison now do resistable poison damage on hit like other staves
+  instead of just having a chance to poison.
+* Distortion branded weapons no longer teleport foes.
+* Distortion unwield effects no longer cause a translocations miscast. Instead,
+  they either teleport the player to monsters, banish the player, or cause
+  severe contamination.
+* Regeneration items only activate after attuning to the player at full HP,
+  identical to the amulet.
+* Scarf egos are revised: cloud immunity and spirit shield are removed, harm
+  and invisibility are added. Harm scarves do not drain the player when
+  removed.
+* Amulets of reflection now always give +5 SH and must attune to the player at
+  full HP. Reflected missiles, poison, and banishments now correctly award
+  piety.
+* Cloak egos are revised: invisibility is removed, preservation (providing
+  corrosion resistance) and stealth are added.
+* The Harm property can now appear on randart armour, and does not incur a
+  drain penalty on removal.
+* Stat rings are now always either +6 or -4. AC, EV, and Slay rings are now
+  always either +4 or -4.
+* Removed: potion of agility, staff of power, crystal ball of energy, sack of
+  spiders, lamp of fire, fan of gales, wand of scattershot, amulets of the
+  gourmand, amulets of harm, amulets of rage.
+
+Interface
+---------
+* The seed selection dialogue has been ported to webtiles and is enabled on
+  select servers.
+* auto_butcher has been changed to default to `always` (from the previous value
+  of `very hungry`).
+* A new option, auto_butcher_max_chunks, prevents automatic butchering with more
+  than that many chunks in inventory. Its default value is 10 for non-ghoul
+  characters.
+* explore_auto_rest now defaults to true.
+* New morgue section: screenshots. When notes are taken with : an ascii
+  screenshot is additionally saved and can be added to morgues.
+* The console monster list now displays monster status information and whether
+  or not the monster is wielding a launcher or polearm, or has a wand
+* The ^x summary display now shows monster status information
+* A new option, monster_item_view_coordinates, can be set to true to display
+  player-relative coordinates in the ^x display.
+* The auto-travel trail displayed with show_travel_trail can now be customised
+  in console (both for glyph and colour).
+* The "visited status" of stairs and transporters can now be indicated both by
+  glyph and by colour in console.
+* Allies now show sleep and confusion status tiles.
+* A new option, game_scale, allows for global pixel scaling to make dcss more
+  usable on large and/or high-resolution monitors. (Values in the range of 2-4
+  will be helpful for upscaling for 2k-4k monitors.)
+* The behavior of `tile_filter_scaling=false` has been improved to work on all
+  tiles in the game, for better pixelated effects.
+* Webtiles now supports showing save info in the lobby; see CAO for this feature
+  in action.
+
+Monsters
+--------
+* New unique: Maggie, a younger version of the unique Margery, who appears
+  just before and in Lair. She has a steam, acid, or swamp dragon scales, Bolt
+  of Fire, and Mesmerize. Only one of Maggie or Margery will place in a game.
+* Margery now always gets Fire, Shadow, or Storm dragon scales as a
+  counterpart to Maggie's armour.
+* Both Maggie and Margery have a small extra chance of spawning with a
+  pre-enchanted Wyrmbane (1 or 2 points of enchantment, respectively).
+* Monsters such as spiders no longer have a clinging ability.
+* Mummy death curses are no longer necromancy miscasts, and instead have their
+  own effect table.
+* New monster: nameless horror. Nameless horrors are produced by summoning
+  miscasts. They are giant, tanky, have an antimagic attack and abjuration as a
+  natural ability.
+* Hepliaklqana ancestors and demonic guardians can no longer be enslaved or
+  frenzied.
+* Summoned monsters can now get the inner flame status, both from the spell and
+  the scroll.
+* Monsters now try to avoid blocking the line of fire of monsters behind them.
+
+Spells
+------
+* Spell in many schools have been redesigned to make the schools have better
+  differentiation, more positional considerations, and better UI. The
+  descriptions below describe the schools' individual focus and any new,
+  changed, and removed spells in each school:
+  - Fire spells have directed explosions or set things on fire:
+    + New L1 Conjurations/Fire spell Foxfire that conjures two foxfire
+      projectiles that quickly hone in on their target, each doing a bit more
+      than half the damage of Flame Tongue.
+    + Conjure Flame now creates embers on the player's position that turn into
+      a flame cloud a turn later. The embers smother if a monster steps on them.
+    + Inner Flame now creates a flame cloud under the affected monster
+      whenever it takes damage in addition to the usual explosion it makes
+      when the monster dies.
+    + New L6 Conjurations/Fire spell Starburst that fires 8 range 5 bolts in
+      the principle directions.
+    + Removed spells: Flame Tongue, Throw Flame, Bolt of Fire.
+  - Air school spells bounce, are pointy, or are hard to direct:
+    + Airstrike damage now scales so it's greater the more unoccupied squares
+      there are surrounding the target.
+    + Summon Lightning Spire now places the spire randomly.
+  - Earth spells are directed:
+    + Borgnjor's Vile Clutch now is a range 6 always-penetrating beam instead
+      of a smite-targeted 3x3 explosion.
+  - Ice spells are diffuse and subtle:
+    + New L3 Ice spell Frozen Ramparts that makes all walls within radius 2
+      become covered in ice, damaging monsters that walk by. Damage bypasses AC
+      and slows cold-blooded animals.
+    + New L4 Conjurations/Ice spell Hailstorm that fires a ring of ice beams
+      from radius 2 to radius 3, not affecting radius 1 squares. Monsters with
+      rC+++ such as ice beasts are immune to this effect.
+    + Ozocubu's Refrigeration does 33% more damage on-average and no longer
+      harms the caster.
+    + New L9 Ice spell Absolute Zero that instantly freezes to death the
+      closest monster in range, leaving an ice block. A random closest monster
+      is chosen as the target when there are ties. The spell is range 5 and
+      very loud, with noise attenuated by power.
+    + Removed spells: Throw Frost, Throw Icicle, Bolt of Cold, Glaciate.
+    + As a result of these changes, Ice Elementalists no longer put starting
+      skill in Conjurations.
+  - Conjurations are pure magic with good accuracy in some way:
+    + Iskenderun's mystic blast now makes a range 5 explosion around the
+      player that damages and pushes back monsters, potentially colliding them
+      with features and other monsters.
+    + Dazzling Flash replaces Dazzling Spray. Makes a flash centered on the
+      player of up to radius 3 that can blind monsters in the affected area.
+    + Searing Ray now fires all its rays at the chosen target, adjusting
+      the rays as the target moves. If no target is chosen, the spell
+      repeatedly fires in the chosen direction. The rays all penetrate and
+      each has the same damage and to-hit. The ray damage is adjusted to have
+      the same overall damage distribution as before this change.
+    + Spellforged Servitor now gives only one spell to the servitor. This is
+      the highest level servitor-compatible spell the player has from the
+      following sets, in order of preference: L4 and higher ranged damage
+      spells, cloud spells, and low-level or short-range spells.
+    + Force Lance is removed.
+  - Poison spells poison things or perform some kind of alchemy
+    + Sting is now a range 3 Poison/Transmutations spell using the same
+      partly-resistable beam type previously used by Poison Arrow.
+    + New L6 Poison/Transmutations spell Eringya's Noxious Bog that creates a
+      temporary toxic bog trail as the player moves. The bog terrain applies
+      the same partly-resistable damage flavor as Sting as well as the
+      movement and combat penalties of shallow water.
+    + Removed spells: Venom Bolt, Poison Arrow
+    + As a result of these changes, Venom Mages now put starting skill in
+      Transmutations instead of Conjurations.
+  - Necromancy has balance adjustments to make the school not so strong and
+    to begin to move it closer to a melee support school:
+    + Corpse Rot now creates miasma clouds in a ring around the player, making
+      one cloud for each corpse in LOS, but with lower duration.
+    + Agony and Dispel Undead are now range 1, and Dispel Undead is now L4.
+    + Regeneration and Bolt of Draining are removed.
+* The Young Poisoner's Handbook now contains Ignite Poison.
+* Confusing Touch is now level 3 and checks MR instead of monster hit dice.
+* The player is now immune to the melee-fumbling effects of liquefied ground
+  made by casting Leda's Liquefaction. The slow movement applies regardless of
+  flight status and the spell can be used while flying.
+* Firestorm and Ignition now can burn trees, and Fireball burns trees in all
+  squares of its explosion.
+* Call Imp no longer bases the type of imp summoned on spellpower.
+* The Confuse spell has been removed.
+* Spell miscast effects have been simplified to give contamination and a single
+  per-school effect, scaling with spell risk and level. The new effects by
+  school are:
+  - Charms and Hexes: debuff and slow.
+  - Summoning: durably summon a nameless horror (new monster).
+  - Translocation: dimension anchor.
+  - Transmutation: extra contamination for the player, malmutate a monster.
+  - Conjuration: irresistable AC-ignoring damage.
+  - Elemental schools: school flavored damage (Earth uses fragmentation
+    damage).
+* The Deflect Missiles spell has been removed.
+* Tukima's Dance can no longer be used if the player sacrificed Love.
+* Lesser Beckoning and Teleport Other now turn allies hostile.
+* Eldritch Tentacles from malign gateway can no longer attack out of LOS of the
+  player, and arrive sooner after the gateway is opened.
+
+Development
+-----------
+* The WebTiles server has seen a major overhaul and now supports python 3 as
+  well as Tornado 5+, as well as numerous other backend/technical improvements.
+* The catch2 testing framework is now integrated into the project and is
+  enabled in our CI testing.
+* GitHub actions have been configured to replace Travis CI testing.
+
+Stone Soup 0.24.1 (20200322)
 --------------------------------
+
+Bugfix Release
+--------------
+* A remote code execution vulnerability has been patched.
+* The UI has received some bug fixes and improvements.
+* Pinned monsters can no longer trample.
+* Some vaults have been tweaked.
+* Fedhas protection is now extended to piercing attacks done by all allies.
+* Fedhas summons' duration is now correctly capped.
+
+Stone Soup 0.24 (20191024)
+--------------------------
 
 Highlights
 ----------
@@ -12,7 +364,7 @@ Branches, Environment
 ---------------------
 * Incremental pregeneration:
   - This mode generates the dungeon in a stable order for all games regardless
-    of the path taken by the player, meaning that the behavior of seeds for
+    of the path taken by the player, meaning that the behaviour of seeds for
     online and offline games should now be the same.
   - Games using the same seed will see the same dungeon if they are
     incrementally pregenerated without requiring the long initial generation
@@ -245,11 +597,11 @@ Branches, Environment
 
 Character
 ---------
-* The player can no longer be put to sleep when paralyzed or petrified.
+* The player can no longer be put to sleep when paralysed or petrified.
 * Tengu Permanent Flight becomes immediately available at XL 5.
 * Tengu EV bonuses are no longer applied to +EV from equipment.
 * Wanderer starting spell libraries are announced along with equipment.
-* Wanderers that start with exactly one level 1 spell start with it memorized.
+* Wanderers that start with exactly one level 1 spell start with it memorised.
 
 Gods
 ----
@@ -300,7 +652,7 @@ Interface
   - Nemelex Xobeh displays deck information.
   - Wu Jian displays information about martial attacks.
 * The Hepliakqana ancestor reaching full health interrupts resting. The exact
-  behavior of this interrupt can be configured by rest_wait_ancestor.
+  behaviour of this interrupt can be configured by rest_wait_ancestor.
 * The new display_chars cloud_weak, cloud_fading, and cloud_terminal indicate
   remaining cloud duration in console.
 * WebTiles users can use a "Forgot Password" link to reset their password
@@ -479,7 +831,7 @@ Spells
 ------
 * Spell Library:
   - Spells from books are automatically added to a global library upon pickup.
-  - Library spells can be memorized from anywhere through the 'M' screen.
+  - Library spells can be memorised from anywhere through the 'M' screen.
   - Spellbooks are destroyed after their spells are added to the library.
   - Vehumet won't offer you a spell you already have in your library.
 * Borgnjor's Vile Clutch constriction damage is reduced by 25% and the spell
@@ -583,7 +935,7 @@ Interface
 * Water species except for merfolk autoexplore/travel through shallow water.
 * Diagonal shift-running now stops properly at doors.
 * Draconian players now show their hat tiles in Tiles/WebTiles.
-* New 'tc_forbidden' RC option to set color of squares forbidden by travel.
+* New 'tc_forbidden' RC option to set colour of squares forbidden by travel.
 * New xp_by_level morgue table to track XP sources on a per-level basis.
 * New -force-map objstat/mapstat option to always place a given map on each
   level.
@@ -718,8 +1070,8 @@ Interface
   and "advanced" categories.
 * Noise from the last turn is displayed in the top-right, replacing gold.
   (Gold can still be seen with % and $.)
-* Terminal colors now work properly on a wider range of terminals by default.
-  However, as a consequence the default background map color is dark blue.
+* Terminal colours now work properly on a wider range of terminals by default.
+  However, as a consequence the default background map colour is dark blue.
   To get dark grey, depending on your terminal you can set
   `bold_brightens_foreground=true` or `allow_extended_colours=true` in
   your rc file.
@@ -977,7 +1329,7 @@ Gods
 Interface
 ---------
 * Most targeters will be more intelligent when trying to maximize enemies hit.
-* In tiles, monster attitude is indicated with colored auras instead of icons.
+* In tiles, monster attitude is indicated with coloured auras instead of icons.
 * The (p)rayer command is gone; pray at altars with > or <, as with shops.
 * Descriptions of monsters with multiple spellsets show which spells you've
   seen them cast.
@@ -1277,7 +1629,7 @@ Monsters
   allies in their view, making them cast spells more frequently and with more
   spell power.
 * Hell hogs now have Fireball, replacing Sticky Flame.
-* Giant eyeballs are now normal speed, but must stare thrice to paralyze.
+* Giant eyeballs are now normal speed, but must stare thrice to paralyse.
 * Maurice can now steal from the floor as well as your inventory.
 * Natasha no longer becomes weaker upon revival.
 * Death cobs now drain speed, rather than causing hunger.
@@ -1296,7 +1648,7 @@ Monsters
 
 Spells
 ------
-* New spell: Yara's Violent Unravelling (L5 Hexes/Transumations). Dispels
+* New spell: Yara's Violent Unravelling (L5 Hexes/Transmutations). Dispels
   all cancellable effects on the target and, if any were dispelled, causes
   a damaging explosion of mutagenic energy around the victim.
 * Hydra Form now has a fixed number of heads.
@@ -1413,7 +1765,7 @@ Character
 * Clawed attacks no longer have bleeding-over-time damage effects.
 * There's now a distinct hunger state of Fainting and appropriate warning
   messages for when the player is so low on nutrition that they might become
-  paralyzed.
+  paralysed.
 * The Breathe Flames and Spit Poison mutations are now mutually exclusive.
 * Demonspawn can shoot through their own demonic guardians.
 * Ability scores now cap at 125, up from 72.
@@ -1432,8 +1784,8 @@ Gods
 ----
 * Gozag:
   - The fee for entry has been reduced, especially early on.
-  - Gold distraction is now an effect centered on the player that's refreshed
-    whenever they find (make) new corpse-gold, rather than being centered on
+  - Gold distraction is now an effect centred on the player that's refreshed
+    whenever they find (make) new corpse-gold, rather than being centred on
     the gold piles themselves.
   - The cost of Potion Petition is more variable and higher initially, but no
     longer increases with use.
@@ -1734,7 +2086,7 @@ Character
 * Vampires now bottle blood with 'c', and can do so from the first level.
 * Butchering/bottling now only takes a single turn.
 * Wanderers now receive a randart spellbook instead of starting with a Level 1
-  spell memorized.
+  spell memorised.
 * Wanderers can start with one elemental evoker or a box of beasts instead of
   a wand.
 * Wanderer starting equipment is noted in the game log.
@@ -2057,7 +2409,7 @@ Stone Soup 0.15.2 (20141018)
 * Always weight formicid weapon acquirement towards two-handed weapons.
 * Allow in-game updates to the mon_glyph option to change the glyph.
 * Allow the option syntax of mon_glyph = <mon1>:<mon2> in order to set the
-  color/glyph of one monster using the base values of another monster.
+  colour/glyph of one monster using the base values of another monster.
 * In tiles, the tile_player_tile option allows you to specify an arbitrary
   monster tile to display for your character. The options tile_weapon_offsets
   and tile_shield_offsets can be used to adjust the player weapon and shield
@@ -3366,7 +3718,7 @@ Spells
 * Conjurers have a new book with non-elemental spells (including the new
   conjurations).
 * Spell memorisation failure is no more. As long as the failure chance is
-  not 100%, the spell can be memorized. There is a warning prompt if the
+  not 100%, the spell can be memorised. There is a warning prompt if the
   chance of a miscast is high.
 * Some spellbooks have been reorganized.
 * Condensation Shield's SH bonus no longer cares about Shields skill or
@@ -3616,7 +3968,7 @@ Items
 * Weapons may corrode upon stabbing a jelly.
 * Ambrosia gives more mp, but only as you digest it.
 * Raw troll hides grant regeneration.
-* Jewelry auto-ids when it shows an obvious effect.
+* Jewellery auto-ids when it shows an obvious effect.
 * Ankuses, scrolls of detect curse, amulets of controlled flight, and rods of
   smiting are no more.
 * Rods of striking are better.
@@ -4566,7 +4918,7 @@ Monsters
 * Make skeletal warriors obey silence.
 * Greatly improve cacodemons.
 * Hungry ghost attack takes 25% of your nutrition.
-* Prevent confused giant eyeballs from paralyzing.
+* Prevent confused giant eyeballs from paralysing.
 * Make aquatic monsters chase instead of submerging if they can.
 * Friendly monsters told to 'wait here' don't follow through stairs.
 * Merged slimes split on polymorph.
@@ -5638,7 +5990,7 @@ Stone Soup 0.4.2 (20080729)
 
 Disclaimer: These are merely the highlights, not an exhaustive list of changes.
 
-* Fixed defunct spell slot cap (and crash) with Selective Amnesia memorized.
+* Fixed defunct spell slot cap (and crash) with Selective Amnesia memorised.
 * Fixed the game crashing if PlaceInfo somehow ends up buggy.
 * Fixed runaway skill training.
 * Fixed vampire draining not destroying small corpses.

@@ -169,8 +169,9 @@
                     </thead>
                     <tbody>
                         <tr><td>Regeneration</td><td>fast</td><td>none with monsters in sight</td></tr>
+                        <tr><td>HP Modifier</td><td>none</td><td>-20%</td></tr>
                         <tr><td>Stealth boost</td><td>none</td><td>major</td></tr>
-                        <tr><td>HP modifier</td><td>none</td><td>-20%</td></tr>
+                        <tr><td>Heal on bite</td><td>no</td><td>yes</td></tr>
                         <tr class=group><th>Resistances</th><td></td><td></td></tr>
                         <tr><td>Poison resistance</td><td></td><td>immune</td></tr>
                         <tr><td>Cold resistance</td><td></td><td>++</td></tr>
@@ -215,13 +216,13 @@
             <div><b class=fg3>!</b>/<b class=fg3>^</b>:&nbsp;</div>
             <div class=paneset>
                 <div class=pane><b class=fg15>Overview</b> | Powers | Wrath
-                    <span class="join-keyhelp">&nbsp;&nbsp;<b class=fg3>Enter</b>: join religion</span>
+                    <span class="join-keyhelp">&nbsp;&nbsp;<b class=fg3>J</b>/<b class=fg3>Enter</b>: join religion</span>
                 </div>
                 <div class=pane>Overview | <b class=fg15>Powers</b> | Wrath
-                    <span class="join-keyhelp">&nbsp;&nbsp;<b class=fg3>Enter</b>: join religion</span>
+                    <span class="join-keyhelp">&nbsp;&nbsp;<b class=fg3>J</b>/<b class=fg3>Enter</b>: join religion</span>
                 </div>
                 <div class=pane>Overview | Powers | <b class=fg15>Wrath</b>
-                    <span class="join-keyhelp">&nbsp;&nbsp;<b class=fg3>Enter</b>: join religion</span>
+                    <span class="join-keyhelp">&nbsp;&nbsp;<b class=fg3>J</b>/<b class=fg3>Enter</b>: join religion</span>
                 </div>
             </div>
         </div>
@@ -253,16 +254,16 @@
             <div><b class=fg3>!</b>/<b class=fg3>^</b>:&nbsp;</div>
             <div class=paneset>
                 <div class=pane><b class=fg15>Overview</b> | Powers | Wrath | Extra
-                    <span class="join-keyhelp">&nbsp;&nbsp;<b class=fg3>Enter</b>: join religion</span>
+                    <span class="join-keyhelp">&nbsp;&nbsp;<b class=fg3>J</b>/<b class=fg3>Enter</b>: join religion</span>
                 </div>
                 <div class=pane>Overview | <b class=fg15>Powers</b> | Wrath | Extra
-                    <span class="join-keyhelp">&nbsp;&nbsp;<b class=fg3>Enter</b>: join religion</span>
+                    <span class="join-keyhelp">&nbsp;&nbsp;<b class=fg3>J</b>/<b class=fg3>Enter</b>: join religion</span>
                 </div>
                 <div class=pane>Overview | Powers | <b class=fg15>Wrath</b> | Extra
-                    <span class="join-keyhelp">&nbsp;&nbsp;<b class=fg3>Enter</b>: join religion</span>
+                    <span class="join-keyhelp">&nbsp;&nbsp;<b class=fg3>J</b>/<b class=fg3>Enter</b>: join religion</span>
                 </div>
                 <div class=pane>Overview | Powers | Wrath | <b class=fg15>Extra</b>
-                    <span class="join-keyhelp">&nbsp;&nbsp;<b class=fg3>Enter</b>: join religion</span>
+                    <span class="join-keyhelp">&nbsp;&nbsp;<b class=fg3>J</b>/<b class=fg3>Enter</b>: join religion</span>
                 </div>
             </div>
         </div>
@@ -291,7 +292,9 @@
     </div>
     <div class=msgwin-get-line>
         <div class=header></div>
-        <div class="body fg7"></div>
+        <input type="text" data-sync-id="input">
+        <div data-hotkey="Enter"></div>
+        <div data-hotkey="Escape"></div>
     </div>
     <div class="newgame-choice">
         <div class=header></div>
@@ -314,10 +317,31 @@
         <div class="body fg7"></div>
     </div>
     <div class="seed-selection">
-        <div class="header fg3"><span></span></div>
-        <div class="body fg7"><span></span></div>
-        <div class="seed-input fg7"></div>
-        <div class="footer fg7"><span></span></div>
+        <div class="header fg3"></div>
+        <div class="body fg7">
+            <p class="body-text"></p>
+            <div class="seed-input">
+                <span>Enter seed: </span>
+                <input type="text" data-sync-id="seed">
+                <button data-hotkey="-" data-sync-id="btn-clear">
+                    <span>[-] Clear</span>
+                </button>
+                <button data-hotkey="d" data-sync-id="btn-daily">
+                    <span>[d] Today's daily seed</span>
+                </button>
+            </div>
+            <p class="footer"></p>
+            <div class="pregen-toggle">
+                <label>
+                    <input type=checkbox data-sync-id="pregenerate" />
+                    <span>Fully pregenerate the Dungeon</span>
+                </label>
+            </div>
+        </div>
+        <div class="button-bar">
+            <button data-hotkey="Enter" data-sync-id="btn-begin">
+                <span>[Enter] Begin!</span>
+            </button>
         </div>
     </div>
 </div>

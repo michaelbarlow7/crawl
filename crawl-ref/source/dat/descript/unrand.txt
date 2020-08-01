@@ -42,9 +42,10 @@ weakness.
 staff of Olgreb
 
 A staff which was once wielded by the mighty wizard Olgreb. It increases the
-power of its wielder's poison magic, and can be evoked to activate its own
-venomous spells. Its touch may poison even resistant creatures, and it grants
-immunity to all venoms while wielded.
+power of its wielder's poison magic, grants immunity to poison, and can be
+evoked to radiate toxic energy with strength depending on Evocations skill.
+If the wielder is skilled in Evocations, they can inflict poison damage on
+those struck by it, even piercing through poison resistance.
 %%%%
 staff of Wucad Mu
 
@@ -61,8 +62,7 @@ restores a greater portion of life to its user than other vampiric weapons.
 scythe of Curses
 
 A scythe surrounded by an ominous aura of dread. It carries a terrible and
-highly irritating curse, which it busily inflicts on both the wielder and their
-enemies.
+ancient curse, which it busily inflicts on both the wielder and their enemies.
 %%%%
 sceptre of Torment
 
@@ -97,11 +97,13 @@ An enchanted suit of armour created from the scales of a rare breed of dragon,
 now thought to be extinct. This prized relic is now one of the last proofs that
 the vividly coloured faerie dragons ever existed.
 %%%%
+# TAG_MAJOR_VERSION == 34
 demon blade "Bloodbane"
 
 A blade forged in Hell by the sacrifice of countless tortured souls. It
 inflicts the rage and suffering of those souls upon its wielder.
 %%%%
+# TAG_MAJOR_VERSION == 34
 scimitar of Flaming Death
 
 A scimitar with a mysteriously smoking blade. Occasionally its heat leaks out,
@@ -116,9 +118,12 @@ reveals the machinations of those who would prefer to stay invisible.
 %%%%
 demon blade "Leech"
 
-An unerringly vampiric blade which gorges itself on drained life force every
-time it strikes.
+An unerringly vampiric blade, forged in Hell by the sacrifice of countless
+tortured souls. It fills its wielder with the rage and suffering of those
+souls, and gorges itself further on drained life force every time it strikes,
+leaving behind a mess of blood and gore.
 %%%%
+# TAG_MAJOR_VERSION == 34
 dagger of Chilly Death
 
 A dagger made of one huge shard of sapphire. It covers opponents in ice,
@@ -170,7 +175,7 @@ zealot's sword
 
 A sword made of one huge piece of crystal. Legend says it was the Shining One's
 gift to a worshipper. This blade is notorious for inducing bloodthirsty rage in
-both the wielder and all of his or her mortal followers.
+both the wielder and all of their mortal followers.
 %%%%
 arbalest "Damnation"
 
@@ -210,9 +215,9 @@ A beautiful mithril axe, probably lost by some dwarven hero.
 Elemental Staff
 
 A powerful staff which used to belong to the leader of the Guild of Five
-Elements. In addition to the protection it provides, those skilled in
-Evocations may discharge powerful blasts of elemental energy when striking with
-it.
+Elements. The staff enhances the power of all elemental spells cast by its
+wielder. In addition to the protection it provides, those skilled in Evocations
+may discharge powerful blasts of elemental energy when striking with it.
 %%%%
 heavy crossbow "Sniper"
 
@@ -284,7 +289,7 @@ storm bow
 A longbow with the colour of dark rain clouds that fires arrows like
 lightning.
 %%%%
-large shield of Ignorance
+tower shield of Ignorance
 
 A shield unearthed from the remains of a ruined city. It bears an inscription
 written in an ancient language. Scholars and wise men laboured for countless
@@ -304,7 +309,7 @@ A pitch-black cloak which allows its wearer to excel in the arts of thievery,
 and can be evoked to release thick clouds of smoke for a hasty escape.
 %%%%
 # TAG_MAJOR_VERSION == 34
-large shield "Bullseye"
+tower shield "Bullseye"
 
 Just in case you had trouble getting hit.
 %%%%
@@ -329,12 +334,12 @@ cloak of Flash
 
 A cloak that twitches and jerks without any intervention.
 %%%%
-boots of the Assassin
+hood of the Assassin
 
-A pair of soft boots, specially designed by the Assassin's Guild, that allow
-the wearer to sense potential victims nearby. They also allow the wearer to
-easily find vulnerabilities when attacking unaware opponents, allowing
-effective stabbing attacks with any weapon.
+A soft hood, enchanted by members of the Assassin's Guild to allow the wearer
+to sense potential victims nearby. It also allows the wearer to easily spot
+vulnerabilities when attacking unaware opponents, allowing effective stabbing
+attacks with any weapon.
 %%%%
 Lear's hauberk
 
@@ -506,7 +511,7 @@ slither at almost a human's pace.
 Black Knight's horse barding
 
 A heavy barding made from pitch-black steel and inlaid with plates of black
-diamond. It once protected the steed of the Black Knight during his reign of
+diamond. It once protected the steed of the Black Knight during their reign of
 terror. Those who wear it become partially undead, gaining some of the benefits
 without the unfortunate downsides, although the great weight of metal and stone
 slows the wearer somewhat.
@@ -530,7 +535,9 @@ A wooden cudgel, loaded with more than just lead.
 dragonskin cloak
 
 An opalescent cloak gleaming with the colours of all kinds of dragons. It
-protects its wearer from most elemental attacks, although somewhat unreliably.
+imbues the wearer with draconic resistances (although somewhat unreliably),
+providing a chance to resist fire, cold, poison, electricity, acid, and
+negative energy.
 %%%%
 ring of the Octopus King
 
@@ -623,6 +630,7 @@ pair of quick blades "Gyre" and "Gimble"
 Two quick blades joined by a chain. Swinging one compels the wielder to swing
 the other, as if they have minds of their own.
 %%%%
+# TAG_MAJOR_VERSION == 34
 Maxwell's etheric cage
 
 A fine mesh cage designed to capture magical energy. Experimental notes suggest
@@ -679,7 +687,7 @@ Maxwell's thermic engine
 
 A strange sword, one blade blistering hot and the other icy cold. When it hits
 its target the thermal gradient increases. What causes this effect is unknown
-but it is rumored that otherworldly forces are involved.
+but it is rumoured that otherworldly forces are involved.
 %%%%
 demon trident "Rift"
 
@@ -689,10 +697,15 @@ teleports its attack directly to its victim.
 %%%%
 staff of Battle
 
-A tubular staff encased in vividly coloured scales, the handiwork of a
-long-forgotten mage. It was stolen by the wizard Iskenderun who used it for a
-time before unlocking its secrets. The staff increases the power of its
-wielder's conjuration magic and, when its wielder is in danger, the staff will
-conjure a battlesphere to provide support. The strength of the battlesphere
-depends on the wielder's skill with Charms and Conjurations.
+A staff encased in vividly coloured scales, wrought by a long-forgotten wizard.
+It was the mage Iskenderun's favourite playtoy. The staff increases the power of
+its wielder's conjurations. When danger looms, it conjures a battlesphere, the
+strength of which depends on the wielder's skill with Charms and Conjurations.
 %%%%
+Cigotuvi's embrace
+
+Armour borne of rotten flesh and bone and gristle, held intact by the will of a
+long-dead sorcerer. The dreadful energies within it call to the bodies of the
+recently dead, sucking them in, protecting the wearer with a cocoon of carrion.
+This protection only lasts a short time, however - the ward against decay holds
+true within, but not without.

@@ -21,9 +21,9 @@
 #include "output.h"
 #include "player.h"
 #include "state.h"
-#include "tiledef-dngn.h"
-#include "tiledef-gui.h"
-#include "tiledef-main.h"
+#include "rltiles/tiledef-dngn.h"
+#include "rltiles/tiledef-gui.h"
+#include "rltiles/tiledef-main.h"
 #include "tilefont.h"
 #include "tilereg-abl.h"
 #include "tilereg-cmd.h"
@@ -83,69 +83,24 @@ static int _screen_sizes[4][8] =
 #endif
 };
 
-HiDPIState display_density(1,1);
+HiDPIState display_density(1,1,1);
 
 TilesFramework tiles;
 
-
-HiDPIState::HiDPIState(int device_density, int logical_density) :
-        device(device_density), logical(logical_density)
-{
-}
-
-/**
- * Calculate the device pixels given the logical pixels; the two may be
- * different on high-DPI devices (such as retina displays).
- *
- * @param n a value in logical pixels
- * @return the result in device pixels. May be the same, if the device isn't
- *          high-DPI.
- */
-int HiDPIState::logical_to_device(int n) const
-{
-    return n * device / logical;
-}
-
-/**
- * Calculate logical pixels given device pixels; the two may be
- * different on high-DPI devices (such as retina displays).
- *
- * @param n a value in device pixels
- * @param round whether to round (or truncate); defaults to true. Rounding is
- *        safer, as truncating may lead to underestimating dimensions.
- * @return the result in logical pixels. May be the same, if the device isn't
- *          high-DPI.
- */
-int HiDPIState::device_to_logical(int n, bool round) const
-{
-    return (n * logical + (round ?  device - 1 : 0)) / device;
-}
-
-/*
- * Return a float multiplier such that device * multiplier = logical.
- * for high-dpi displays, will be fractional.
- */
-float HiDPIState::scale_to_logical() const
-{
-    return (float) logical / (float) device;
-}
-
-/*
- * Return a float multiplier such that logical * multiplier = device.
- */
-float HiDPIState::scale_to_device() const
-{
-    return (float) device / (float) logical;
-}
 
 /**
  * Update the DPI, e.g. after a window move.
  *
  * @return whether the ratio changed.
  */
-bool HiDPIState::update(int ndevice, int nlogical)
+bool HiDPIState::update(int ndevice, int nlogical, int ngame_scale)
 {
     HiDPIState old = *this;
+    game_scale = ngame_scale;
+    nlogical = apply_game_scale(nlogical);
+    // sanity check: should be impossible for this to happen without changing
+    // code.
+    ASSERT(nlogical != 0);
     if (nlogical == ndevice)
         logical = device = 1;
     else
@@ -153,6 +108,7 @@ bool HiDPIState::update(int ndevice, int nlogical)
         device = ndevice;
         logical = nlogical;
     }
+
     // check if the ratios remain the same.
     // yes, this is kind of a dumb way to do it.
     return (old.device * 100 / old.logical) != (device * 100 / logical);
@@ -160,7 +116,6 @@ bool HiDPIState::update(int ndevice, int nlogical)
 
 TilesFramework::TilesFramework() :
     m_windowsz(1024, 768),
-    m_viewsc(0, 0),
     m_fullscreen(false),
     m_need_redraw(false),
     m_active_layer(LAYER_CRT),
@@ -518,13 +473,14 @@ void TilesFramework::load_dungeon(const crawl_view_buffer &vbuf,
 
     m_region_tile->load_dungeon(vbuf, gc);
 
-    int ox = m_region_tile->mx/2;
-    int oy = m_region_tile->my/2;
-    coord_def win_start(gc.x - ox, gc.y - oy);
-    coord_def win_end(gc.x + ox + 1, gc.y + oy + 1);
-
     if (m_region_map)
+    {
+        int ox = m_region_tile->mx/2;
+        int oy = m_region_tile->my/2;
+        coord_def win_start(gc.x - ox, gc.y - oy);
+        coord_def win_end(gc.x + ox + 1, gc.y + oy + 1);
         m_region_map->set_window(win_start, win_end);
+    }
 }
 
 void TilesFramework::load_dungeon(const coord_def &cen)
@@ -560,8 +516,11 @@ void TilesFramework::resize()
 
 void TilesFramework::resize_event(int w, int h)
 {
-    m_windowsz.x = w;
-    m_windowsz.y = h;
+    m_windowsz.x = display_density.apply_game_scale(w);
+    m_windowsz.y = display_density.apply_game_scale(h);
+    // TODO: does order of this call matter? This is based on a previous
+    // version where it was called from outside this function.
+    ui::resize(m_windowsz.x, m_windowsz.y);
 
     update_dpi();
     calculate_default_options();
@@ -569,7 +528,7 @@ void TilesFramework::resize_event(int w, int h)
     wm->resize(m_windowsz);
 }
 
-int TilesFramework::handle_mouse(MouseEvent &event)
+int TilesFramework::handle_mouse(wm_mouse_event &event)
 {
     // Note: the mouse event goes to all regions in the active layer because
     // we want to be able to start some GUI event (e.g. far viewing) and
@@ -598,11 +557,11 @@ int TilesFramework::handle_mouse(MouseEvent &event)
     if ((mouse_control::current_mode() == MOUSE_MODE_MORE
          || mouse_control::current_mode() == MOUSE_MODE_PROMPT
          || mouse_control::current_mode() == MOUSE_MODE_YESNO)
-        && event.event == MouseEvent::PRESS)
+        && event.event == wm_mouse_event::PRESS)
     {
-        if (event.button == MouseEvent::LEFT)
+        if (event.button == wm_mouse_event::LEFT)
             return CK_MOUSE_CLICK;
-        else if (event.button == MouseEvent::RIGHT)
+        else if (event.button == wm_mouse_event::RIGHT)
             return CK_MOUSE_CMD;
     }
 
@@ -611,10 +570,8 @@ int TilesFramework::handle_mouse(MouseEvent &event)
 
 static unsigned int _timer_callback(unsigned int ticks, void *param)
 {
-    UNUSED(param);
+    UNUSED(ticks, param);
 
-    // force the event loop to break
-    wm->raise_custom_event();
 
     return 0;
 }
@@ -656,6 +613,12 @@ int TilesFramework::getch_ck()
                 tiles.clear_text_tags(TAG_CELL_DESC);
                 m_region_msg->alt_text().clear();
             }
+
+            // These WME_* events are also handled, at different times, by a
+            // similar bit of code in ui.cc. Roughly, this handling is used
+            // during the main game display, and the ui.cc loop is used in the
+            // main menu and when there are ui elements on top.
+            // TODO: consolidate as much as possible
 
             switch (event.type)
             {
@@ -716,12 +679,7 @@ int TilesFramework::getch_ck()
                 {
                     // For consecutive mouse events, ignore all but the last,
                     // since these can come in faster than crawl can redraw.
-                    //
-                    // Note that get_event_count() is misleadingly named and only
-                    // peeks at the first event, and so will only return 0 or 1.
-                    unsigned int count = wm->get_event_count(WME_MOUSEMOTION);
-                    ASSERT(count >= 0);
-                    if (count > 0)
+                    if (wm->next_event_is(WME_MOUSEMOTION))
                         continue;
 
                     // Record mouse pos for tooltip timer
@@ -778,9 +736,7 @@ int TilesFramework::getch_ck()
                 return ESCAPE;
 
             case WME_RESIZE:
-                m_windowsz.x = event.resize.w;
-                m_windowsz.y = event.resize.h;
-                resize();
+                resize_event(event.resize.w, event.resize.h);
                 set_need_redraw();
                 return CK_REDRAW;
 
@@ -870,18 +826,26 @@ static int round_up_to_multiple(int a, int b)
  */
 void TilesFramework::do_layout()
 {
-    // View size in pixels is (m_viewsc * crawl_view.viewsz)
+    /**
+     * XXX: don't layout unless we're in a game / arena
+     * this is to prevent layout code from accessing `you` while it's invalid.
+     */
+    if (!species_type_valid(you.species))
+    {
+        /* HACK: some code called while loading the game calls mprf(), so even
+         * if we're not ready to do an actual layout, we should still give the
+         * message region a size, to prevent a crash. */
+        m_region_msg->place(0, 0, 0);
+        m_region_msg->resize_to_fit(10000, 10000);
+        return;
+    }
+
+    // View size in pixels is ((dx, dy) * crawl_view.viewsz)
     const int scale = m_map_mode_enabled ? Options.tile_map_scale
                                          : Options.tile_viewport_scale;
-    m_viewsc.x = Options.tile_cell_pixels * scale / 100;
-    m_viewsc.y = Options.tile_cell_pixels * scale / 100;
+    m_region_tile->dx = Options.tile_cell_pixels * scale / 100;
+    m_region_tile->dy = Options.tile_cell_pixels * scale / 100;
 
-    crawl_view.viewsz.x = Options.view_max_width;
-    crawl_view.viewsz.y = Options.view_max_height;
-
-    // Initial sizes.
-    m_region_tile->dx = m_viewsc.x;
-    m_region_tile->dy = m_viewsc.y;
     int message_y_divider = 0;
     int sidebar_pw;
 
@@ -1012,9 +976,6 @@ void TilesFramework::do_layout()
     m_region_tile->tile_iw = tile_iw;
     m_region_tile->tile_ih = tile_ih;
 
-    crawl_view.viewsz.x = m_region_tile->mx;
-    crawl_view.viewsz.y = m_region_tile->my;
-
     // Resize and place the message window.
     m_region_msg->set_overlay(message_overlay);
     if (message_overlay)
@@ -1030,9 +991,6 @@ void TilesFramework::do_layout()
         m_region_msg->place(0, tile_ih, 0);
     }
 
-    crawl_view.msgsz.x = m_region_msg->mx;
-    crawl_view.msgsz.y = m_region_msg->my;
-
     if (use_small_layout)
         m_stat_col = m_stat_x_divider;
     else
@@ -1046,6 +1004,12 @@ void TilesFramework::do_layout()
     m_region_crt->place(0, 0, 0);
     m_region_crt->resize_to_fit(m_windowsz.x, m_windowsz.y);
 
+    crawl_view.viewsz.x = m_region_tile->mx;
+    crawl_view.viewsz.y = m_region_tile->my;
+    crawl_view.msgsz.x = m_region_msg->mx;
+    crawl_view.msgsz.y = m_region_msg->my;
+    crawl_view.hudsz.x = m_region_stat->mx;
+    crawl_view.hudsz.y = m_region_stat->my;
     crawl_view.init_view();
 }
 
@@ -1301,14 +1265,10 @@ void TilesFramework::layout_statcol()
         // resize stats to be up to beginning of command tabs
         //  ... this works because the margin (ox) on m_region_tab contains the tabs themselves
         m_region_stat->resize_to_fit((m_windowsz.x - m_stat_x_divider) - m_region_tab->ox*m_region_tab->dx/32, m_statcol_bottom-m_statcol_top);
-        crawl_view.hudsz.y = m_region_stat->my;
-        crawl_view.hudsz.x = m_region_stat->mx;
     }
     else
     {
-        crawl_view.hudsz.x = m_region_stat->mx;
-        crawl_view.hudsz.y = min_stat_height;
-        m_region_stat->resize(m_region_stat->mx, crawl_view.hudsz.y);
+        m_region_stat->resize(m_region_stat->mx, min_stat_height);
 
         m_statcol_top = m_region_stat->ey;
 
@@ -1322,7 +1282,7 @@ void TilesFramework::layout_statcol()
         m_region_tab->place(m_stat_col, m_windowsz.y - m_region_tab->wy);
         m_statcol_bottom = m_region_tab->sy - m_tab_margin;
 
-        m_region_stat->resize(m_region_stat->mx, crawl_view.hudsz.y);
+        m_region_stat->resize(m_region_stat->mx, min_stat_height);
         m_statcol_top += m_region_stat->dy;
         bool resized_inventory = false;
 
@@ -1441,7 +1401,7 @@ void TilesFramework::redraw()
 #endif
     m_need_redraw = false;
 
-    glmanager->reset_view_for_redraw(m_viewsc.x, m_viewsc.y);
+    glmanager->reset_view_for_redraw();
 
     for (Region *region : m_layers[m_active_layer].m_regions)
         region->render();
@@ -1452,8 +1412,8 @@ void TilesFramework::redraw()
         const int buffer = 5;
         const coord_def min_pos = coord_def() + buffer;
         const coord_def max_pos = m_windowsz - buffer;
-        m_tip_font->render_tooltip(m_mouse.x, m_mouse.y, formatted_string(m_tooltip),
-                min_pos, max_pos);
+        m_tip_font->render_tooltip(m_mouse.x, m_mouse.y,
+                formatted_string(m_tooltip), min_pos, max_pos);
     }
     wm->swap_buffers();
 
@@ -1543,7 +1503,7 @@ void TilesFramework::add_text_tag(text_tag_type type, const string &tag,
     m_region_tile->add_text_tag(type, tag, gc);
 }
 
-void TilesFramework::add_text_tag(text_tag_type type, const monster_info& mon)
+void TilesFramework::add_text_tag(text_tag_type /*type*/, const monster_info& mon)
 {
     // HACK. Large-tile monsters don't interact well with name tags.
     if (mons_class_flag(mon.type, M_TALL_TILE)

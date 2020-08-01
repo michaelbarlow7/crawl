@@ -12,17 +12,18 @@
 #include "delay.h"
 #include "directn.h"
 #include "env.h"
+#include "fight.h"
 #include "fineff.h"
 #include "fprop.h"
 #include "god-conduct.h"
 #include "libutil.h"
 #include "message.h"
-#include "misc.h"
 #include "mon-behv.h"
 #include "mon-tentacle.h"
 #include "ouch.h"
 #include "prompt.h"
 #include "shout.h"
+#include "target.h"
 #include "terrain.h"
 #include "transform.h"
 
@@ -104,7 +105,7 @@ bool WindSystem::has_wind(coord_def c)
     return wind(c - org);
 }
 
-static void _set_tornado_durations(int powc)
+static void _set_tornado_durations()
 {
     int dur = 60;
     you.duration[DUR_TORNADO] = dur;
@@ -115,27 +116,14 @@ static void _set_tornado_durations(int powc)
     }
 }
 
-spret cast_tornado(int powc, bool fail)
+spret cast_tornado(int /*powc*/, bool fail)
 {
-    bool friendlies = false;
-    for (radius_iterator ri(you.pos(), TORNADO_RADIUS, C_SQUARE); ri; ++ri)
+    targeter_radius hitfunc(&you, LOS_NO_TRANS, TORNADO_RADIUS);
+    if (stop_attack_prompt(hitfunc, "make a tornado",
+                [](const actor *act) -> bool {
+                    return !act->res_tornado();
+                }))
     {
-        const monster_info* m = env.map_knowledge(*ri).monsterinfo();
-        if (!m)
-            continue;
-        if (mons_att_wont_attack(m->attitude)
-            && !mons_class_res_tornado(m->type)
-            && !mons_is_projectile(m->type))
-        {
-            friendlies = true;
-        }
-    }
-
-    if (friendlies
-        && !yesno("There are friendlies around, are you sure you want to hurt them?",
-                  true, 'n'))
-    {
-        canned_msg(MSG_OK);
         return spret::abort;
     }
 
@@ -149,7 +137,7 @@ spret cast_tornado(int powc, bool fail)
         merfolk_stop_swimming();
 
     you.props["tornado_since"].get_int() = you.elapsed_time;
-    _set_tornado_durations(powc);
+    _set_tornado_durations();
     if (you.species == SP_TENGU)
         you.redraw_evasion = true;
 
@@ -319,7 +307,11 @@ void tornado_damage(actor *caster, int dur, bool is_vortex)
         vector<coord_def> clouds;
         for (; dam_i && dam_i.radius() == r; ++dam_i)
         {
-            if (feat_is_tree(grd(*dam_i)) && dur > 0
+            bool veto =
+                env.markers.property_at(*dam_i, MAT_ANY, "veto_tornado") == "veto";
+
+            if ((feat_is_tree(grd(*dam_i)) && !is_temp_terrain(*dam_i))
+                && !veto && dur > 0
                 && bernoulli(rdur * 0.01, 0.05)) // 5% chance per 10 aut
             {
                 grd(*dam_i) = DNGN_FLOOR;
@@ -382,7 +374,9 @@ void tornado_damage(actor *caster, int dur, bool is_vortex)
                             float_player();
                     }
 
-                    if (dur > 0)
+                    // alive check here in case the annoy event above dismissed
+                    // the victim.
+                    if (dur > 0 && victim->alive())
                     {
                         int dmg = victim->apply_ac(
                                     div_rand_round(roll_dice(9, rpow), 15),
@@ -390,13 +384,6 @@ void tornado_damage(actor *caster, int dur, bool is_vortex)
                         dprf("damage done: %d", dmg);
                         victim->hurt(caster, dmg, BEAM_AIR, KILLED_BY_BEAM,
                                      "", "tornado");
-
-                        if (caster->is_player()
-                            && (is_sanctuary(you.pos())
-                                || is_sanctuary(victim->pos())))
-                        {
-                            remove_sanctuary(true);
-                        }
                     }
                 }
 
@@ -474,7 +461,7 @@ void tornado_damage(actor *caster, int dur, bool is_vortex)
             && !need_expiration_warning(old_player_pos)
             && need_expiration_warning(new_player_pos))
         {
-            mprf(MSGCH_DANGER, "Careful! You are now flying above %s",
+            mprf(MSGCH_DANGER, "Careful! You are now flying above %s.",
                  feature_description_at(new_player_pos, false, DESC_PLAIN)
                      .c_str());
         }

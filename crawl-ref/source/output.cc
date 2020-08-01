@@ -18,12 +18,10 @@
 #include "colour.h"
 #include "describe.h"
 #ifndef USE_TILE_LOCAL
-#include "directn.h"
 #endif
 #include "english.h"
 #include "env.h"
 #include "files.h"
-#include "god-abil.h"
 #include "god-passive.h"
 #include "initfile.h"
 #include "item-name.h"
@@ -279,7 +277,7 @@ static void _nowrap_eol_cprintf_touchui(const char *format, ...)
 
 #else
 #define CGOTOXY cgotoxy
-#define CPRINTF cprintf
+#define CPRINTF wrapcprintf
 #define NOWRAP_EOL_CPRINTF nowrap_eol_cprintf
 #endif
 
@@ -310,8 +308,7 @@ public:
     colour_bar(colour_t default_colour,
                colour_t change_pos,
                colour_t change_neg,
-               colour_t empty,
-               bool round = false)
+               colour_t empty)
         : m_default(default_colour), m_change_pos(change_pos),
           m_change_neg(change_neg), m_empty(empty),
           horiz_bar_width(-1),
@@ -538,8 +535,8 @@ void update_turn_count()
 
     // Don't update turn counter when running/resting/traveling to
     // prevent pointless screen updates.
-    if (you.running > 0
-        || you.running < 0 && Options.travel_delay == -1)
+    if (mouse_control::current_mode() == MOUSE_MODE_NORMAL
+        && (you.running > 0 || you.running < 0 && Options.travel_delay == -1))
     {
         return;
     }
@@ -693,7 +690,7 @@ static void _print_stats_noise(int x, int y)
     }
 }
 
-static void _print_stats_gold(int x, int y, colour_t colour)
+static void _print_stats_gold(int x, int y)
 {
     CGOTOXY(x, y, GOTO_STAT);
     textcolour(HUD_CAPTION_COLOUR);
@@ -819,14 +816,8 @@ static short _get_stat_colour(stat_type stat)
             return entry.second;
 
     // Stat is magically increased.
-    if (you.duration[DUR_DIVINE_STAMINA]
-        || stat == STAT_STR && you.duration[DUR_MIGHT]
-        || stat == STAT_STR && you.duration[DUR_BERSERK]
-        || stat == STAT_INT && you.duration[DUR_BRILLIANCE]
-        || stat == STAT_DEX && you.duration[DUR_AGILITY])
-    {
+    if (you.duration[DUR_DIVINE_STAMINA])
         return LIGHTBLUE;  // no end of effect warning
-    }
 
     // Stat is degenerated.
     if (you.stat_loss[stat] > 0)
@@ -1281,8 +1272,7 @@ static void _redraw_title()
         if (you_worship(GOD_GOZAG))
         {
             // "Mottled Draconian of Gozag  Gold: 99999" just fits
-            _print_stats_gold(textwidth + 2, 2,
-                              _god_status_colour(god_colour(you.religion)));
+            _print_stats_gold(textwidth + 2, 2);
         }
     }
 
@@ -1423,6 +1413,7 @@ void print_stats()
         update_screen();
 #else
     update_screen();
+    assert_valid_cursor_pos();
 #endif
 }
 
@@ -1492,6 +1483,15 @@ void draw_border()
 #ifndef USE_TILE_LOCAL
 void redraw_console_sidebar()
 {
+#ifndef USE_TILE_LOCAL
+    if (crawl_state.smallterm)
+    {
+        clrscr();
+        CGOTOXY(1,1, GOTO_CRT);
+        CPRINTF("Your terminal window is too small; please resize to at least %d,%d", MIN_COLS, MIN_LINES);
+        return;
+    }
+#endif
     // TODO: this is super hacky and merges stuff from redraw_screen and
     // viewwindow. It won't do nothing for webtiles, but should be basically
     // benign there.
@@ -1520,6 +1520,7 @@ void redraw_console_sidebar()
 
     you.flash_colour = BLACK;
     you.flash_where = 0;
+    assert_valid_cursor_pos();
 }
 #endif
 
@@ -1535,6 +1536,16 @@ void redraw_screen(bool show_updates)
 #ifdef USE_TILE_WEB
     if (!ui::has_layout())
         tiles.pop_all_ui_layouts();
+#endif
+
+#ifndef USE_TILE_LOCAL
+    if (crawl_state.smallterm)
+    {
+        clrscr();
+        CGOTOXY(1,1, GOTO_CRT);
+        CPRINTF("Your terminal window is too small; please resize to at least %d,%d", MIN_COLS, MIN_LINES);
+        return;
+    }
 #endif
 
     draw_border();
@@ -1571,10 +1582,11 @@ void redraw_screen(bool show_updates)
         viewwindow(show_updates);
         display_message_window();
     }
-    // normalize the cursor region independent of messages_at_top
-    set_cursor_region(GOTO_MSG);
 
     update_screen();
+#ifndef USE_TILE_LOCAL
+    assert_valid_cursor_pos();
+#endif
 }
 
 // ----------------------------------------------------------------------
@@ -1713,9 +1725,17 @@ static void _print_next_monster_desc(const vector<monster_info>& mons,
         {
             int desc_colour;
             string desc;
-            mons[start].to_string(count, desc, desc_colour, zombified);
+            mons_to_string_pane(desc, desc_colour, zombified,
+                                mons, start, count);
             textcolour(desc_colour);
-            desc.resize(crawl_view.mlistsz.x-printed, ' ');
+            if (static_cast<int>(desc.length()) > crawl_view.mlistsz.x - printed)
+            {
+                ASSERT(crawl_view.mlistsz.x - 2 - printed >= 0);
+                desc.resize(crawl_view.mlistsz.x - 2 - printed, ' ');
+                desc += "…)";
+            }
+            else
+                desc.resize(crawl_view.mlistsz.x - printed, ' ');
             CPRINTF("%s", desc.c_str());
         }
     }
@@ -1741,62 +1761,68 @@ int update_monster_pane()
     if (max_print <= 0)
         return -1;
 
-    vector<monster_info> mons;
-    get_monster_info(mons);
-
-    // Count how many groups of monsters there are.
-    unsigned int lines_needed = mons.size();
-    for (unsigned int i = 1; i < mons.size(); i++)
-        if (!monster_info::less_than(mons[i-1], mons[i]))
-            --lines_needed;
-
-    bool full_info = true;
-    if (lines_needed > (unsigned int) max_print)
     {
-        full_info = false;
+        save_cursor_pos save;
 
-        // Use type names rather than full names ("small zombie" vs
-        // "rat zombie") in order to take up fewer lines.
+        vector<monster_info> mons;
+        get_monster_info(mons);
 
-        lines_needed = mons.size();
+        // Count how many groups of monsters there are.
+        unsigned int lines_needed = mons.size();
         for (unsigned int i = 1; i < mons.size(); i++)
-            if (!monster_info::less_than(mons[i-1], mons[i], false, false))
+            if (!monster_info::less_than(mons[i-1], mons[i]))
                 --lines_needed;
+
+        bool full_info = true;
+        if (lines_needed > (unsigned int) max_print)
+        {
+            full_info = false;
+
+            // Use type names rather than full names ("small zombie" vs
+            // "rat zombie") in order to take up fewer lines.
+
+            lines_needed = mons.size();
+            for (unsigned int i = 1; i < mons.size(); i++)
+                if (!monster_info::less_than(mons[i-1], mons[i], false, false))
+                    --lines_needed;
+        }
+
+    #ifdef BOTTOM_JUSTIFY_MONSTER_LIST
+        const int skip_lines = max<int>(0, crawl_view.mlistsz.y-lines_needed);
+    #else
+        const int skip_lines = 0;
+    #endif
+
+        // Print the monsters!
+        string blank;
+        blank.resize(crawl_view.mlistsz.x, ' ');
+        int i_mons = 0;
+        for (int i_print = 0; i_print < max_print; ++i_print)
+        {
+            CGOTOXY(1, 1 + i_print, GOTO_MLIST);
+            // i_mons is incremented by _print_next_monster_desc
+            if (i_print >= skip_lines && i_mons < (int) mons.size())
+                _print_next_monster_desc(mons, i_mons, full_info);
+            else
+                CPRINTF("%s", blank.c_str());
+        }
+
+        if (i_mons < (int)mons.size())
+        {
+            // Didn't get to all of them.
+            CGOTOXY(crawl_view.mlistsz.x - 2, crawl_view.mlistsz.y, GOTO_MLIST);
+            textbackground(COLFLAG_REVERSE);
+            CPRINTF("(…)");
+            textbackground(BLACK);
+        }
+
+        assert_valid_cursor_pos();
+
+        if (mons.empty())
+            return -1;
+
+        return full_info;
     }
-
-#ifdef BOTTOM_JUSTIFY_MONSTER_LIST
-    const int skip_lines = max<int>(0, crawl_view.mlistsz.y-lines_needed);
-#else
-    const int skip_lines = 0;
-#endif
-
-    // Print the monsters!
-    string blank;
-    blank.resize(crawl_view.mlistsz.x, ' ');
-    int i_mons = 0;
-    for (int i_print = 0; i_print < max_print; ++i_print)
-    {
-        CGOTOXY(1, 1 + i_print, GOTO_MLIST);
-        // i_mons is incremented by _print_next_monster_desc
-        if (i_print >= skip_lines && i_mons < (int) mons.size())
-            _print_next_monster_desc(mons, i_mons, full_info);
-        else
-            CPRINTF("%s", blank.c_str());
-    }
-
-    if (i_mons < (int)mons.size())
-    {
-        // Didn't get to all of them.
-        CGOTOXY(crawl_view.mlistsz.x - 3, crawl_view.mlistsz.y, GOTO_MLIST);
-        textbackground(COLFLAG_REVERSE);
-        CPRINTF("(…)");
-        textbackground(BLACK);
-    }
-
-    if (mons.empty())
-        return -1;
-
-    return full_info;
 }
 #else
 // FIXME: Implement this for Tiles!
@@ -2425,12 +2451,18 @@ static vector<formatted_string> _get_overview_resistances(
     const int regen = player_regen(); // round up
     out += make_stringf("HPRegen  %d.%d%d/turn\n", regen/100, regen/10%10, regen%10);
 
+#if TAG_MAJOR_VERSION == 34
     const bool etheric = player_equip_unrand(UNRAND_ETHERIC_CAGE);
     const int mp_regen = player_mp_regen() //round up
                          + (etheric ? 50 : 0); // on average
     out += make_stringf("MPRegen  %d.%02d/turn%s\n",
                         mp_regen / 100, mp_regen % 100,
                         etheric ? "*" : "");
+#else
+    const int mp_regen = player_mp_regen(); // round up
+    out += make_stringf("MPRegen  %d.%02d/turn\n",
+                        mp_regen / 100, mp_regen % 100);
+#endif
 
     cols.add_formatted(0, out, false);
 

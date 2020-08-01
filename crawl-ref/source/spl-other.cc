@@ -11,16 +11,12 @@
 #include "act-iter.h"
 #include "delay.h"
 #include "env.h"
-#include "food.h"
 #include "god-companions.h"
 #include "libutil.h"
 #include "message.h"
-#include "misc.h"
 #include "mon-place.h"
 #include "mon-util.h"
 #include "place.h"
-#include "player-stats.h"
-#include "potion.h"
 #include "religion.h"
 #include "spl-util.h"
 #include "terrain.h"
@@ -428,7 +424,7 @@ static int _intoxicate_monsters(coord_def where, int pow)
     if (mons == nullptr
         || mons_intel(*mons) < I_HUMAN
         || !(mons->holiness() & MH_NATURAL)
-        || mons->check_clarity(false)
+        || mons->check_clarity()
         || monster_resists_this_poison(*mons))
     {
         return 0;

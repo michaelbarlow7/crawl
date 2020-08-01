@@ -23,9 +23,7 @@
 #include "item-use.h"
 #include "libutil.h" // map_find
 #include "message.h"
-#include "misc.h"
 #include "notes.h"
-#include "options.h"
 #include "orb-type.h"
 #include "potion-type.h"
 #include "random.h"
@@ -36,6 +34,7 @@
 #include "stringutil.h"
 #include "terrain.h"
 #include "xom.h"
+#include "xp-evoker-data.h"
 
 static iflags_t _full_ident_mask(const item_def& item);
 
@@ -147,9 +146,9 @@ static const armour_def Armour_prop[] =
     // to calculate adjusted shield penalty.
     { ARM_BUCKLER,              "buckler",                3,  -8,   45,
         EQ_SHIELD,      SIZE_LITTLE, SIZE_MEDIUM, true },
-    { ARM_SHIELD,               "shield",                 8,  -30,  45,
+    { ARM_KITE_SHIELD,               "kite shield",                 8,  -30,  45,
         EQ_SHIELD,      SIZE_SMALL,  SIZE_BIG, true    },
-    { ARM_LARGE_SHIELD,         "large shield",          13,  -50,  45,
+    { ARM_TOWER_SHIELD,         "tower shield",          13,  -50,  45,
         EQ_SHIELD,      SIZE_MEDIUM, SIZE_GIANT, true  },
 
     // Following all ARM_ entries for the benefit of util/gather_items
@@ -739,11 +738,15 @@ const set<pair<object_class_type, int> > removed_items =
 #if TAG_MAJOR_VERSION == 34
     { OBJ_JEWELLERY, AMU_CONTROLLED_FLIGHT },
     { OBJ_JEWELLERY, AMU_CONSERVATION },
+    { OBJ_JEWELLERY, AMU_THE_GOURMAND },
+    { OBJ_JEWELLERY, AMU_HARM },
+    { OBJ_JEWELLERY, AMU_RAGE },
     { OBJ_JEWELLERY, RING_REGENERATION },
     { OBJ_JEWELLERY, RING_SUSTAIN_ATTRIBUTES },
     { OBJ_JEWELLERY, RING_TELEPORT_CONTROL },
     { OBJ_STAVES,    STAFF_ENCHANTMENT },
     { OBJ_STAVES,    STAFF_CHANNELING },
+    { OBJ_STAVES,    STAFF_POWER },
     { OBJ_POTIONS,   POT_GAIN_STRENGTH },
     { OBJ_POTIONS,   POT_GAIN_DEXTERITY },
     { OBJ_POTIONS,   POT_GAIN_INTELLIGENCE },
@@ -758,6 +761,7 @@ const set<pair<object_class_type, int> > removed_items =
     { OBJ_POTIONS,   POT_RESTORE_ABILITIES },
     { OBJ_POTIONS,   POT_CURE_MUTATION },
     { OBJ_POTIONS,   POT_BENEFICIAL_MUTATION },
+    { OBJ_POTIONS,   POT_DUMMY_AGILITY },
     { OBJ_BOOKS,     BOOK_WIZARDRY },
     { OBJ_BOOKS,     BOOK_CONTROL },
     { OBJ_BOOKS,     BOOK_BUGGY_DESTRUCTION },
@@ -787,6 +791,7 @@ const set<pair<object_class_type, int> > removed_items =
     { OBJ_WANDS,     WAND_SLOWING_REMOVED },
     { OBJ_WANDS,     WAND_CONFUSION_REMOVED },
     { OBJ_WANDS,     WAND_LIGHTNING_REMOVED },
+    { OBJ_WANDS,     WAND_SCATTERSHOT_REMOVED },
     { OBJ_SCROLLS,   SCR_CURSE_WEAPON },
     { OBJ_SCROLLS,   SCR_CURSE_ARMOUR },
     { OBJ_SCROLLS,   SCR_CURSE_JEWELLERY },
@@ -795,9 +800,6 @@ const set<pair<object_class_type, int> > removed_items =
     { OBJ_FOOD,      FOOD_UNUSED },
     { OBJ_FOOD,      FOOD_FRUIT },
 #endif
-    // Outside the #if because we probably won't remove these.
-    { OBJ_RUNES,     RUNE_ELF },
-    { OBJ_RUNES,     RUNE_FOREST },
     { OBJ_JEWELLERY, AMU_NOTHING }, // These should only spawn as uniques
 };
 
@@ -1531,7 +1533,6 @@ int wand_charge_value(int type)
     switch (type)
     {
     case WAND_CLOUDS:
-    case WAND_SCATTERSHOT:
     case WAND_DIGGING:
         return 9;
 
@@ -1571,32 +1572,29 @@ bool is_known_empty_wand(const item_def &item)
 #endif
 
 /**
- * For purpose of Ashenzari's monster equipment identification & warning
- * passive, what wands are a potential threat to the player in monsters'
- * hands?
+ * What wands could a monster use to directly harm the player?
  *
  * @param item      The wand to be examined.
- * @return          Whether the player should be warned about the given wand.
+ * @return          True if the wand could harm the player, false otherwise.
  */
 bool is_offensive_wand(const item_def& item)
 {
     switch (item.sub_type)
     {
-    // Monsters don't use those, so no need to warn the player about them.
-    case WAND_CLOUDS:
-    case WAND_ICEBLAST:
+    // Monsters don't use it
     case WAND_RANDOM_EFFECTS:
-    case WAND_SCATTERSHOT:
     // Monsters use it, but it's not an offensive wand
     case WAND_DIGGING:
         return false;
 
+    case WAND_ACID:
+    case WAND_CLOUDS:
+    case WAND_DISINTEGRATION:
     case WAND_ENSLAVEMENT:
     case WAND_FLAME:
+    case WAND_ICEBLAST:
     case WAND_PARALYSIS:
     case WAND_POLYMORPH:
-    case WAND_ACID:
-    case WAND_DISINTEGRATION:
         return true;
     }
     return false;
@@ -1684,9 +1682,13 @@ int single_damage_type(const item_def &item)
 // Not adjusted by species or anything, which is why it's "basic".
 hands_reqd_type basic_hands_reqd(const item_def &item, size_type size)
 {
-    const int wpn_type = OBJ_WEAPONS == item.base_type ? item.sub_type :
-                         OBJ_STAVES == item.base_type  ? WPN_STAFF :
-                                                         WPN_UNKNOWN;
+    const auto wpn_type = [&item]() {
+        if (item.base_type == OBJ_WEAPONS)
+            return static_cast<weapon_type>(item.sub_type);
+        if (item.base_type == OBJ_STAVES)
+            return WPN_STAFF;
+        return WPN_UNKNOWN;
+    }();
 
     // Non-weapons.
     if (wpn_type == WPN_UNKNOWN)
@@ -1992,7 +1994,7 @@ bool is_weapon_wieldable(const item_def &item, size_type size)
 {
     ASSERT(is_weapon(item));
 
-    const int subtype = OBJ_STAVES == item.base_type ? WPN_STAFF
+    const int subtype = OBJ_STAVES == item.base_type ? int{WPN_STAFF}
                                                      : item.sub_type;
     return Weapon_prop[Weapon_index[subtype]].min_2h_size <= size;
 }
@@ -2184,7 +2186,12 @@ bool jewellery_has_pluses(const item_def &item)
     if (!item_type_known(item))
         return false;
 
-    switch (item.sub_type)
+    return jewellery_type_has_plusses(item.sub_type);
+}
+
+bool jewellery_type_has_plusses(int jewel_type)
+{
+    switch (jewel_type)
     {
     case RING_SLAYING:
     case RING_PROTECTION:
@@ -2192,7 +2199,6 @@ bool jewellery_has_pluses(const item_def &item)
     case RING_STRENGTH:
     case RING_INTELLIGENCE:
     case RING_DEXTERITY:
-    case AMU_REFLECTION:
         return true;
 
     default:
@@ -2241,16 +2247,6 @@ bool ring_has_stackable_effect(const item_def &item)
 bool is_real_food(food_type food)
 {
     return food < NUM_FOODS && Food_index[food] < Food_index[FOOD_UNUSED];
-}
-
-bool is_blood_potion(const item_def &item)
-{
-    if (item.base_type != OBJ_POTIONS)
-        return false;
-
-    return item.sub_type == POT_BLOOD
-           || item.sub_type == POT_BLOOD_COAGULATED
-            ;
 }
 #endif
 
@@ -2416,7 +2412,8 @@ int get_armour_res_corr(const item_def &arm)
     ASSERT(arm.base_type == OBJ_ARMOUR);
 
     // intrinsic armour abilities
-    return armour_type_prop(arm.sub_type, ARMF_RES_CORR);
+    return get_armour_ego_type(arm) == SPARM_PRESERVATION
+           || armour_type_prop(arm.sub_type, ARMF_RES_CORR);
 }
 
 int get_armour_repel_missiles(const item_def &arm, bool check_artp)
@@ -2429,16 +2426,6 @@ int get_armour_repel_missiles(const item_def &arm, bool check_artp)
 
     if (check_artp && is_artefact(arm))
         return artefact_property(arm, ARTP_RMSL);
-
-    return false;
-}
-
-int get_armour_cloud_immunity(const item_def &arm)
-{
-    ASSERT(arm.base_type == OBJ_ARMOUR);
-
-    if (get_armour_ego_type(arm) == SPARM_CLOUD_IMMUNE)
-        return true;
 
     return false;
 }
@@ -2657,11 +2644,8 @@ bool gives_ability(const item_def &item)
     case OBJ_WEAPONS:
         break;
     case OBJ_JEWELLERY:
-        if (item.sub_type == RING_FLIGHT
-            || item.sub_type == AMU_RAGE)
-        {
+        if (item.sub_type == RING_FLIGHT)
             return true;
-        }
         break;
     case OBJ_ARMOUR:
     {
@@ -2724,7 +2708,7 @@ bool gives_resistance(const item_def &item)
         }
         else
         {
-            if (item.sub_type != AMU_RAGE && item.sub_type != AMU_INACCURACY)
+            if (item.sub_type != AMU_INACCURACY)
                 return true;
         }
         break;
@@ -2953,15 +2937,6 @@ void seen_item(const item_def &item)
     }
 }
 
-/// Map of xp evokers to you.props[] xp debt keys.
-static const map<int, const char*> debt_map = {
-    { MISC_FAN_OF_GALES,        "fan_debt" },
-    { MISC_LAMP_OF_FIRE,        "lamp_debt" },
-    { MISC_PHIAL_OF_FLOODS,     "phial_debt" },
-    { MISC_HORN_OF_GERYON,      "horn_debt" },
-    { MISC_LIGHTNING_ROD,       "rod_debt" },
-};
-
 /**
  * Is the given item an xp-charged evocable? (That is, one that recharges as
  * the player gains xp.)
@@ -2973,7 +2948,8 @@ static const map<int, const char*> debt_map = {
 bool is_xp_evoker(const item_def &item)
 {
     return item.base_type == OBJ_MISCELLANY
-           && map_find(debt_map, item.sub_type);
+           && map_find(xp_evoker_data,
+                       static_cast<misc_item_type>(item.sub_type));
 }
 
 /**
@@ -2986,9 +2962,10 @@ bool is_xp_evoker(const item_def &item)
  */
 int &evoker_debt(int evoker_type)
 {
-    const char* const *prop_name = map_find(debt_map, evoker_type);
-    ASSERT(prop_name);
-    return you.props[*prop_name].get_int();
+    const evoker_data* edata = map_find(xp_evoker_data,
+                                   static_cast<misc_item_type>(evoker_type));
+    ASSERT(edata);
+    return you.props[edata->key].get_int();
 }
 
 /**
@@ -2999,7 +2976,10 @@ int &evoker_debt(int evoker_type)
  */
 int evoker_max_charges(int evoker_type)
 {
-    return evoker_type == MISC_LIGHTNING_ROD ? LIGHTNING_MAX_CHARGE : 1;
+    const evoker_data* edata = map_find(xp_evoker_data,
+                                   static_cast<misc_item_type>(evoker_type));
+    ASSERT(edata);
+    return edata->max_charges;
 }
 
 /**
@@ -3011,9 +2991,10 @@ int evoker_max_charges(int evoker_type)
  */
 int evoker_charge_xp_debt(int evoker_type)
 {
-    return evoker_type == MISC_LIGHTNING_ROD
-        ? XP_EVOKE_LIGHTNING_ROD_DEBT
-        : XP_EVOKE_DEBT;
+    const evoker_data* edata = map_find(xp_evoker_data,
+                                        static_cast<misc_item_type>(evoker_type));
+    ASSERT(edata);
+    return edata->charge_xp_debt;
 }
 
 /**

@@ -5,21 +5,15 @@
 #include <cmath>
 
 #include "artefact.h"
-#include "butcher.h"
-#include "coordit.h"
 #include "database.h"
 #include "describe-god.h"
-#include "english.h"
 #include "env.h"
 #include "food.h"
 #include "fprop.h"
 #include "god-abil.h"
-#include "god-item.h"
 #include "god-passive.h"
 #include "hiscores.h"
 #include "invent.h"
-#include "item-prop.h"
-#include "items.h"
 #include "item-use.h"
 #include "makeitem.h"
 #include "message.h"
@@ -27,13 +21,12 @@
 #include "prompt.h"
 #include "religion.h"
 #include "shopping.h"
-#include "spl-goditem.h"
 #include "state.h"
 #include "stepdown.h"
 #include "stringutil.h"
 #include "terrain.h"
 #include "unwind.h"
-#include "view.h"
+#include "xom.h"
 
 string god_prayer_reaction()
 {
@@ -97,6 +90,8 @@ static bool _pray_ecumenical_altar()
 
         if (you_worship(GOD_RU))
             you.props[RU_SACRIFICE_PROGRESS_KEY] = 9999;
+        else if (you_worship(GOD_XOM))
+            xom_is_stimulated(200, XM_INTRIGUED, true);
         else
             gain_piety(20, 1, false);
 
@@ -148,7 +143,7 @@ void try_god_conversion(god_type god)
     }
 }
 
-int zin_tithe(const item_def& item, int quant, bool quiet, bool converting)
+int zin_tithe(const item_def& item, int quant, bool converting)
 {
     if (item.tithe_state == TS_NO_TITHE)
         return 0;

@@ -57,6 +57,9 @@ enum dungeon_feature_type
     DNGN_DEEP_WATER,
 
     DNGN_SHALLOW_WATER,
+#if TAG_MAJOR_VERSION > 34
+    DNGN_TOXIC_BOG,                   // Eringya's Noxious Bog
+#endif
 
     DNGN_FLOOR,
     DNGN_OPEN_DOOR,
@@ -64,8 +67,13 @@ enum dungeon_feature_type
     DNGN_OPEN_CLEAR_DOOR,
 #endif
 
+#if TAG_MAJOR_VERSION == 34
     DNGN_TRAP_MECHANICAL,
+#endif
     DNGN_TRAP_TELEPORT,
+#if TAG_MAJOR_VERSION > 34
+    DNGN_TRAP_TELEPORT_PERMANENT,
+#endif
     DNGN_TRAP_SHAFT,
     DNGN_TRAP_WEB,
 #if TAG_MAJOR_VERSION > 34
@@ -73,6 +81,15 @@ enum dungeon_feature_type
     DNGN_TRAP_ZOT,
     DNGN_TRAP_DISPERSAL,
     DNGN_PASSAGE_OF_GOLUBRIA,
+#endif
+#if TAG_MAJOR_VERSION > 34
+    DNGN_TRAP_ARROW,
+    DNGN_TRAP_SPEAR,
+    DNGN_TRAP_BLADE,
+    DNGN_TRAP_DART,
+    DNGN_TRAP_BOLT,
+    DNGN_TRAP_NET,
+    DNGN_TRAP_PLATE,
 #endif
 #if TAG_MAJOR_VERSION == 34
     DNGN_UNDISCOVERED_TRAP,
@@ -213,6 +230,9 @@ enum dungeon_feature_type
 
     // Not meant to ever appear in grd().
     DNGN_EXPLORE_HORIZON, // dummy for redefinition
+#if TAG_MAJOR_VERSION > 34
+    DNGN_TRAVEL_TRAIL, // dummy for redefinition
+#endif
 
     DNGN_UNKNOWN_ALTAR,
     DNGN_UNKNOWN_PORTAL,
@@ -284,6 +304,19 @@ enum dungeon_feature_type
     DNGN_OPEN_CLEAR_DOOR,
     DNGN_RUNED_CLEAR_DOOR,
     DNGN_SEALED_CLEAR_DOOR,
+    DNGN_TOXIC_BOG,
+#endif
+
+#if TAG_MAJOR_VERSION == 34
+    DNGN_TRAP_ARROW,
+    DNGN_TRAP_SPEAR,
+    DNGN_TRAP_BLADE,
+    DNGN_TRAP_DART,
+    DNGN_TRAP_BOLT,
+    DNGN_TRAP_NET,
+    DNGN_TRAP_PLATE,
+    DNGN_TRAP_TELEPORT_PERMANENT,
+    DNGN_TRAVEL_TRAIL,
 #endif
 
     NUM_FEATURES

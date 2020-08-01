@@ -350,16 +350,17 @@ static string _beogh_bless_weapon(monster* mon)
 
 static void _upgrade_shield(item_def &sh)
 {
-    // Promote from buckler up through large shield.
+    // Promote from buckler up through tower shield.
     if (sh.sub_type >= ARM_FIRST_SHIELD && sh.sub_type < ARM_LAST_SHIELD)
         sh.sub_type++;
 }
 
 static void _upgrade_body_armour(item_def &arm)
 {
+    const auto type = static_cast<armour_type>(arm.sub_type);
+
     // Promote from robe up through plate.
-    if (arm.sub_type >= ARM_FIRST_MUNDANE_BODY
-        && arm.sub_type < ARM_LAST_MUNDANE_BODY
+    if (type >= ARM_FIRST_MUNDANE_BODY && type < ARM_LAST_MUNDANE_BODY
         // These are supposed to be robe-only.
         && arm.brand != SPARM_ARCHMAGI
         && arm.brand != SPARM_RESISTANCE)
@@ -382,7 +383,7 @@ static void _gift_armour_to_orc(monster* orc, bool shield = false)
     item_def armour;
     armour.base_type = OBJ_ARMOUR;
     if (shield)
-        armour.sub_type = highlevel ? ARM_SHIELD : ARM_BUCKLER;
+        armour.sub_type = highlevel ? ARM_KITE_SHIELD : ARM_BUCKLER;
     else
         armour.sub_type = highlevel ? ARM_SCALE_MAIL : ARM_RING_MAIL;
     armour.quantity = 1;
@@ -551,6 +552,7 @@ static bool _tso_blessing_friendliness(monster* mon)
 
 static void _beogh_reinf_callback(const mgen_data &mg, monster *&mon, int placed)
 {
+    UNUSED(placed);
     ASSERT(mg.god == GOD_BEOGH);
 
     // Beogh tries a second time to place reinforcements.

@@ -45,7 +45,7 @@ bool summon_holy_warrior(int pow, bool punish);
 bool tukima_affects(const actor &target);
 void cast_tukimas_dance(int pow, actor *target);
 spret cast_conjure_ball_lightning(int pow, god_type god, bool fail);
-spret cast_summon_lightning_spire(int pow, const coord_def& where, god_type god, bool fail);
+spret cast_summon_lightning_spire(int pow, god_type god, bool fail);
 
 spret cast_call_imp(int pow, god_type god, bool fail);
 bool summon_demon_type(monster_type mon, int pow, god_type god = GOD_NO_GOD,
@@ -59,6 +59,9 @@ spret cast_shadow_creatures(int st = SPELL_SHADOW_CREATURES,
                                  bool fail = false);
 spret cast_summon_horrible_things(int pow, god_type god, bool fail);
 bool can_cast_malign_gateway();
+void create_malign_gateway(coord_def point, beh_type beh, string cause,
+                           int pow, god_type god = GOD_NO_GOD,
+                           bool is_player = false);
 spret cast_malign_gateway(actor* caster, int pow,
                                god_type god = GOD_NO_GOD, bool fail = false);
 coord_def find_gateway_location(actor* caster);
@@ -70,6 +73,7 @@ void do_dragon_call(int time);
 
 void doom_howl(int time);
 
+spell_type player_servitor_spell();
 void init_servitor(monster* servitor, actor* caster);
 spret cast_spellforged_servitor(int pow, god_type god, bool fail);
 
@@ -130,3 +134,5 @@ bool fedhas_wall_of_briars();
 spret fedhas_grow_ballistomycete(bool fail);
 bool fedhas_overgrow();
 spret fedhas_grow_oklob(bool fail);
+
+spret cast_foxfire(int pow, god_type god, bool fail);

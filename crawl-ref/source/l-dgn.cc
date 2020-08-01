@@ -25,7 +25,7 @@
 #include "spl-util.h"
 #include "state.h"
 #include "stringutil.h"
-#include "tiledef-dngn.h"
+#include "rltiles/tiledef-dngn.h"
 #include "tileview.h"
 #include "view.h"
 
@@ -1503,7 +1503,8 @@ LUAFN(_dgn_place_map)
 LUAFN(_dgn_in_vault)
 {
     GETCOORD(c, 1, 2, map_bounds);
-    const int mask = lua_isnone(ls, 3) ? MMT_VAULT : luaL_safe_tointeger(ls, 3);
+    const int mask = lua_isnone(ls, 3) ? int{MMT_VAULT}
+                                       : luaL_safe_tointeger(ls, 3);
     lua_pushboolean(ls, env.level_map_mask(c) & mask);
     return 1;
 }
@@ -1511,7 +1512,8 @@ LUAFN(_dgn_in_vault)
 LUAFN(_dgn_set_map_mask)
 {
     GETCOORD(c, 1, 2, map_bounds);
-    const int mask = lua_isnone(ls, 3) ? MMT_VAULT : luaL_safe_tointeger(ls, 3);
+    const int mask = lua_isnone(ls, 3) ? int{MMT_VAULT}
+                                       : luaL_safe_tointeger(ls, 3);
     env.level_map_mask(c) |= mask;
     return 1;
 }
@@ -1519,7 +1521,8 @@ LUAFN(_dgn_set_map_mask)
 LUAFN(_dgn_unset_map_mask)
 {
     GETCOORD(c, 1, 2, map_bounds);
-    const int mask = lua_isnone(ls, 3) ? MMT_VAULT : luaL_safe_tointeger(ls, 3);
+    const int mask = lua_isnone(ls, 3) ? int{MMT_VAULT}
+                                       : luaL_safe_tointeger(ls, 3);
     env.level_map_mask(c) &= ~mask;
     return 1;
 }
@@ -1740,11 +1743,7 @@ LUAFN(dgn_fill_grd_area)
     return 0;
 }
 
-LUAFN(dgn_apply_tide)
-{
-    shoals_apply_tides(0, true, true);
-    return 0;
-}
+LUAWRAP(dgn_apply_tide, shoals_apply_tides(0, true))
 
 const struct luaL_reg dgn_dlib[] =
 {
@@ -1860,41 +1859,42 @@ const struct luaL_reg dgn_dlib[] =
 };
 
 #define VP(name) \
-    vault_placement &name =                                             \
-        **clua_get_userdata<vault_placement*>(                       \
-            ls, VAULT_PLACEMENT_METATABLE)
+    vault_placement **name = \
+        clua_get_userdata<vault_placement*>(ls, VAULT_PLACEMENT_METATABLE); \
+    if (!name || !*name) \
+        return 0
 
 LUAFN(_vp_pos)
 {
     VP(vp);
-    clua_pushpoint(ls, vp.pos);
+    clua_pushpoint(ls, (*vp)->pos);
     return 1;
 }
 
 LUAFN(_vp_size)
 {
     VP(vp);
-    clua_pushpoint(ls, vp.size);
+    clua_pushpoint(ls, (*vp)->size);
     return 1;
 }
 
 LUAFN(_vp_orient)
 {
     VP(vp);
-    PLUARET(number, vp.orient);
+    PLUARET(number, (*vp)->orient);
 }
 
 LUAFN(_vp_map)
 {
     VP(vp);
-    clua_push_map(ls, &vp.map);
+    clua_push_map(ls, &(*vp)->map);
     return 1;
 }
 
 LUAFN(_vp_exits)
 {
     VP(vp);
-    return clua_gentable(ls, vp.exits, clua_pushpoint);
+    return clua_gentable(ls, (*vp)->exits, clua_pushpoint);
 }
 
 static const luaL_reg dgn_vaultplacement_ops[] =

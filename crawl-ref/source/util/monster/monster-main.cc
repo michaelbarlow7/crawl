@@ -4,39 +4,16 @@
 **/
 
 #include "AppHdr.h"
-#include "externs.h"
-#include "directn.h"
-#include "unwind.h"
-#include "env.h"
-#include "colour.h"
+
+#include "fake-main.hpp"
+
 #include "coordit.h"
-#include "dungeon.h"
-#include "los.h"
-#include "message.h"
-#include "mon-abil.h"
-#include "mon-book.h"
-#include "mon-cast.h"
-#include "mon-util.h"
-#include "version.h"
-#include "view.h"
-#include "los.h"
-#include "maps.h"
-#include "initfile.h"
-#include "libutil.h"
 #include "item-name.h"
 #include "item-prop.h"
-#include "act-iter.h"
-#include "mon-death.h"
-#include "random.h"
-#include "spl-util.h"
-#include "state.h"
-#include "stepdown.h"
-#include "stringutil.h"
+#include "los.h"
+#include "message.h"
 #include "syscalls.h"
-#include "artefact.h"
-#include <sstream>
-#include <set>
-#include <unistd.h>
+#include "version.h"
 
 const coord_def MONSTER_PLACE(20, 20);
 
@@ -44,13 +21,6 @@ const string CANG = "cang";
 
 const int PLAYER_MAXHP = 500;
 const int PLAYER_MAXMP = 50;
-
-// Clockwise, around the compass from north (same order as enum RUN_DIR)
-const struct coord_def Compass[9] = {
-    coord_def(0, -1), coord_def(1, -1),  coord_def(1, 0),
-    coord_def(1, 1),  coord_def(0, 1),   coord_def(-1, 1),
-    coord_def(-1, 0), coord_def(-1, -1), coord_def(0, 0),
-};
 
 static bool _is_element_colour(int col)
 {
@@ -181,8 +151,7 @@ static string monster_size(const monster& mon)
     }
 }
 
-static string monster_speed(const monster& mon, const monsterentry* me,
-                                 int speed_min, int speed_max)
+static string monster_speed(const monster& mon, int speed_min, int speed_max)
 {
     string speed;
 
@@ -283,7 +252,7 @@ static dice_def mi_calc_iood_damage(monster* mons)
     return dice_def(9, power / 4);
 }
 
-static string mi_calc_smiting_damage(monster* mons) { return "7-17"; }
+static string mi_calc_smiting_damage(monster* /*mons*/) { return "7-17"; }
 
 static string mi_calc_airstrike_damage(monster* mons)
 {
@@ -887,7 +856,7 @@ int main(int argc, char* argv[])
             printf(" | %s", colour(LIGHTRED, "UNFINISHED").c_str());
 
         printf(" | Spd: %s",
-               monster_speed(mon, me, speed_min, speed_max).c_str());
+               monster_speed(mon, speed_min, speed_max).c_str());
 
         const int hd = mon.get_experience_level();
         printf(" | HD: %d", hd);
@@ -1156,7 +1125,7 @@ int main(int argc, char* argv[])
         mons_check_flag(mon.is_fighter(), monsterflags, "fighter");
         if (mon.is_archer())
         {
-            if (me->bitfields & M_DONT_MELEE)
+            if (me->bitfields & M_PREFER_RANGED)
                 mons_flag(monsterflags, "master archer");
             else
                 mons_flag(monsterflags, "archer");
@@ -1176,18 +1145,13 @@ int main(int argc, char* argv[])
         mons_check_flag(bool(me->bitfields & M_FLIES), monsterflags, "fly");
         mons_check_flag(bool(me->bitfields & M_FAST_REGEN), monsterflags,
                         "regen");
-        mons_check_flag(mon.can_cling_to_walls(), monsterflags, "cling");
         mons_check_flag(bool(me->bitfields & M_WEB_SENSE), monsterflags,
                         "web sense");
         mons_check_flag(mon.is_unbreathing(), monsterflags, "unbreathing");
 
         string spell_string = construct_spells(spell_lists, damages);
-        if (shapeshifter || mon.type == MONS_PANDEMONIUM_LORD
-            || mon.type == MONS_CHIMERA
-                   && (mon.base_monster == MONS_PANDEMONIUM_LORD))
-        {
+        if (shapeshifter || mon.type == MONS_PANDEMONIUM_LORD)
             spell_string = "(random)";
-        }
 
         mons_check_flag(vault_monster, monsterflags, colour(BROWN, "vault"));
 
@@ -1293,18 +1257,3 @@ int main(int argc, char* argv[])
     }
     return 1;
 }
-
-//////////////////////////////////////////////////////////////////////////
-// main.cc stuff
-
-CLua clua(true);
-CLua dlua(false);      // Lua interpreter for the dungeon builder.
-crawl_environment env; // Requires dlua.
-player you;
-game_state crawl_state;
-
-void process_command(command_type);
-void process_command(command_type) {}
-
-void world_reacts();
-void world_reacts() {}

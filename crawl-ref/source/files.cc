@@ -3,9 +3,19 @@
  * @brief Functions used to save and load levels/games.
 **/
 
+// old compiler compatibility for CAO/CBRO stdint.h. cstdint doesn't work
+// on these gcc versions to provide UINT8_MAX.
+#ifndef  __STDC_LIMIT_MACROS
+#define  __STDC_LIMIT_MACROS 1
+#endif
+#include <stdint.h>
+
 #include "AppHdr.h"
 
 #include "files.h"
+
+#include "json.h"
+#include "json-wrapper.h"
 
 #include <algorithm>
 #include <cctype>
@@ -49,7 +59,6 @@
 #include "hints.h"
 #include "initfile.h"
 #include "item-name.h"
-#include "item-status-flag-type.h"
 #include "items.h"
 #include "jobs.h"
 #include "kills.h"
@@ -62,7 +71,6 @@
 #include "mon-death.h"
 #include "mon-place.h"
 #include "notes.h"
-#include "output.h"
 #include "place.h"
 #include "prompt.h"
 #include "species.h"
@@ -75,7 +83,7 @@
 #include "terrain.h"
 #ifdef USE_TILE
  // TODO -- dolls
- #include "tiledef-player.h"
+ #include "rltiles/tiledef-player.h"
  #include "tilepick-p.h"
 #endif
 #include "tileview.h"
@@ -817,6 +825,159 @@ string get_save_filename(const string &name)
                        false) + SAVE_SUFFIX;
 }
 
+static bool _game_type_has_saves(const game_type g)
+{
+    // TODO: this may be useful elsewhere too?
+    switch (g)
+    {
+    case GAME_TYPE_ARENA:
+    case GAME_TYPE_HIGH_SCORES:
+    case GAME_TYPE_INSTRUCTIONS:
+    case GAME_TYPE_UNSPECIFIED:
+        return false;
+    default:
+        return true;
+    }
+}
+
+static bool _game_type_removed(const game_type g)
+{
+    return g == GAME_TYPE_ZOTDEF;
+}
+
+static bool _append_save_info(JsonWrapper &json, const char *filename,
+                                        game_type intended_gt=NUM_GAME_TYPE)
+{
+    if (!file_exists(filename))
+        return false;
+    try
+    {
+        package save(filename, false);
+        player_save_info p = _read_character_info(&save);
+
+        // TODO: some json for the non-loadable case? I think this comes up
+        // for save compat mismatches so shouldn't be relevant for webtiles
+        // except in case of bugs...
+        if (p.name.empty() || !p.save_loadable)
+            return false;
+
+        auto *game_json = json_mkobject();
+
+        // TODO: version info might be useful?
+        json_append_member(game_json, "loadable", json_mkbool(true));
+        json_append_member(game_json, "name", json_mkstring(p.name));
+        json_append_member(game_json, "game_type",
+            json_mkstring(gametype_to_str(p.saved_game_type)));
+        json_append_member(game_json, "short_desc",
+            json_mkstring(p.short_desc(false)));
+        json_append_member(game_json, "really_short_desc",
+            json_mkstring(p.really_short_desc()));
+
+        // for the case where we are querying just one file, we don't have
+        // info on what the save slot is (if any -- could be an arbitrary
+        // file) so just use the file's value. This is really only here so
+        // that there is a consistent format to the json.
+        json_append_member(json.node, intended_gt == NUM_GAME_TYPE
+                                ? gametype_to_str(p.saved_game_type).c_str()
+                                : gametype_to_str(intended_gt).c_str(),
+                            game_json);
+        return true;
+    }
+    catch (game_ended_condition &E) // another process is using the save
+    {
+        if (E.exit_reason != game_exit::abort)
+            end(1); // something has gone fairly wrong in this case
+
+        auto *game_json = json_mkobject();
+
+        json_append_member(game_json, "loadable", json_mkbool(false));
+        json_append_member(game_json, "name", json_mkstring(""));
+        json_append_member(game_json, "game_type", json_mkstring(""));
+        json_append_member(game_json, "short_desc",
+                                                json_mkstring("Save in use"));
+        json_append_member(game_json, "really_short_desc",
+                                                json_mkstring(""));
+
+        // May give "none" in the case of querying a save file by name
+        // that is currently in use.
+        json_append_member(json.node, gametype_to_str(intended_gt).c_str(),
+                                                                    game_json);
+        return true;
+    }
+}
+
+static bool _append_player_save_info(JsonWrapper &json, const char *name, game_type gt)
+{
+    // requires init file to have been read, otherwise the correct savedir
+    // paths may not have been initialized
+    unwind_var<game_type> temp_gt(crawl_state.type, gt);
+    return _append_save_info(json, get_savedir_filename(name).c_str(), gt);
+}
+
+/**
+ * Print information about save files associated with `name` in JSON format.
+ * The JSON format is a map (JSON Object) from (saveable) game types to save
+ * information.
+ *
+ * If `name` is a filename, the map will have one element in it for just that
+ * file; if it is a player name, the map will have one entry for every
+ * game type that has a save. (Keep in mind that most game types share a single
+ * save slot.)
+ *
+ * If a save file is currently in use by some other process, it will get
+ * `loadable': false, as well as most other info missing. If a save is queried
+ * by filename and is in use, it will additionally be mapped from game type
+ * `none`.
+ */
+NORETURN void print_save_json(const char *name)
+{
+    // TODO: The overall call is quite heavy. Can the overhead to get to this
+    // point be simplified at all? On my local machine it's about 80-100ms per
+    // call if things go well.
+    try
+    {
+        JsonWrapper json(json_mkobject());
+        // Check for the exact filename first, then go by char name.
+        // TODO: based on other CLOs, but maybe these shouldn't be collapsed
+        // into a single option?
+        if (file_exists(name))
+        {
+            if (!_append_save_info(json, name))
+            {
+                fprintf(stderr, "Could not load '%s'\n", name);
+                end(1);
+            }
+        }
+        else
+        {
+            // ugh. This is a heavy-handed way to ensure that the savedir
+            // option is set correctly on the first parse_args pass.
+            // TODO: test on dgl...
+            Options.reset_options();
+
+            // treat `name` as a character name. Prints an empty json dict
+            // if this is wrong (or if the character has no saves).
+            // TODO: this code (and much other code) could be a lot smarter
+            // about shared save slots. (Everything but sprint shares just
+            // one slot...)
+            for (int i = 0; i < NUM_GAME_TYPE; ++i)
+            {
+                auto gt = static_cast<game_type>(i);
+                if (_game_type_has_saves(gt) && !_game_type_removed(gt))
+                    _append_player_save_info(json, name, gt);
+            }
+        }
+
+        fprintf(stdout, "%s", json.to_string().c_str());
+        end(0);
+    }
+    catch (ext_fail_exception &fe)
+    {
+        fprintf(stderr, "Error: %s\n", fe.what());
+        end(1);
+    }
+}
+
 string get_prefs_filename()
 {
 #ifdef DGL_STARTUP_PREFS_BY_NAME
@@ -830,9 +991,7 @@ string get_prefs_filename()
 void write_ghost_version(writer &outf)
 {
     // this may be distinct from the current save version
-    auto bones_version = save_version::current_bones();
-    marshallUByte(outf, bones_version.major);
-    marshallUByte(outf, bones_version.minor);
+    write_save_version(outf, save_version::current_bones());
 
     // extended_version just pads the version out to four 32-bit words.
     // This makes the bones file compatible with Hearse with no extra
@@ -855,15 +1014,11 @@ static void _write_tagged_chunk(const string &chunkname, tag_type tag)
 {
     writer outf(you.save, chunkname);
 
-    // write version
-    marshallUByte(outf, TAG_MAJOR_VERSION);
-    marshallUByte(outf, TAG_MINOR_VERSION);
-
+    write_save_version(outf, save_version::current());
     tag_write(tag, outf);
 }
 
-static int _get_dest_stair_type(branch_type old_branch,
-                                dungeon_feature_type stair_taken,
+static int _get_dest_stair_type(dungeon_feature_type stair_taken,
                                 bool &find_first)
 {
     // Order is important here.
@@ -944,15 +1099,13 @@ static int _get_dest_stair_type(branch_type old_branch,
     return DNGN_FLOOR;
 }
 
-static void _place_player_on_stair(branch_type old_branch,
-                                   int stair_taken, const coord_def& dest_pos,
+static void _place_player_on_stair(int stair_taken, const coord_def& dest_pos,
                                    const string &hatch_name)
 
 {
     bool find_first = true;
     dungeon_feature_type stair_type = static_cast<dungeon_feature_type>(
-            _get_dest_stair_type(old_branch,
-                                 static_cast<dungeon_feature_type>(stair_taken),
+            _get_dest_stair_type(static_cast<dungeon_feature_type>(stair_taken),
                                  find_first));
 
     you.moveto(dgn_find_nearby_stair(stair_type, dest_pos, find_first,
@@ -1194,12 +1347,11 @@ static bool _leave_level(dungeon_feature_type stair_taken,
  * Move the player to the appropriate entrance location in a level.
  *
  * @param stair_taken   The means used to leave the last level.
- * @param old_branch    The previous level's branch.
  * @param return_pos    The location of the entrance portal, if applicable.
  * @param dest_pos      The player's location on the last level.
  */
 static void _place_player(dungeon_feature_type stair_taken,
-                          branch_type old_branch, const coord_def &return_pos,
+                          const coord_def &return_pos,
                           const coord_def &dest_pos, const string &hatch_name)
 {
     if (player_in_branch(BRANCH_ABYSS))
@@ -1207,7 +1359,7 @@ static void _place_player(dungeon_feature_type stair_taken,
     else if (!return_pos.origin())
         you.moveto(return_pos);
     else
-        _place_player_on_stair(old_branch, stair_taken, dest_pos, hatch_name);
+        _place_player_on_stair(stair_taken, dest_pos, hatch_name);
 
     // Don't return the player into walls, deep water, or a trap.
     for (distance_iterator di(you.pos(), true, false); di; ++di)
@@ -1241,7 +1393,7 @@ static void _place_player(dungeon_feature_type stair_taken,
 }
 
 // Update the trackers after the player changed level.
-void trackers_init_new_level(bool transit)
+void trackers_init_new_level()
 {
     travel_init_new_level();
 }
@@ -1398,7 +1550,7 @@ static bool _generate_portal_levels()
     vector<level_id> to_build;
     for (auto b : portal_generation_order)
         if (brentry[b] == here)
-            for (int i = 1; i <= branches[b].numlevels; i++)
+            for (int i = 1; i <= brdepth[b]; i++)
                 to_build.push_back(level_id(b, i));
 
     bool generated = false;
@@ -1589,7 +1741,7 @@ bool pregen_dungeon(const level_id &stopping_point)
              || br == BRANCH_DUNGEON || br == BRANCH_VESTIBULE
              || !is_connected_branch(br)))
         {
-            for (int i = 1; i <= branches[br].numlevels; i++)
+            for (int i = 1; i <= brdepth[br]; i++)
             {
                 level_id new_level = level_id(br, i);
                 if (you.save->has_chunk(new_level.describe()))
@@ -1597,8 +1749,7 @@ bool pregen_dungeon(const level_id &stopping_point)
                 to_generate.push_back(new_level);
 
                 if (br == stopping_point.branch
-                    && (i == stopping_point.depth
-                        || i == branches[br].numlevels))
+                    && (i == stopping_point.depth || i == brdepth[br]))
                 {
                     at_end = true;
                     break;
@@ -1654,6 +1805,50 @@ bool pregen_dungeon(const level_id &stopping_point)
         }
 
         return generated;
+    }
+}
+
+static void _rescue_player_from_wall()
+{
+    // n.b. you.wizmode_teleported_into_rock would be better, but it is not
+    // actually saved.
+    if (cell_is_solid(you.pos()) && !you.wizard)
+    {
+        // if the player has somehow gotten into a wall, there may have been
+        // a fairly non-trivial crash, putting the player at some arbitrary
+        // position relative to where they were. Rescue them by trying to find
+        // a seen staircase, with a clear space near the wall as just a
+        // a fallback.
+        mprf(MSGCH_ERROR, "Emergency fixup: removing player from wall "
+                          "at %d,%d. Please report this as a bug!",
+                          you.pos().x, you.pos().y);
+        vector<coord_def> upstairs;
+        vector<coord_def> downstairs;
+        coord_def backup_clear_pos(-1,-1);
+        for (distance_iterator di(you.pos()); di; ++di)
+        {
+            // just find any clear square as a backup for really weird cases.
+            if (!in_bounds(backup_clear_pos) && !cell_is_solid(*di))
+                backup_clear_pos = *di;
+            // TODO: in principle this should use env.map_forgotten if it
+            // exists, but I'm not sure that is worth the trouble.
+            if (feat_is_stair(grd(*di)) && env.map_seen(*di))
+            {
+                const command_type dir = feat_stair_direction(grd(*di));
+                if (dir == CMD_GO_UPSTAIRS)
+                    upstairs.push_back(*di);
+                else if (dir == CMD_GO_DOWNSTAIRS)
+                    downstairs.push_back(*di);
+            }
+        }
+        coord_def target = backup_clear_pos;
+        if (upstairs.size())
+            target = upstairs[0];
+        else if (downstairs.size())
+            target = downstairs[0];
+        // if things get this messed up, don't make them worse
+        ASSERT(in_bounds(target));
+        you.moveto(target);
     }
 }
 
@@ -1758,6 +1953,8 @@ bool load_level(dungeon_feature_type stair_taken, load_mode_type load_mode,
         ASSERT(you.save->has_chunk(level_name));
         dprf("Loading old level '%s'.", level_name.c_str());
         _restore_tagged_chunk(you.save, level_name, TAG_LEVEL, "Level file is invalid.");
+        if (load_mode != LOAD_VISITOR)
+            you.on_current_level = true;
         _redraw_all(); // TODO why is there a redraw call here?
     }
 
@@ -1785,6 +1982,7 @@ bool load_level(dungeon_feature_type stair_taken, load_mode_type load_mode,
 
     // Apply all delayed actions, if any. TODO: logic for marshalling this is
     // kind of odd.
+    // TODO: does this need make_changes?
     if (just_created_level)
         env.dactions_done = 0;
 
@@ -1797,8 +1995,7 @@ bool load_level(dungeon_feature_type stair_taken, load_mode_type load_mode,
 
         delete_all_clouds();
 
-        _place_player(stair_taken, old_level.branch, return_pos, dest_pos,
-                      hatch_name);
+        _place_player(stair_taken, return_pos, dest_pos, hatch_name);
     }
 
     crawl_view.set_player_at(you.pos(), load_mode != LOAD_VISITOR);
@@ -1817,11 +2014,12 @@ bool load_level(dungeon_feature_type stair_taken, load_mode_type load_mode,
     if (make_changes)
     {
         // Tell stash-tracker and travel that we've changed levels.
-        trackers_init_new_level(true);
+        trackers_init_new_level();
         tile_new_level(just_created_level);
     }
     else if (load_mode == LOAD_RESTART_GAME)
     {
+        _rescue_player_from_wall();
         // Travel needs initialize some things on reload, too.
         travel_init_load_level();
     }
@@ -1919,7 +2117,7 @@ bool load_level(dungeon_feature_type stair_taken, load_mode_type load_mode,
         curr_PlaceInfo.assert_validity();
     }
 
-    if (just_created_level)
+    if (just_created_level && make_changes)
     {
         you.attribute[ATTR_ABYSS_ENTOURAGE] = 0;
         gozag_detect_level_gold(true);
@@ -1927,7 +2125,11 @@ bool load_level(dungeon_feature_type stair_taken, load_mode_type load_mode,
 
 
     if (load_mode != LOAD_VISITOR)
-        dungeon_events.fire_event(DET_ENTERED_LEVEL);
+    {
+        dungeon_events.fire_event(
+                        dgn_event(DET_ENTERED_LEVEL, coord_def(), you.time_taken,
+                                  load_mode == LOAD_RESTART_GAME));
+    }
 
     if (load_mode == LOAD_ENTER_LEVEL)
     {
@@ -1941,7 +2143,7 @@ bool load_level(dungeon_feature_type stair_taken, load_mode_type load_mode,
                 && feat_stair_direction(stair_taken) != CMD_NO_CMD)
             {
                 string stair_str = feature_description_at(you.pos(), false,
-                                                          DESC_THE, false);
+                                                          DESC_THE);
                 string verb = stair_climb_verb(feat);
 
                 if (coinflip()
@@ -1979,7 +2181,7 @@ bool load_level(dungeon_feature_type stair_taken, load_mode_type load_mode,
 
     // If the player entered the level from a different location than they last
     // exited it, have monsters lose track of where they are
-    if (you.position != env.old_player_pos)
+    if (make_changes && you.position != env.old_player_pos)
        shake_off_monsters(you.as_player());
 
 #if TAG_MAJOR_VERSION == 34
@@ -2003,7 +2205,8 @@ bool load_level(dungeon_feature_type stair_taken, load_mode_type load_mode,
 
 static void _save_level(const level_id& lid)
 {
-    travel_cache.get_level_info(lid).update();
+    if (you.level_visited(lid))
+        travel_cache.get_level_info(lid).update();
 
     // Nail all items to the ground.
     fix_item_coordinates();
@@ -2069,12 +2272,8 @@ static void _save_game_exit()
     clua.save_persist();
 
     // Prompt for saving macros.
-    if (crawl_state.unsaved_macros
-        && !crawl_state.seen_hups
-        && yesno("Save macros?", true, 'n'))
-    {
+    if (crawl_state.unsaved_macros)
         macro_save();
-    }
 
     // Must be exiting -- save level & goodbye!
     if (!you.entering_level)
@@ -2096,6 +2295,10 @@ static void _save_game_exit()
 void save_game(bool leave_game, const char *farewellmsg)
 {
     unwind_bool saving_game(crawl_state.saving_game, true);
+    // Should you.no_save disable more here? Currently it entails an empty
+    // package, and persists won't save, but there's a bunch of other stuff
+    // that can.
+    ASSERT(you.on_current_level || Options.no_save);
 
 
     if (leave_game && Options.dump_on_save)
@@ -2204,7 +2407,7 @@ static string _bones_permastore_file()
     while ((size = fread(buf, sizeof(char), BUFSIZ, src)) > 0)
         fwrite(buf, sizeof(char), size, target);
 
-    lk_close(target, full_path);
+    lk_close(target);
 
     if (!feof(src))
     {
@@ -2317,7 +2520,7 @@ static bool _backup_bones_for_upgrade(string ghost_filename, save_version &v)
     {
         mprf(MSGCH_ERROR, "Unable to open bones backup file %s for writing",
             upgrade_filename.c_str());
-        lk_close(backup_src, ghost_filename);
+        lk_close(backup_src);
         return false;
     }
 
@@ -2327,7 +2530,7 @@ static bool _backup_bones_for_upgrade(string ghost_filename, save_version &v)
     while ((size = fread(buf, sizeof(char), BUFSIZ, backup_src)) > 0)
         fwrite(buf, sizeof(char), size, backup_target);
 
-    lk_close(backup_target, upgrade_filename);
+    lk_close(backup_target);
 
     if (!feof(backup_src))
     {
@@ -2339,10 +2542,10 @@ static bool _backup_bones_for_upgrade(string ghost_filename, save_version &v)
                 "Failed to unlink probably corrupt bones file: %s",
                 upgrade_filename.c_str());
         }
-        lk_close(backup_src, ghost_filename);
+        lk_close(backup_src);
         return false;
     }
-    lk_close(backup_src, ghost_filename);
+    lk_close(backup_src);
     return true;
 }
 
@@ -2669,7 +2872,8 @@ static bool _restore_game(const string& filename)
             you.save = 0;
             return false;
         }
-        crawl_state.default_startup_name = you.your_name; // for main menu
+        if (Options.remember_name)
+            crawl_state.default_startup_name = you.your_name; // for main menu
         you.save->abort();
         delete you.save;
         you.save = 0;
@@ -2695,7 +2899,8 @@ static bool _restore_game(const string& filename)
         }
     }
 
-    crawl_state.default_startup_name = you.your_name; // for main menu
+    if (Options.remember_name)
+        crawl_state.default_startup_name = you.your_name; // for main menu
 
     if (numcmp(you.prev_save_version.c_str(), Version::Long, 2) == -1
         && version_is_stable(you.prev_save_version.c_str()))
@@ -2849,13 +3054,22 @@ void level_excursion::go_to(const level_id& next)
 {
     if (level_id::current() != next)
     {
+        if (!you.level_visited(level_id::current()))
+            travel_cache.erase_level_info(level_id::current());
+
         ever_changed_levels = true;
 
         _save_level(level_id::current());
         _load_level(next);
 
-        LevelInfo &li = travel_cache.get_level_info(next);
-        li.set_level_excludes();
+        if (you.level_visited(next))
+        {
+            LevelInfo &li = travel_cache.get_level_info(next);
+            li.set_level_excludes();
+        }
+        // TODO: this won't clear excludes on an excursion to an unvisited
+        // level. Does this matter? Not right now, this case is only used for
+        // abyss procgen.
     }
 
     you.on_current_level = (level_id::current() == original);
@@ -2879,18 +3093,32 @@ level_excursion::~level_excursion()
 
 save_version get_save_version(reader &file)
 {
-    // Read first two bytes.
-    uint8_t buf[2];
+    int major, minor;
     try
     {
-        file.read(buf, 2);
+        major = unmarshallUByte(file);
+        minor = unmarshallUByte(file);
+        if (minor == UINT8_MAX)
+            minor = unmarshallInt(file);
     }
     catch (short_read_exception& E)
     {
         // Empty file?
         return save_version(-1, -1);
     }
-    return save_version(buf[0], buf[1]);
+    return save_version(major, minor);
+}
+
+void write_save_version(writer &outf, save_version version)
+{
+    marshallUByte(outf, version.major);
+    if (version.minor < UINT8_MAX)
+        marshallUByte(outf, version.minor);
+    else
+    {
+        marshallUByte(outf, UINT8_MAX);
+        marshallInt(outf, version.minor);
+    }
 }
 
 static bool _convert_obsolete_species()
@@ -2949,9 +3177,9 @@ static bool _read_char_chunk(package *save)
 
     try
     {
-        uint8_t format, major, minor;
-        inf.read(&major, 1);
-        inf.read(&minor, 1);
+        const auto version = get_save_version(inf);
+        const auto major = version.major, minor = version.minor;
+        uint8_t format;
 
         unsigned int len = unmarshallInt(inf);
         if (len > 1024) // something is fishy
@@ -3005,28 +3233,32 @@ static bool _tagged_chunk_version_compatible(reader &inf, string* reason)
 
     if (!version.is_compatible())
     {
-        const save_version current = save_version::current();
         if (version.is_ancient())
         {
-            if (Version::ReleaseType)
-            {
-                *reason = (CRAWL " " + string(Version::Short) + " is not compatible with "
-                           "save files from older versions. You can continue your "
-                           "game with the appropriate older version, or you can "
-                           "delete it and start a new game.");
-            }
-            else
-            {
-                *reason = make_stringf("Major version mismatch: %d (want %d).",
-                                       version.major, current.major);
-            }
+            const auto min_supported = save_version::minimum_supported();
+            *reason = make_stringf("This save is from an older version.\n"
+                    "\n"
+                    CRAWL " %s is not compatible with save files this old. You can:\n"
+                    " • continue your game with an older version of " CRAWL "\n"
+                    " • delete it and start a new game\n"
+                    "\n"
+                    "This save's version: (%d.%d) (must be >= %d.%d)",
+                    Version::Short,
+                    version.major, version.minor,
+                    min_supported.major, min_supported.minor);
         }
         else if (version.is_future())
         {
-            *reason = make_stringf("Version mismatch: %d.%d (want <= %d.%d). "
-                               "The save is from a newer version.",
-                               version.major, version.minor,
-                               current.major, current.minor);
+            const auto current = save_version::current();
+            *reason = make_stringf("This save is from a newer version.\n"
+                    "\n"
+                    CRAWL " cannot load saves from newer versions. You can:\n"
+                    " • continue your game with a newer version of " CRAWL "\n"
+                    " • delete it and start a new game\n"
+                    "\n"
+                    "This save's version: (%d.%d) (must be <= %d.%d)",
+                    version.major, version.minor,
+                    current.major, current.minor);
         }
         return false;
     }
@@ -3204,7 +3436,7 @@ static vector<ghost_demon> _update_permastore(const vector<ghost_demon> &ghosts)
         write_ghost_version(outw);
         tag_write_ghosts(outw, permastore);
 
-        lk_close(ghost_file, permastore_file);
+        lk_close(ghost_file);
     }
     return leftovers;
 }
@@ -3235,7 +3467,11 @@ void save_ghosts(const vector<ghost_demon> &ghosts, bool force, bool use_store)
         return;
     }
 
-    vector<ghost_demon> leftovers = _update_permastore(ghosts);
+    vector<ghost_demon> leftovers;
+    if (use_store)
+        leftovers = _update_permastore(ghosts);
+    else
+        leftovers = ghosts;
     if (leftovers.size() == 0)
         return;
 
@@ -3259,7 +3495,7 @@ void save_ghosts(const vector<ghost_demon> &ghosts, bool force, bool use_store)
     write_ghost_version(outw);
     tag_write_ghosts(outw, leftovers);
 
-    lk_close(ghost_file, g_file_name);
+    lk_close(ghost_file);
 
     _ghost_dprf("Saved ghosts (%s).", g_file_name.c_str());
 }
@@ -3327,7 +3563,7 @@ FILE *lk_open_exclusive(const string &file)
     return fdopen(fd, "wb");
 }
 
-void lk_close(FILE *handle, const string &file)
+void lk_close(FILE *handle)
 {
     if (handle == nullptr || handle == stdin)
         return;
@@ -3353,7 +3589,7 @@ file_lock::file_lock(const string &s, const char *_mode, bool die_on_fail)
 file_lock::~file_lock()
 {
     if (handle)
-        lk_close(handle, filename);
+        lk_close(handle);
 }
 
 /////////////////////////////////////////////////////////////////////////////

@@ -12,7 +12,6 @@
 #include "areas.h"
 #include "colour.h"
 #include "delay.h"
-#include "english.h"
 #include "hints.h"
 #include "initfile.h"
 #include "libutil.h"
@@ -685,8 +684,17 @@ public:
         if (_pre_more())
             return;
 
-        print_stats();
-        show();
+        if (you.running)
+        {
+            mouse_control mc(MOUSE_MODE_MORE);
+            redraw_screen();
+        }
+        else
+        {
+            print_stats();
+            show();
+        }
+
         int last_row = crawl_view.msgsz.y;
         if (first_col_more())
         {
@@ -943,7 +951,8 @@ static FILE* _msg_dump_file = nullptr;
 static bool suppress_messages = false;
 static msg_colour_type prepare_message(const string& imsg,
                                        msg_channel_type channel,
-                                       int param);
+                                       int param,
+                                       bool allow_suppress=true);
 
 static unordered_set<message_tee *> current_message_tees;
 
@@ -966,7 +975,7 @@ message_tee::~message_tee()
     current_message_tees.erase(this);
 }
 
-void message_tee::append(const string &s, msg_channel_type ch)
+void message_tee::append(const string &s, msg_channel_type /*ch*/)
 {
     // could use a more c++y external interface -- but that just complicates things
     store << s;
@@ -988,21 +997,41 @@ static void _append_to_tees(const string &s, msg_channel_type ch)
         tee->append(s, ch);
 }
 
-no_messages::no_messages() : msuppressed(suppress_messages)
+no_messages::no_messages()
+    : msuppressed(suppress_messages),
+      channel(NUM_MESSAGE_CHANNELS),
+      prev_colour(MSGCOL_NONE)
 {
     suppress_messages = true;
 }
 
 // Push useful RAII conditional logic into a constructor
 // Won't override an outer suppressing no_messages
-no_messages::no_messages(bool really_suppress) : msuppressed(suppress_messages)
+no_messages::no_messages(bool really_suppress)
+    : msuppressed(suppress_messages),
+      channel(NUM_MESSAGE_CHANNELS),
+      prev_colour(MSGCOL_NONE)
 {
     suppress_messages = suppress_messages || really_suppress;
+}
+
+// Mute just one channel. Mainly useful for hiding debug spam in various
+// circumstances.
+no_messages::no_messages(msg_channel_type _channel)
+    : msuppressed(suppress_messages),
+      channel(_channel),
+      prev_colour(Options.channels[channel])
+{
+    // don't change global suppress_messages for this case
+    ASSERT(channel < NUM_MESSAGE_CHANNELS);
+    Options.channels[channel] = MSGCOL_MUTED;
 }
 
 no_messages::~no_messages()
 {
     suppress_messages = msuppressed;
+    if (channel < NUM_MESSAGE_CHANNELS)
+        Options.channels[channel] = prev_colour;
 }
 
 msg_colour_type msg_colour(int col)
@@ -1284,15 +1313,25 @@ static bool _check_option(const string& line, msg_channel_type channel,
 
 static bool _check_more(const string& line, msg_channel_type channel)
 {
+    // Try to avoid mores during level excursions, they are glitchy at best.
+    // TODO: this is sort of an emergency check, possibly it should
+    // crash here in order to find the real bug?
+    if (!you.on_current_level)
+        return false;
     return _check_option(line, channel, Options.force_more_message);
 }
 
 static bool _check_flash_screen(const string& line, msg_channel_type channel)
 {
+    // absolutely never flash during a level excursion, things will go very
+    // badly. TODO: this is sort of an emergency check, possibly it should
+    // crash here in order to find the real bug?
+    if (!you.on_current_level)
+        return false;
     return _check_option(line, channel, Options.flash_screen_message);
 }
 
-static bool _check_join(const string& line, msg_channel_type channel)
+static bool _check_join(const string& /*line*/, msg_channel_type channel)
 {
     switch (channel)
     {
@@ -1441,7 +1480,15 @@ static void _mpr(string text, msg_channel_type channel, int param, bool nojoin,
     if (channel == MSGCH_DIAGNOSTICS || channel == MSGCH_ERROR)
         cap = false;
 
+    // if the message would be muted, handle any tees before bailing. The
+    // actual color for MSGCOL_MUTED ends up as darkgrey in any tees.
     msg_colour_type colour = prepare_message(text, channel, param);
+
+    string col = colour_to_str(colour_msg(colour));
+    text = "<" + col + ">" + text + "</" + col + ">"; // XXX
+
+    if (current_message_tees.size())
+        _append_to_tees(text + "\n", channel);
 
     if (colour == MSGCOL_MUTED && crawl_state.io_inited)
     {
@@ -1456,11 +1503,6 @@ static void _mpr(string text, msg_channel_type channel, int param, bool nojoin,
 
     // Must do this before converting to formatted string and back;
     // that doesn't preserve close tags!
-    string col = colour_to_str(colour_msg(colour));
-    text = "<" + col + ">" + text + "</" + col + ">"; // XXX
-
-    if (current_message_tees.size())
-        _append_to_tees(text + "\n", channel);
 
     formatted_string fs = formatted_string::parse_string(text);
 
@@ -1538,49 +1580,50 @@ int msgwin_get_line(string prompt, char *buf, int len,
     if (use_popup)
     {
         mouse_control mc(MOUSE_MODE_PROMPT);
-        resumable_line_reader reader(buf, len);
-        reader.set_input_history(mh);
-        reader.read_line(fill);
-        reader.putkey(CK_END);
 
         linebreak_string(prompt, 79);
         msg_colour_type colour = prepare_message(prompt, MSGCH_PROMPT, 0);
-        const string colour_prompt = colour_string(prompt, colour_msg(colour));
+        const auto colour_prompt = formatted_string(prompt, colour_msg(colour));
 
         bool done = false;
-        auto text = make_shared<ui::Text>();
-        auto popup = make_shared<ui::Popup>(text);
-        auto update_text = [&]() {
-            formatted_string p = formatted_string::parse_string(colour_prompt);
-            p.cprintf("\n\n%s", reader.get_text().c_str());
-            text->set_text(p);
-#ifdef USE_TILE_WEB
-            tiles.json_open_object();
-            tiles.json_write_string("text", reader.get_text().c_str());
-            tiles.ui_state_change("msgwin-get-line", 0);
+        auto vbox = make_shared<ui::Box>(ui::Widget::VERT);
+        auto popup = make_shared<ui::Popup>(vbox);
+
+        vbox->add_child(make_shared<ui::Text>(colour_prompt + "\n"));
+
+        auto input = make_shared<ui::TextEntry>();
+        input->set_sync_id("input");
+        input->set_text(fill);
+        input->set_input_history(mh);
+#ifndef USE_TILE_LOCAL
+        input->max_size().width = 20;
 #endif
-        };
-        popup->on(ui::Widget::slots.event, [&](wm_event ev) {
-            if (ev.type != WME_KEYDOWN)
-                return false;
-            ret = reader.putkey(ev.key.keysym.sym);
-            if (ret != -1)
-                done = true;
-            update_text();
-            return true;
+        vbox->add_child(input);
+
+        popup->on_hotkey_event([&](const ui::KeyEvent& ev) {
+            switch (ev.key())
+            {
+            CASE_ESCAPE
+                ret = CK_ESCAPE;
+                return done = true;
+            case CK_ENTER:
+                ret = 0;
+                return done = true;
+            default:
+                return done = false;
+            }
         });
 
 #ifdef USE_TILE_WEB
         tiles.json_open_object();
-        tiles.json_write_string("prompt", colour_prompt);
-        tiles.json_write_string("text", fill);
-        tiles.push_ui_layout("msgwin-get-line", 1);
+        tiles.json_write_string("prompt", colour_prompt.to_colour_string());
+        tiles.push_ui_layout("msgwin-get-line", 0);
+        popup->on_layout_pop([](){ tiles.pop_ui_layout(); });
 #endif
-        update_text();
-        ui::run_layout(move(popup), done);
-#ifdef USE_TILE_WEB
-    tiles.pop_ui_layout();
-#endif
+        ui::run_layout(move(popup), done, input);
+
+        strncpy(buf, input->get_text().c_str(), len - 1);
+        buf[len - 1] = '\0';
     }
     else
     {
@@ -1600,6 +1643,11 @@ void msgwin_new_turn()
 
 void msgwin_new_cmd()
 {
+#ifndef USE_TILE_LOCAL
+    if (crawl_state.smallterm)
+        return;
+#endif
+
     flush_prev_message();
     bool new_turn = (you.num_turns > _last_msg_turn);
     msgwin.new_cmdturn(new_turn);
@@ -1689,9 +1737,10 @@ static bool channel_message_history(msg_channel_type channel)
 // the message should be suppressed.
 static msg_colour_type prepare_message(const string& imsg,
                                        msg_channel_type channel,
-                                       int param)
+                                       int param,
+                                       bool allow_suppress)
 {
-    if (suppress_messages)
+    if (allow_suppress && suppress_messages)
         return MSGCOL_MUTED;
 
     if (you.num_turns > 0 && silenced(you.pos())
@@ -2003,14 +2052,18 @@ bool simple_monster_message(const monster& mons, const char *event,
     return false;
 }
 
+string god_speaker(god_type which_deity)
+{
+    if (which_deity == GOD_WU_JIAN)
+       return "The Council";
+    else
+       return uppercase_first(god_name(which_deity));
+}
+
 // yet another wrapper for mpr() {dlb}:
 void simple_god_message(const char *event, god_type which_deity)
 {
-    string msg;
-    if (which_deity == GOD_WU_JIAN)
-       msg = uppercase_first(string("The Council") + event);
-    else
-       msg = uppercase_first(god_name(which_deity)) + event;
+    string msg = god_speaker(which_deity) + event;
 
     god_speaks(which_deity, msg.c_str());
 }
@@ -2158,6 +2211,8 @@ static void _replay_messages_core(formatted_scroller &hist)
         if (channel_message_history(msgs[i].channel))
         {
             string text = msgs[i].full_text();
+            if (!text.size())
+                continue;
             linebreak_string(text, cgetsize(GOTO_CRT).x - 1);
             vector<formatted_string> parts;
             formatted_string::parse_string_to_multiple(text, parts, 80);

@@ -28,7 +28,6 @@
 #include "colour.h"
 #include "coord.h"
 #include "coordit.h"
-#include "dactions.h"
 #include "dbg-util.h"
 #include "defines.h"
 #include "delay.h"
@@ -41,7 +40,6 @@
 #include "food.h"
 #include "god-passive.h"
 #include "god-prayer.h"
-#include "god-wrath.h"
 #include "hints.h"
 #include "hints.h"
 #include "hiscores.h"
@@ -54,7 +52,6 @@
 #include "macro.h"
 #include "makeitem.h"
 #include "message.h"
-#include "mon-ench.h"
 #include "nearby-danger.h"
 #include "notes.h"
 #include "options.h"
@@ -82,7 +79,6 @@
 #include "throw.h"
 #include "tilepick.h"
 #include "travel.h"
-#include "unwind.h"
 #include "viewchar.h"
 #include "view.h"
 #include "xom.h"
@@ -135,7 +131,7 @@ static bool will_autoinscribe = false;
 
 static inline string _autopickup_item_name(const item_def &item)
 {
-    return userdef_annotate_item(STASH_LUA_SEARCH_ANNOTATE, &item, true)
+    return userdef_annotate_item(STASH_LUA_SEARCH_ANNOTATE, &item)
            + item_prefix(item, false) + " " + item.name(DESC_PLAIN);
 }
 
@@ -1152,7 +1148,7 @@ void origin_set(const coord_def& where)
     }
 }
 
-static void _origin_freeze(item_def &item, const coord_def& where)
+static void _origin_freeze(item_def &item)
 {
     if (!origin_known(item))
     {
@@ -1191,7 +1187,7 @@ bool origin_describable(const item_def &item)
            && (item.base_type != OBJ_FOOD || item.sub_type != FOOD_CHUNK);
 }
 
-static string _article_it(const item_def &item)
+static string _article_it(const item_def &/*item*/)
 {
     // "it" is always correct, since gloves and boots also come in pairs.
     return "it";
@@ -1448,7 +1444,7 @@ void pickup(bool partial_quantity)
                      menu_colour_item_name(mitm[o], DESC_A).c_str());
 
                 mouse_control mc(MOUSE_MODE_YESNO);
-                keyin = getchk();
+                keyin = getch_ck();
             }
 
             if (keyin == '*' || keyin == '?' || keyin == ',' || keyin == 'g'
@@ -1504,23 +1500,30 @@ bool is_stackable_item(const item_def &item)
     if (!item.defined())
         return false;
 
-    if (item.base_type == OBJ_MISSILES
-        || item.base_type == OBJ_FOOD
-        || item.base_type == OBJ_SCROLLS
-        || item.base_type == OBJ_POTIONS
-        || item.base_type == OBJ_GOLD)
+    switch (item.base_type)
     {
-        return true;
+        case OBJ_MISSILES:
+        case OBJ_FOOD:
+        case OBJ_SCROLLS:
+        case OBJ_POTIONS:
+        case OBJ_GOLD:
+            return true;
+        case OBJ_MISCELLANY:
+            switch (item.sub_type)
+            {
+                case MISC_PHANTOM_MIRROR:
+                case MISC_ZIGGURAT:
+#if TAG_MAJOR_VERSION == 34
+                case MISC_SACK_OF_SPIDERS:
+#endif
+                case MISC_BOX_OF_BEASTS:
+                    return true;
+                default:
+                    break;
+            }
+        default:
+            break;
     }
-
-    if (item.is_type(OBJ_MISCELLANY, MISC_PHANTOM_MIRROR)
-        || item.is_type(OBJ_MISCELLANY, MISC_ZIGGURAT)
-        || item.is_type(OBJ_MISCELLANY, MISC_SACK_OF_SPIDERS)
-        || item.is_type(OBJ_MISCELLANY, MISC_BOX_OF_BEASTS))
-    {
-        return true;
-    }
-
     return false;
 }
 
@@ -1734,7 +1737,7 @@ void get_gold(const item_def& item, int quant, bool quiet)
 void note_inscribe_item(item_def &item)
 {
     _autoinscribe_item(item);
-    _origin_freeze(item, you.pos());
+    _origin_freeze(item);
     _check_note_item(item);
 }
 
@@ -1911,11 +1914,8 @@ static void _get_rune(const item_def& it, bool quiet)
 
 /**
  * Place the Orb of Zot into the player's inventory.
- *
- * @param it      The ORB!
- * @param quiet   Unused.
  */
-static void _get_orb(const item_def &it, bool quiet)
+static void _get_orb()
 {
     run_animation(ANIMATION_ORB, UA_PICKUP);
 
@@ -2067,7 +2067,7 @@ item_def *auto_assign_item_slot(item_def& item)
         }
         if (newslot != -1 && newslot != item.link)
         {
-            swap_inv_slots(item.link, newslot, true);
+            swap_inv_slots(item.link, newslot, you.num_turns);
             return &you.inv[newslot];
         }
     }
@@ -2190,7 +2190,7 @@ static bool _merge_items_into_inv(item_def &it, int quant_got,
     // The Orb is also handled specially.
     if (item_is_orb(it))
     {
-        _get_orb(it, quiet);
+        _get_orb();
         return true;
     }
 
@@ -2656,6 +2656,14 @@ void drop_last()
     }
 }
 
+/** Get the equipment slot an item is equipped in. If the item is not
+ * equipped by the player, return -1 instead.
+ *
+ * @param item The item to check.
+ *
+ * @returns The equipment slot (equipment_type) the item is in or -1
+ * (EQ_NONE)
+*/
 int get_equip_slot(const item_def *item)
 {
     int worn = -1;
@@ -2938,8 +2946,6 @@ static int _autopickup_subtype(const item_def &item)
 
 static bool _is_option_autopickup(const item_def &item, bool ignore_force)
 {
-    string iname = _autopickup_item_name(item);
-
     if (item.base_type < NUM_OBJECT_CLASSES)
     {
         const int force = item_autopickup_level(item);
@@ -2948,6 +2954,12 @@ static bool _is_option_autopickup(const item_def &item, bool ignore_force)
     }
     else
         return false;
+
+    // the special-cased gold here is because this call can become very heavy
+    // for gozag players under extreme circumstances
+    const string iname = item.base_type == OBJ_GOLD
+                                                ? "{gold}"
+                                                : _autopickup_item_name(item);
 
 #ifdef CLUA_BINDINGS
     maybe_bool res = clua.callmaybefn("ch_force_autopickup", "is",
@@ -2973,12 +2985,24 @@ static bool _is_option_autopickup(const item_def &item, bool ignore_force)
     return Options.autopickups[item.base_type];
 }
 
+static int _get_chunk_count() {
+    auto it = find_if(you.inv.begin(), you.inv.end(),
+                      [](const item_def& item) {
+                          return item.base_type == OBJ_FOOD
+                                 && item.sub_type == FOOD_CHUNK
+                                 && !is_bad_food(item);
+                      });
+    return it == you.inv.end() ? 0 : it->quantity;
+}
+
 /// Should the player automatically butcher the given item?
 static bool _should_autobutcher(const item_def &item)
 {
+    const int max_chunks = Options.auto_butcher_max_chunks;
     return Options.auto_butcher >= you.hunger_state
            && item.base_type == OBJ_CORPSES
-           && !is_inedible(item) && !is_bad_food(item);
+           && !is_inedible(item) && !is_bad_food(item)
+           && (max_chunks == 0 || _get_chunk_count() < max_chunks);
 }
 
 /** Is the item something that we should try to autopickup?
@@ -3037,7 +3061,7 @@ static bool _identical_types(const item_def& pickup_item,
     return pickup_item.is_type(inv_item.base_type, inv_item.sub_type);
 }
 
-static bool _edible_food(const item_def& pickup_item,
+static bool _edible_food(const item_def& /*pickup_item*/,
                          const item_def& inv_item)
 {
     return inv_item.base_type == OBJ_FOOD && !is_inedible(inv_item);
@@ -3179,9 +3203,6 @@ static bool _interesting_explore_pickup(const item_def& item)
         return _item_different_than_inv(item, _similar_jewellery);
 
     case OBJ_FOOD:
-        if (you_worship(GOD_FEDHAS) && item.is_type(OBJ_FOOD, FOOD_RATION))
-            return true;
-
         if (is_inedible(item))
             return false;
 
@@ -3599,8 +3620,8 @@ colour_t item_def::armour_colour() const
             return LIGHTGREY;
         case ARM_CRYSTAL_PLATE_ARMOUR:
             return WHITE;
-        case ARM_SHIELD:
-        case ARM_LARGE_SHIELD:
+        case ARM_KITE_SHIELD:
+        case ARM_TOWER_SHIELD:
         case ARM_BUCKLER:
             return CYAN;
         default:
@@ -3929,9 +3950,9 @@ colour_t item_def::miscellany_colour() const
 
     switch (sub_type)
     {
+#if TAG_MAJOR_VERSION == 34
         case MISC_FAN_OF_GALES:
             return CYAN;
-#if TAG_MAJOR_VERSION == 34
         case MISC_BOTTLED_EFREET:
             return RED;
 #endif
@@ -3947,20 +3968,24 @@ colour_t item_def::miscellany_colour() const
             return LIGHTBLUE;
         case MISC_BOX_OF_BEASTS:
             return LIGHTGREEN; // ugh, but we're out of other options
+#if TAG_MAJOR_VERSION == 34
         case MISC_CRYSTAL_BALL_OF_ENERGY:
             return LIGHTCYAN;
+#endif
         case MISC_HORN_OF_GERYON:
             return LIGHTRED;
+#if TAG_MAJOR_VERSION == 34
         case MISC_LAMP_OF_FIRE:
             return YELLOW;
         case MISC_SACK_OF_SPIDERS:
             return WHITE;
-#if TAG_MAJOR_VERSION == 34
         case MISC_BUGGY_LANTERN_OF_SHADOWS:
         case MISC_BUGGY_EBONY_CASKET:
         case MISC_XOMS_CHESSBOARD:
             return DARKGREY;
 #endif
+        case MISC_TIN_OF_TREMORSTONES:
+            return BROWN;
         case MISC_QUAD_DAMAGE:
             return ETC_DARK;
         case MISC_ZIGGURAT:
@@ -4014,8 +4039,7 @@ colour_t item_def::get_colour() const
     }
 
     // unrands get to override everything else (wrt colour)
-    // ...except for un-ID'd random-appearance artefacts (Misfortune)
-    if (is_unrandom_artefact(*this) && !is_randapp_artefact(*this))
+    if (is_unrandom_artefact(*this))
     {
         const unrandart_entry *unrand = get_unrand_entry(
                                             find_unrandart_index(*this));
@@ -4273,7 +4297,7 @@ bool get_item_by_name(item_def *item, const char* specs,
         type_wanted = -1;
         size_t best_index  = 10000;
 
-        for (int i = 0; i < get_max_subtype(item->base_type); ++i)
+        for (const auto i : all_item_subtypes(item->base_type))
         {
             item->sub_type = i;
             size_t pos = lowercase_string(item->name(DESC_PLAIN)).find(specs);
@@ -4429,17 +4453,6 @@ bool get_item_by_name(item_def *item, const char* specs,
 
     case OBJ_POTIONS:
         item->quantity = 12;
-        if (is_blood_potion(*item))
-        {
-            const char* prompt;
-            prompt = "# turns away from rotting? "
-                     "[ENTER for fully fresh] ";
-            int age = prompt_for_int(prompt, false);
-
-            if (age <= 0)
-                age = -1;
-            init_perishable_stack(*item, age);
-        }
         break;
 
     case OBJ_FOOD:
@@ -4448,7 +4461,7 @@ bool get_item_by_name(item_def *item, const char* specs,
         break;
 
     case OBJ_JEWELLERY:
-        if (jewellery_is_amulet(*item) && item->sub_type != AMU_REFLECTION)
+        if (jewellery_is_amulet(*item))
             break;
 
         switch (item->sub_type)
@@ -4459,7 +4472,6 @@ bool get_item_by_name(item_def *item, const char* specs,
         case RING_STRENGTH:
         case RING_DEXTERITY:
         case RING_INTELLIGENCE:
-        case AMU_REFLECTION:
             item->plus = 5;
         default:
             break;
@@ -4493,7 +4505,7 @@ bool get_item_by_exact_name(item_def &item, const char* name)
 
         if (!item.sub_type)
         {
-            for (int j = 0; j < get_max_subtype(item.base_type); ++j)
+            for (const auto j : all_item_subtypes(item.base_type))
             {
                 item.sub_type = j;
                 if (lowercase_string(item.name(DESC_DBNAME)) == name_lc)
@@ -4565,19 +4577,10 @@ item_info get_item_info(const item_def& item)
 
     if (is_unrandom_artefact(item))
     {
-        if (!is_randapp_artefact(item))
-        {
-            // Unrandart index
-            // Since the appearance of unrandarts is fixed anyway, this
-            // is not an information leak.
-            ii.unrand_idx = item.unrand_idx;
-        }
-        else
-        {
-            // Disguise as a normal randart
-            ii.flags &= ~ISFLAG_UNRANDART;
-            ii.flags |= ISFLAG_RANDART;
-        }
+        // Unrandart index
+        // Since the appearance of unrandarts is fixed anyway, this
+        // is not an information leak.
+        ii.unrand_idx = item.unrand_idx;
     }
 
     switch (item.base_type)
@@ -4661,7 +4664,7 @@ item_info get_item_info(const item_def& item)
         break;
 #endif
     case OBJ_STAVES:
-        ii.sub_type = item_type_known(item) ? item.sub_type : NUM_STAVES;
+        ii.sub_type = item_type_known(item) ? item.sub_type : int{NUM_STAVES};
         ii.subtype_rnd = item.subtype_rnd;
         break;
     case OBJ_MISCELLANY:

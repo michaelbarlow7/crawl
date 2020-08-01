@@ -18,7 +18,7 @@
 #include <utility> // pair
 #include <vector>
 #include <fcntl.h>
-#ifdef DGAMELAUNCH
+#if defined(UNIX) || defined(TARGET_COMPILER_MINGW)
 # include <unistd.h>
 #endif
 
@@ -33,15 +33,12 @@
 
 #include "ability.h"
 #include "abyss.h"
-#include "acquire.h"
 #include "act-iter.h"
 #include "adjust.h"
 #include "areas.h"
 #include "arena.h"
 #include "artefact.h"
-#include "art-enum.h"
 #include "beam.h"
-#include "bloodspatter.h"
 #include "branch.h"
 #include "butcher.h"
 #include "chardump.h"
@@ -51,9 +48,7 @@
 #include "colour.h"
 #include "command.h"
 #include "coord.h"
-#include "coordit.h"
 #include "crash.h"
-#include "dactions.h"
 #include "database.h"
 #include "dbg-scan.h"
 #include "dbg-util.h"
@@ -64,7 +59,6 @@
 #include "dgl-message.h"
 #endif
 #include "dgn-overview.h"
-#include "dgn-shoals.h"
 #include "directn.h"
 #include "dlua.h"
 #include "dungeon.h"
@@ -72,16 +66,13 @@
 #include "env.h"
 #include "errors.h"
 #include "evoke.h"
-#include "exercise.h"
 #include "fight.h"
 #include "files.h"
 #include "fineff.h"
 #include "food.h"
-#include "fprop.h"
 #include "god-abil.h"
 #include "god-companions.h"
 #include "god-conduct.h"
-#include "god-item.h"
 #include "god-passive.h"
 #include "god-prayer.h"
 #include "hints.h"
@@ -93,6 +84,7 @@
 #include "items.h"
 #include "item-use.h"
 #include "jobs.h"
+#include "known-items.h"
 #include "level-state-type.h"
 #include "libutil.h"
 #include "luaterp.h"
@@ -102,7 +94,6 @@
 #include "map-knowledge.h"
 #include "mapmark.h"
 #include "maps.h"
-#include "melee-attack.h"
 #include "message.h"
 #include "misc.h"
 #include "mon-abil.h"
@@ -117,10 +108,8 @@
 #include "notes.h"
 #include "options.h"
 #include "output.h"
-#include "player-equip.h"
 #include "player.h"
 #include "player-reacts.h"
-#include "player-stats.h"
 #include "prompt.h"
 #include "quiver.h"
 #include "random.h"
@@ -128,17 +117,11 @@
 #include "shopping.h"
 #include "shout.h"
 #include "skills.h"
-#include "sound.h"
 #include "species.h"
 #include "spl-book.h"
 #include "spl-cast.h"
 #include "spl-clouds.h"
 #include "spl-damage.h"
-#include "spl-goditem.h"
-#include "spl-other.h"
-#include "spl-selfench.h"
-#include "spl-summoning.h"
-#include "spl-transloc.h"
 #include "spl-util.h"
 #include "stairs.h"
 #include "startup.h"
@@ -150,7 +133,7 @@
 #include "terrain.h"
 #include "throw.h"
 #ifdef USE_TILE
- #include "tiledef-dngn.h"
+ #include "rltiles/tiledef-dngn.h"
  #include "tilepick.h"
 #endif
 #include "timed-effects.h"
@@ -353,6 +336,8 @@ static void _reset_game()
     reset_hud();
     StashTrack = StashTracker();
     travel_cache = TravelCache();
+    // TODO: hint state needs seem work
+    Hints.hints_events.init(false);
     clear_level_target();
     overview_clear();
     clear_message_window();
@@ -425,6 +410,9 @@ NORETURN static void _launch_game()
                     << species_name(you.species)
                     << " " << get_job_name(you.char_class) << ".</yellow>"
                     << endl;
+        // TODO: seeded sprint?
+        if (crawl_state.type == GAME_TYPE_CUSTOM_SEED)
+            msg::stream << "<white>" << seed_description() << "</white>" << endl;
     }
 
 #ifdef USE_TILE
@@ -559,6 +547,7 @@ static void _show_commandline_options_help()
     puts("  -gdb/-no-gdb     produce gdb backtrace when a crash happens (default:on)");
 #endif
     puts("  -playable-json   list playable species, jobs, and character combos.");
+    puts("  -branches-json   list branch data.");
 
 #if defined(TARGET_OS_WINDOWS) && defined(USE_TILE_LOCAL)
     text_popup(help, L"Dungeon Crawl command line help");
@@ -891,7 +880,7 @@ static void _center_cursor()
 }
 
 // We have to refresh the SH display if the player's incapacitated state
-// changes (getting confused/paralyzed/etc. sets SH to 0, recovering
+// changes (getting confused/paralysed/etc. sets SH to 0, recovering
 // from the condition sets SH back to normal).
 struct disable_check
 {
@@ -1559,12 +1548,6 @@ static void _experience_check()
                 << " (" << you.num_turns << " turns)"
                 << endl;
 #ifdef DEBUG_DIAGNOSTICS
-    if (you.gourmand())
-    {
-        mprf(MSGCH_DIAGNOSTICS, "Gourmand charge: %d",
-             you.duration[DUR_GOURMAND]);
-    }
-
     mprf(MSGCH_DIAGNOSTICS, "Turns spent on this level: %d",
          env.turns_on_level);
 #endif
@@ -1641,7 +1624,7 @@ static void _do_display_map()
 #endif
 
     level_pos pos;
-    const bool travel = show_map(pos, true, true, true);
+    const bool travel = show_map(pos, true, true);
 
 #ifdef USE_TILE_LOCAL
     mpr("Returning to the game...");
@@ -1875,7 +1858,7 @@ void process_command(command_type cmd)
 
     case CMD_EVOKE_WIELDED:
     case CMD_FORCE_EVOKE_WIELDED:
-        if (!evoke_item(you.equip[EQ_WEAPON], cmd != CMD_FORCE_EVOKE_WIELDED))
+        if (!evoke_item(you.equip[EQ_WEAPON]))
             flush_input_buffer(FLUSH_ON_FAILURE);
         break;
 
@@ -2239,8 +2222,6 @@ void world_reacts()
     if (!crawl_state.game_is_arena())
         player_reacts_to_monsters();
 
-    wu_jian_end_of_turn_effects();
-
     add_auto_excludes();
 
     viewwindow();
@@ -2325,6 +2306,12 @@ static command_type _get_next_cmd()
 // real ones.
 static command_type _keycode_to_command(keycode_type key)
 {
+#ifndef USE_TILE_LOCAL
+    // ignore all input if the terminal is too small
+    if (crawl_state.smallterm)
+        return CMD_NEXT_CMD;
+#endif
+
     switch (key)
     {
 #ifdef USE_TILE

@@ -47,10 +47,6 @@ private:
 void cursorxy(int x, int y);
 static inline void cursorxy(const coord_def& p) { cursorxy(p.x, p.y); }
 
-// Read one key, flag it as a mouse event if appropriate, but apply no
-// other conversions. Defined in lib$OS.cc, not in cio.cc.
-int m_getch();
-
 // Converts a key to a direction key, converting keypad and other sequences
 // to vi key sequences (shifted/control key directions are also handled). Non
 // direction keys (hopefully) pass through unmangled.
@@ -58,6 +54,8 @@ int unmangle_direction_keys(int keyin, KeymapContext keymap = KMC_DEFAULT,
                             bool allow_fake_modifiers = true);
 
 void nowrap_eol_cprintf(PRINTF(0, ));
+void wrapcprintf(int wrapcol, const char *s, ...);
+void wrapcprintf(const char *s, ...);
 
 // Returns zero if user entered text and pressed Enter, otherwise returns the
 // key pressed that caused the exit, usually Escape.
@@ -354,7 +352,8 @@ protected:
     {
         return ch == CK_NO_KEY ? CK_NO_KEY : line_reader::process_key(ch);
     }
-    virtual void print_segment(int start_point=0, int overprint=0) override {};
+    virtual void print_segment(int, int) override {};
+    void cursorto(int) override {};
     int key;
 };
 

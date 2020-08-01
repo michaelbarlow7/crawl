@@ -696,7 +696,7 @@ dgn.loot_potions = [[
     w:15  potion of heal wounds /
     w:10  potion of might /
     w:10  potion of invisibility /
-    w:10  potion of agility /
+    w:10  potion of stabbing /
     w:10  potion of magic /
     w:10  potion of mutation /
     w:8   potion of cancellation /
@@ -705,7 +705,7 @@ dgn.loot_potions = [[
     w:2   potion of experience
     ]]
 
--- Some definitions for all types of auxiliary armor.
+-- Some definitions for all types of auxiliary armour.
 dgn.aux_armour = "cloak / scarf / helmet / hat / pair of gloves " ..
     "/ pair of boots"
 

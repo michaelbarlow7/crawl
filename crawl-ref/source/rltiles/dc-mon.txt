@@ -258,6 +258,7 @@ fulminant_prism1 MONS_FULMINANT_PRISM
 fulminant_prism2
 fulminant_prism3
 fulminant_prism4
+foxfire MONS_FOXFIRE
 %rim 1
 ball_lightning MONS_BALL_LIGHTNING /*'*'*/
 %sdir mon/undead
@@ -389,6 +390,7 @@ abomination_large7
 abomination_large8
 abomination_large9
 tentacled_monstrosity MONS_TENTACLED_MONSTROSITY
+nameless_horror MONS_NAMELESS_HORROR
 %sdir mon/vault
 cigotuvis_monster MONS_CIGOTUVIS_MONSTER
 
@@ -505,6 +507,7 @@ joseph MONS_JOSEPH
 josephine MONS_JOSEPHINE
 kirke MONS_KIRKE
 louise MONS_LOUISE
+maggie MONS_MAGGIE
 margery MONS_MARGERY
 maurice MONS_MAURICE
 %rim 0
@@ -920,6 +923,7 @@ deep_elf_master_archer MONS_DEEP_ELF_MASTER_ARCHER
 deep_elf_elementalist1 MONS_DEEP_ELF_ELEMENTALIST
 deep_elf_elementalist2
 deep_elf_elementalist3
+deep_elf_elementalist4
 %sdir mon/vault
 ## From the Cigotuvi wizlab
 deformed_elf MONS_DEFORMED_ELF

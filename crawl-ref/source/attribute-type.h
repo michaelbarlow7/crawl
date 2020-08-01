@@ -63,8 +63,8 @@ enum attribute_type
     ATTR_BARBS_POW,            // How badly we are currently skewered
 #if TAG_MAJOR_VERSION == 34
     ATTR_REPEL_MISSILES,       // Repel missiles active
-#endif
     ATTR_DEFLECT_MISSILES,     // Deflect missiles active
+#endif
     ATTR_PORTAL_PROJECTILE,    // Accuracy bonus during portal projectile
     ATTR_GOD_WRATH_XP,         // How much XP before our next god wrath check?
     ATTR_GOD_WRATH_COUNT,      // Number of stored retributions
@@ -94,8 +94,10 @@ enum attribute_type
     ATTR_DIVINE_ENERGY,        // Divine energy from Sif to cast with no MP.
 #endif
     ATTR_SERPENTS_LASH,        // Remaining instant movement actions.
+#if TAG_MAJOR_VERSION == 34
     ATTR_HEAVENLY_STORM,       // Strength of Heavenly Storm slaying.
     ATTR_WALL_JUMP_READY,      // Ready to perform a wall jump.
+#endif
     ATTR_DEATHS_DOOR_HP,       // How much HP we should have under Death's Door
     NUM_ATTRIBUTES
 };

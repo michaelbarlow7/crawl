@@ -30,6 +30,14 @@ static feature_def feat_defs[] =
 },
 
 {
+    DNGN_TRAVEL_TRAIL, "travel trail", "travel_trail",
+    NUM_DCHAR_TYPES, NUM_DCHAR_TYPES,
+    COLOUR_IS(BLACK),
+    FFT_NONE, MF_UNSEEN,
+},
+
+
+{
     DNGN_CLOSED_DOOR, "closed door", "closed_door",
     DCHAR_DOOR_CLOSED, NUM_DCHAR_TYPES,
     COLOUR_IS(LIGHTGREY),
@@ -212,6 +220,13 @@ static feature_def feat_defs[] =
 },
 
 {
+    DNGN_TOXIC_BOG, "a toxic bog", "toxic_bog",
+    DCHAR_WAVY, NUM_DCHAR_TYPES,
+    COLOUR_IS(ETC_POISON),
+    FFT_NONE, MF_WATER,
+},
+
+{
     DNGN_FLOOR, "floor", "floor",
     DCHAR_FLOOR, DCHAR_FLOOR_MAGIC,
     COLOUR_IS(ETC_FLOOR),
@@ -256,9 +271,19 @@ static feature_def feat_defs[] =
     FFT_TRAP, MF_TRAP,\
 }
 
+#if TAG_MAJOR_VERSION == 34
 TRAP(DNGN_TRAP_MECHANICAL, "mechanical trap", "trap_mechanical", LIGHTCYAN),
+#endif
+TRAP(DNGN_TRAP_ARROW, "arrow trap", "trap_mechanical", LIGHTCYAN),
+TRAP(DNGN_TRAP_SPEAR, "spear trap", "trap_mechanical", LIGHTCYAN),
+TRAP(DNGN_TRAP_BLADE, "blade trap", "trap_mechanical", LIGHTCYAN),
+TRAP(DNGN_TRAP_DART, "dart trap", "trap_mechanical", LIGHTCYAN),
+TRAP(DNGN_TRAP_BOLT, "bolt trap", "trap_mechanical", LIGHTCYAN),
+TRAP(DNGN_TRAP_NET, "net trap", "trap_mechanical", LIGHTCYAN),
+TRAP(DNGN_TRAP_PLATE, "pressure plate", "trap_mechanical", LIGHTCYAN),
 TRAP(DNGN_TRAP_DISPERSAL, "dispersal trap", "trap_dispersal", MAGENTA),
 TRAP(DNGN_TRAP_TELEPORT, "teleport trap", "trap_teleport", LIGHTBLUE),
+TRAP(DNGN_TRAP_TELEPORT_PERMANENT, "permanent teleport trap", "trap_teleport_permanent", LIGHTBLUE),
 #if TAG_MAJOR_VERSION == 34
 TRAP(DNGN_TRAP_SHADOW, "shadow trap", "trap_shadow", BLUE),
 TRAP(DNGN_TRAP_SHADOW_DORMANT, "dormant shadow trap", "trap_shadow_dormant", BLUE),

@@ -32,7 +32,6 @@
 #include "dlua.h"
 #include "english.h"
 #include "env.h"
-#include "exercise.h"
 #include "god-abil.h"
 #include "god-companions.h"
 #include "god-conduct.h"
@@ -63,7 +62,6 @@
 #include "shopping.h"
 #include "skills.h"
 #include "spl-book.h"
-#include "spl-miscast.h"
 #include "sprint.h"
 #include "state.h"
 #include "stringutil.h"
@@ -196,13 +194,10 @@ const vector<god_power> god_powers[NUM_GODS] =
       { 1, ABIL_TROG_BERSERK, "go berserk at will" },
       { 2, ABIL_TROG_REGEN_MR,
            "call upon Trog for regeneration and magic resistance" },
-      { 3, "Trog will now gift you ammunition as you gain piety.",
-           "Trog will no longer gift you ammunition.",
-           "Trog will gift you ammunition as you gain piety." },
       { 4, ABIL_TROG_BROTHERS_IN_ARMS, "call in reinforcements" },
-      { 5, "Trog will now gift you weapons as you gain piety.",
+      { 5, "Trog will now gift you melee weapons as you gain piety.",
            "Trog will no longer gift you weapons.",
-           "Trog will gift you weapons as you gain piety." },
+           "Trog will gift you melee weapons as you gain piety." },
     },
 
     // Nemelex
@@ -378,7 +373,7 @@ const vector<god_power> god_powers[NUM_GODS] =
     // Wu Jian
     { { 0, "perform damaging attacks by moving towards foes",
            "perform lunging strikes" },
-      { 1, "lightly attack and pin monsters in place by moving around them",
+      { 1, "lightly attack monsters by moving around them",
            "perform spinning attacks" },
       { 2, ABIL_WU_JIAN_WALLJUMP,
            "perform airborne attacks" },
@@ -517,7 +512,7 @@ god_iterator::operator bool() const
     return i < NUM_GODS;
 }
 
-const god_type god_iterator::operator*() const
+god_type god_iterator::operator*() const
 {
     if (i < NUM_GODS)
         return (god_type)i;
@@ -525,7 +520,7 @@ const god_type god_iterator::operator*() const
         return GOD_NO_GOD;
 }
 
-const god_type god_iterator::operator->() const
+god_type god_iterator::operator->() const
 {
     return **this;
 }
@@ -986,17 +981,16 @@ int yred_random_servants(unsigned int threshold, bool force_hostile)
     return created;
 }
 
-static bool _need_missile_gift(bool forced)
+static bool _want_missile_gift()
 {
     skill_type sk = best_skill(SK_SLINGS, SK_THROWING);
     // Default to throwing if all missile skills are at zero.
     if (you.skills[sk] == 0)
         sk = SK_THROWING;
-    return forced
-           || (you.piety >= piety_breakpoint(2)
-               && random2(you.piety) > 70
-               && one_chance_in(8)
-               && x_chance_in_y(1 + you.skills[sk], 12));
+    return you.piety >= piety_breakpoint(2)
+           && random2(you.piety) > 70
+           && one_chance_in(8)
+           && x_chance_in_y(1 + you.skills[sk], 12);
 }
 
 static bool _give_nemelex_gift(bool forced = false)
@@ -1051,7 +1045,7 @@ static int _preferably_unseen_item(const vector<int> &item_types,
 }
 #endif
 
-static void _delayed_gift_callback(const mgen_data &mg, monster *&mon,
+static void _delayed_gift_callback(const mgen_data &/*mg*/, monster *&mon,
                                    int placed)
 {
     if (placed <= 0)
@@ -1126,8 +1120,8 @@ static set<spell_type> _vehumet_eligible_gift_spells(set<spell_type> excluded_sp
     if (gifts >= NUM_VEHUMET_GIFTS)
         return eligible_spells;
 
-    const int min_lev[] = {1,1,2,3,3,4,4,5,5,6,6,6,8};
-    const int max_lev[] = {1,2,3,4,5,7,7,7,7,7,7,7,9};
+    const int min_lev[] = {1,1,2,3,3,4,4,5,5,5,5,6,8};
+    const int max_lev[] = {1,2,3,4,5,7,7,7,7,7,7,8,9};
     COMPILE_CHECK(ARRAYSZ(min_lev) == NUM_VEHUMET_GIFTS);
     COMPILE_CHECK(ARRAYSZ(max_lev) == NUM_VEHUMET_GIFTS);
     int min_level = min_lev[gifts];
@@ -1248,15 +1242,12 @@ static int _pakellas_low_misc()
 {
     // Limited uses, so any of these are fine even if they've been seen before.
     return random_choose(MISC_BOX_OF_BEASTS,
-                         MISC_SACK_OF_SPIDERS,
                          MISC_PHANTOM_MIRROR);
 }
 
 static int _pakellas_high_misc()
 {
     static const vector<int> high_miscs = {
-        MISC_FAN_OF_GALES,
-        MISC_LAMP_OF_FIRE,
         MISC_PHIAL_OF_FLOODS,
         MISC_LIGHTNING_ROD,
     };
@@ -1356,7 +1347,6 @@ static bool _give_pakellas_gift()
 
 static bool _give_trog_oka_gift(bool forced)
 {
-    bool success = false;
     // Break early if giving a gift now means it would be lost.
     if (!(feat_has_solid_floor(grd(you.pos()))
         || feat_is_watery(grd(you.pos())) && species_likes_water(you.species)))
@@ -1368,28 +1358,33 @@ static bool _give_trog_oka_gift(bool forced)
     if (you.species == SP_FELID)
         return false;
 
-    const bool need_missiles = _need_missile_gift(forced);
+    const bool want_equipment = forced
+                                || (you.piety >= piety_breakpoint(4)
+                                    && random2(you.piety) > 120
+                                    && one_chance_in(4));
+    // Oka can gift missiles, but if equipment is successful, we choose
+    // equipment unless the gift was forced by wizard mode. In that case,
+    // missiles, weapons, and armour all get equal weight below.
+    const bool want_missiles = you_worship(GOD_OKAWARU)
+                               && (forced
+                                   || !want_equipment && _want_missile_gift());
     object_class_type gift_type;
 
-    if (forced && coinflip()
-        || (!forced && you.piety >= piety_breakpoint(4)
-            && random2(you.piety) > 120
-            && one_chance_in(4)))
+    if (you_worship(GOD_TROG) && want_equipment)
+        gift_type = OBJ_WEAPONS;
+    else if (you_worship(GOD_OKAWARU) && (want_equipment || want_missiles))
     {
-        if (you_worship(GOD_TROG)
-            || (you_worship(GOD_OKAWARU) && coinflip()))
-        {
-            gift_type = OBJ_WEAPONS;
-        }
-        else
-            gift_type = OBJ_ARMOUR;
+        gift_type = random_choose_weighted(
+                want_equipment, OBJ_WEAPONS,
+                want_equipment, OBJ_ARMOUR,
+                want_missiles,  OBJ_MISSILES);
     }
-    else if (need_missiles)
-        gift_type = OBJ_MISSILES;
     else
         return false;
 
-    success = acquirement(gift_type, you.religion);
+    const bool success =
+        acquirement_create_item(gift_type, you.religion,
+                false, you.pos()) != NON_ITEM;
     if (success)
     {
         if (gift_type == OBJ_MISSILES)
@@ -1968,8 +1963,8 @@ static armour_type _hepliaklqana_shield_type(monster_type mc, int HD)
     if (mc != MONS_ANCESTOR_KNIGHT)
         return NUM_ARMOURS;
     if (HD < 13)
-        return ARM_SHIELD;
-    return ARM_LARGE_SHIELD;
+        return ARM_KITE_SHIELD;
+    return ARM_TOWER_SHIELD;
 }
 
 static special_armour_type _hepliaklqana_shield_ego(int HD)
@@ -2619,15 +2614,14 @@ void lose_piety(int pgn)
 static bool _fedhas_protects_species(monster_type mc)
 {
     return mons_class_is_plant(mc)
-           && mons_class_holiness(mc) & MH_PLANT
-           && mc != MONS_BALLISTOMYCETE_SPORE
-           && mc != MONS_SNAPLASHER_VINE
-           && mc != MONS_SNAPLASHER_VINE_SEGMENT;
+           && mons_class_holiness(mc) & MH_PLANT;
 }
 
-bool fedhas_protects(const monster& target)
+bool fedhas_protects(const monster *target)
 {
-    return _fedhas_protects_species(mons_base_type(target));
+    return target
+        ? _fedhas_protects_species(mons_base_type(*target))
+        : false;
 }
 
 // Fedhas neutralises most plants and fungi
@@ -2984,7 +2978,8 @@ void excommunication(bool voluntary, god_type new_god)
 
     case GOD_WU_JIAN:
         you.attribute[ATTR_SERPENTS_LASH] = 0;
-        you.attribute[ATTR_HEAVENLY_STORM] = 0;
+        if (you.props.exists(WU_JIAN_HEAVENLY_STORM_KEY))
+            wu_jian_end_heavenly_storm();
         break;
 
     default:
@@ -3565,7 +3560,7 @@ static void _join_zin()
         // rich. In that case, you have to donate again more... That the poor
         // widow is not spared doesn't mean the rich can't be milked for more.
         lucre.props[ACQUIRE_KEY] = 0;
-        you.gold -= zin_tithe(lucre, lucre.quantity, false, true);
+        you.gold -= zin_tithe(lucre, lucre.quantity, true);
     }
 }
 
@@ -3649,9 +3644,9 @@ void join_religion(god_type which_god)
     whereis_record();
 #endif
 
-    _set_initial_god_piety();
-
     set_god_ability_slots();    // remove old god's slots, reserve new god's
+
+    _set_initial_god_piety();
 
     // When you start worshipping a good god, you make all non-hostile
     // unholy and evil beings hostile.
@@ -3870,7 +3865,7 @@ bool god_hates_killing(god_type god, const monster& mon)
         retval = (god == GOD_ELYVILON);
 
     if (god == GOD_FEDHAS)
-        retval = (fedhas_protects(mon));
+        retval = (fedhas_protects(&mon));
 
     return retval;
 }
@@ -4009,7 +4004,7 @@ lifesaving_chance elyvilon_lifesaving()
     if (you.piety < piety_breakpoint(0))
         return lifesaving_chance::never;
 
-    return you.piety > 130 ? lifesaving_chance::always
+    return you.piety >= piety_breakpoint(4) ? lifesaving_chance::always
                            : lifesaving_chance::sometimes;
 }
 

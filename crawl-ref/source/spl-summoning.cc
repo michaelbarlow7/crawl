@@ -23,20 +23,18 @@
 #include "dungeon.h"
 #include "english.h"
 #include "env.h"
+#include "fight.h"
 #include "fprop.h"
-#include "ghost.h"
 #include "god-conduct.h"
 #include "god-item.h"
 #include "invent.h"
 #include "item-prop.h"
+#include "item-status-flag-type.h"
 #include "items.h"
 #include "libutil.h"
-#include "losglobal.h"
 #include "mapmark.h"
-#include "melee-attack.h"
 #include "message.h"
 #include "mgen-data.h"
-#include "misc.h"
 #include "mon-abil.h"
 #include "mon-act.h"
 #include "mon-behv.h"
@@ -46,12 +44,10 @@
 #include "mon-movetarget.h"
 #include "mon-place.h"
 #include "mon-speak.h"
-#include "options.h"
 #include "player-equip.h"
 #include "player-stats.h"
 #include "prompt.h"
 #include "religion.h"
-#include "rot.h"
 #include "shout.h"
 #include "spl-util.h"
 #include "spl-wpnench.h"
@@ -79,7 +75,8 @@ static mgen_data _summon_data(const actor &caster, monster_type mtyp,
                               int dur, god_type god, spell_type spell)
 {
     return mgen_data(mtyp, BEH_COPY, caster.pos(),
-                     caster.is_player() ? MHITYOU : caster.as_monster()->foe,
+                     caster.is_player() ? int{MHITYOU}
+                                        : caster.as_monster()->foe,
                      MG_AUTOFOE)
                      .set_summoned(&caster, dur, spell, god);
 }
@@ -369,7 +366,7 @@ spret cast_summon_hydra(actor *caster, int pow, god_type god, bool fail)
     return spret::success;
 }
 
-static monster_type _choose_dragon_type(int pow, god_type god, bool player)
+static monster_type _choose_dragon_type(int pow, god_type /*god*/, bool player)
 {
     monster_type mon = MONS_PROGRAM_BUG;
 
@@ -391,13 +388,6 @@ static monster_type _choose_dragon_type(int pow, god_type god, bool player)
 
 spret cast_dragon_call(int pow, bool fail)
 {
-    if (you.duration[DUR_DRAGON_CALL]
-        || you.duration[DUR_DRAGON_CALL_COOLDOWN])
-    {
-        mpr("You cannot issue another dragon's call so soon.");
-        return spret::abort;
-    }
-
     if (otr_stop_summoning_prompt("call dragons"))
         return spret::abort;
 
@@ -413,7 +403,6 @@ spret cast_dragon_call(int pow, bool fail)
 
 static void _place_dragon()
 {
-
     const int pow = calc_spell_power(SPELL_DRAGON_CALL, true);
     monster_type mon = _choose_dragon_type(pow, you.religion, true);
     int mp_cost = random_range(2, 3);
@@ -664,7 +653,7 @@ bool summon_berserker(int pow, actor *caster, monster_type override_mons)
     mgen_data mg(mon, caster ? BEH_COPY : BEH_HOSTILE,
                  caster ? caster->pos() : you.pos(),
                  (caster && caster->is_monster()) ? ((monster*)caster)->foe
-                                                  : MHITYOU,
+                                                  : int{MHITYOU},
                  MG_AUTOFOE);
     mg.set_summoned(caster, caster ? dur : 0, SPELL_NO_SPELL, GOD_TROG);
 
@@ -913,8 +902,8 @@ spret cast_conjure_ball_lightning(int pow, god_type god, bool fail)
 
     const int how_many = min(5, 2 + pow / 100 + random2(pow / 50 + 1));
 
-    mgen_data cbl(MONS_BALL_LIGHTNING, BEH_FRIENDLY, you.pos());
-    cbl.set_summoned(&you, 0, SPELL_CONJURE_BALL_LIGHTNING, god);
+    mgen_data cbl =_pal_data(MONS_BALL_LIGHTNING, 0, god,
+                             SPELL_CONJURE_BALL_LIGHTNING);
     cbl.hd = 5 + div_rand_round(pow, 20);
 
     for (int i = 0; i < how_many; ++i)
@@ -925,7 +914,8 @@ spret cast_conjure_ball_lightning(int pow, god_type god, bool fail)
             ball->add_ench(ENCH_SHORT_LIVED);
 
             // Avoid ball lightnings without targets always moving towards (0,0)
-            set_random_target(ball);
+            if (!(ball->get_foe() && ball->get_foe()->is_monster()))
+                set_random_target(ball);
         }
     }
 
@@ -937,57 +927,22 @@ spret cast_conjure_ball_lightning(int pow, god_type god, bool fail)
     return spret::success;
 }
 
-spret cast_summon_lightning_spire(int pow, const coord_def& where, god_type god, bool fail)
+spret cast_summon_lightning_spire(int pow, god_type god, bool fail)
 {
-    const int dur = 2;
-
-    if (grid_distance(where, you.pos()) > spell_range(SPELL_SUMMON_LIGHTNING_SPIRE,
-                                                      pow)
-        || !in_bounds(where))
-    {
-        mpr("That's too far away.");
-        return spret::abort;
-    }
-
-    if (!monster_habitable_grid(MONS_HUMAN, grd(where)))
-    {
-        mpr("You can't construct there.");
-        return spret::abort;
-    }
-
-    monster* mons = monster_at(where);
-    if (mons)
-    {
-        if (you.can_see(*mons))
-        {
-            mpr("That space is already occupied.");
-            return spret::abort;
-        }
-
-        fail_check();
-
-        // invisible monster
-        mpr("Something you can't see is blocking your construction!");
-        return spret::success;
-    }
-
     fail_check();
 
-    mgen_data spire(MONS_LIGHTNING_SPIRE, BEH_FRIENDLY, where, MHITYOU,
-                    MG_FORCE_BEH | MG_FORCE_PLACE | MG_AUTOFOE);
-    spire.set_summoned(&you, dur, SPELL_SUMMON_LIGHTNING_SPIRE,  god);
+    mgen_data spire = _pal_data(MONS_LIGHTNING_SPIRE, 2, god,
+                                SPELL_SUMMON_LIGHTNING_SPIRE);
     spire.hd = max(1, div_rand_round(pow, 10));
 
-    if (create_monster(spire))
-    {
-        if (!silenced(where))
-            mpr("An electric hum fills the air.");
-    }
+    monster* mons = create_monster(spire);
+
+    if (mons && !silenced(mons->pos()))
+        mpr("An electric hum fills the air.");
     else
         canned_msg(MSG_NOTHING_HAPPENS);
 
     return spret::success;
-
 }
 
 spret cast_summon_guardian_golem(int pow, god_type god, bool fail)
@@ -1017,21 +972,18 @@ spret cast_summon_guardian_golem(int pow, god_type god, bool fail)
 /**
  * Choose a type of imp to summon with Call Imp.
  *
- * @param pow   The power with which the spell is being cast.
  * @return      An appropriate imp type.
  */
-static monster_type _get_imp_type(int pow)
+static monster_type _get_imp_type()
 {
-    // Proportion of white imps is independent of spellpower.
     if (x_chance_in_y(5, 18))
         return MONS_WHITE_IMP;
 
-    // 3/13 * 13/18 = 1/6 chance of one of these two at 0-46 spellpower,
-    // increasing up to about 4/9 at max spellpower.
-    if (random2(pow) >= 46 || x_chance_in_y(3, 13))
+    // 3/13 * 13/18 = 1/6 chance of one of these two.
+    if (x_chance_in_y(3, 13))
         return one_chance_in(3) ? MONS_IRON_IMP : MONS_SHADOW_IMP;
 
-    // 5/9 crimson at 0-46 spellpower, about half that at max power.
+    // 5/9 chance of getting, regrettably, a crimson imp.
     return MONS_CRIMSON_IMP;
 }
 
@@ -1055,7 +1007,7 @@ spret cast_call_imp(int pow, god_type god, bool fail)
 {
     fail_check();
 
-    const monster_type imp_type = _get_imp_type(pow);
+    const monster_type imp_type = _get_imp_type();
 
     const int dur = min(2 + (random2(pow) / 4), 6);
 
@@ -1076,7 +1028,7 @@ spret cast_call_imp(int pow, god_type god, bool fail)
 
 static bool _summon_demon_wrapper(int pow, god_type god, int spell,
                                   monster_type mon, int dur, bool friendly,
-                                  bool charmed, bool quiet)
+                                  bool charmed)
 {
     bool success = false;
 
@@ -1131,7 +1083,7 @@ static bool _summon_demon_wrapper(int pow, god_type god, int spell,
     return success;
 }
 
-static bool _summon_common_demon(int pow, god_type god, int spell, bool quiet)
+static bool _summon_common_demon(int pow, god_type god, int spell)
 {
     const int chance = 70 - (pow / 3);
     monster_type type = MONS_PROGRAM_BUG;
@@ -1143,10 +1095,10 @@ static bool _summon_common_demon(int pow, god_type god, int spell, bool quiet)
 
     return _summon_demon_wrapper(pow, god, spell, type,
                                  min(2 + (random2(pow) / 4), 6),
-                                 random2(pow) > 3, false, quiet);
+                                 random2(pow) > 3, false);
 }
 
-static bool _summon_greater_demon(int pow, god_type god, int spell, bool quiet)
+static bool _summon_greater_demon(int pow, god_type god, int spell)
 {
     monster_type mon = summon_any_demon(RANDOM_DEMON_GREATER);
 
@@ -1154,7 +1106,7 @@ static bool _summon_greater_demon(int pow, god_type god, int spell, bool quiet)
     const bool friendly = (charmed && mons_demon_tier(mon) == 2);
 
     return _summon_demon_wrapper(pow, god, spell, mon,
-                                 4, friendly, charmed, quiet);
+                                 4, friendly, charmed);
 }
 
 bool summon_demon_type(monster_type mon, int pow, god_type god,
@@ -1162,7 +1114,7 @@ bool summon_demon_type(monster_type mon, int pow, god_type god,
 {
     return _summon_demon_wrapper(pow, god, spell, mon,
                                  min(2 + (random2(pow) / 4), 6),
-                                 friendly, false, false);
+                                 friendly, false);
 }
 
 spret cast_summon_demon(int pow, god_type god, bool fail)
@@ -1174,7 +1126,7 @@ spret cast_summon_demon(int pow, god_type god, bool fail)
     fail_check();
     mpr("You open a gate to Pandemonium!");
 
-    if (!_summon_common_demon(pow, god, SPELL_SUMMON_DEMON, false))
+    if (!_summon_common_demon(pow, god, SPELL_SUMMON_DEMON))
         canned_msg(MSG_NOTHING_HAPPENS);
 
     return spret::success;
@@ -1188,7 +1140,7 @@ spret cast_summon_greater_demon(int pow, god_type god, bool fail)
     fail_check();
     mpr("You open a gate to Pandemonium!");
 
-    if (!_summon_greater_demon(pow, god, SPELL_SUMMON_GREATER_DEMON, false))
+    if (!_summon_greater_demon(pow, god, SPELL_SUMMON_GREATER_DEMON))
         canned_msg(MSG_NOTHING_HAPPENS);
 
     return spret::success;
@@ -1320,38 +1272,51 @@ coord_def find_gateway_location(actor* caster)
     return points[random2(points.size())];
 }
 
+void create_malign_gateway(coord_def point, beh_type beh, string cause,
+                           int pow, god_type god, bool is_player)
+{
+    const int malign_gateway_duration = BASELINE_DELAY * (random2(2) + 1);
+    env.markers.add(new map_malign_gateway_marker(point,
+                            malign_gateway_duration,
+                            is_player,
+                            is_player ? "" : cause,
+                            beh,
+                            god,
+                            pow));
+    env.markers.clear_need_activate();
+    env.grid(point) = DNGN_MALIGN_GATEWAY;
+    set_terrain_changed(point);
+
+    noisy(spell_effect_noise(SPELL_MALIGN_GATEWAY), point);
+    mprf(MSGCH_WARN, "The dungeon shakes, a horrible noise fills the air, "
+                     "and a portal to some otherworldly place is opened!");
+}
+
 spret cast_malign_gateway(actor * caster, int pow, god_type god, bool fail)
 {
     coord_def point = find_gateway_location(caster);
-    bool success = (point != coord_def(0, 0));
+    bool success = point != coord_def(0, 0);
 
-    bool is_player = (caster->is_player());
+    bool is_player = caster->is_player();
 
     if (success)
     {
         fail_check();
 
-        const int malign_gateway_duration = BASELINE_DELAY * (random2(3) + 2);
-        env.markers.add(new map_malign_gateway_marker(point,
-                                malign_gateway_duration,
-                                is_player,
-                                is_player ? ""
-                                    : caster->as_monster()->full_name(DESC_A),
-                                is_player ? BEH_FRIENDLY
-                                    : attitude_creation_behavior(
-                                      caster->as_monster()->attitude),
-                                god,
-                                pow));
-        env.markers.clear_need_activate();
-        env.grid(point) = DNGN_MALIGN_GATEWAY;
-        set_terrain_changed(point);
-
-        noisy(spell_effect_noise(SPELL_MALIGN_GATEWAY), point);
-        mprf(MSGCH_WARN, "The dungeon shakes, a horrible noise fills the air, "
-                         "and a portal to some otherworldly place is opened!");
+        create_malign_gateway(
+            point,
+            is_player ? BEH_FRIENDLY
+                      : attitude_creation_behavior(
+                          caster->as_monster()->attitude),
+            is_player ? ""
+                      : caster->as_monster()->full_name(DESC_A),
+            pow,
+            god,
+            is_player);
 
         return spret::success;
     }
+
     // We don't care if monsters fail to cast it.
     if (is_player)
         mpr("A gateway cannot be opened in this cramped space!");
@@ -1733,9 +1698,6 @@ static bool _raise_remains(const coord_def &pos, int corps, beh_type beha,
         *motions_r |= DEAD_ARE_HOPPING;
     }
     else if (mons_genus(zombie_type)    == MONS_WORKER_ANT
-#if TAG_MAJOR_VERSION == 34
-             || mons_genus(zombie_type) == MONS_BEETLE
-#endif
              || mons_base_char(zombie_type) == 's') // many genera
     {
         *motions_r |= DEAD_ARE_CRAWLING;
@@ -2361,22 +2323,20 @@ static spell_type servitor_spells[] =
     SPELL_BOLT_OF_FIRE,
     SPELL_BOLT_OF_COLD,
     SPELL_POISON_ARROW,
+    SPELL_CONJURE_BALL_LIGHTNING,
     SPELL_LIGHTNING_BOLT,
     SPELL_BOLT_OF_MAGMA,
     SPELL_BOLT_OF_DRAINING,
     SPELL_VENOM_BOLT,
+    SPELL_FIREBALL,
     SPELL_THROW_ICICLE,
     SPELL_STONE_ARROW,
-    SPELL_ISKENDERUNS_MYSTIC_BLAST,
-    // secondary spells
-    SPELL_CONJURE_BALL_LIGHTNING,
-    SPELL_FIREBALL,
-    SPELL_AIRSTRIKE,
     SPELL_LRD,
+    SPELL_AIRSTRIKE,
+    SPELL_FORCE_LANCE,
+    // secondary spells
     SPELL_FREEZING_CLOUD,
     SPELL_POISONOUS_CLOUD,
-    SPELL_FORCE_LANCE,
-    SPELL_DAZZLING_SPRAY,
     SPELL_MEPHITIC_CLOUD,
     // fallback spells
     SPELL_STICKY_FLAME,
@@ -2388,6 +2348,20 @@ static spell_type servitor_spells[] =
     SPELL_SANDBLAST,
     SPELL_MAGIC_DART,
 };
+
+/**
+ * Return the spell a player spellforged servitor would use, for the spell
+ * description.
+ *
+ * @return spell_type  The spell a player servitor would use if cast now
+ */
+spell_type player_servitor_spell()
+{
+    for (const spell_type spell : servitor_spells)
+        if (you.has_spell(spell) && raw_spell_fail(spell) < 50)
+            return spell;
+    return SPELL_NO_SPELL;
+}
 
 /**
  * Initialize the given spellforged servitor's HD and spellset, based on the
@@ -2415,11 +2389,15 @@ static void _init_servitor_monster(monster &mon, const actor& caster)
         {
             mon.spells.emplace_back(spell, 0, MON_SPELL_WIZARD);
             spell_levels += spell_difficulty(spell);
+
+            // Player servitors take a single spell
+            if (!caster_mon)
+                break;
         }
     }
 
     // Fix up frequencies now that we know the total number of spell levels.
-    const int base_freq = caster_mon ? 67 : 200;
+    const int base_freq = caster_mon ? 67 : 150;
     for (auto& slot : mon.spells)
     {
         slot.freq = max(1, div_rand_round(spell_difficulty(slot.spell)
@@ -2458,7 +2436,7 @@ void init_servitor(monster* servitor, actor* caster)
     servitor->props["ideal_range"].get_int() = shortest_range;
 }
 
-spret cast_spellforged_servitor(int pow, god_type god, bool fail)
+spret cast_spellforged_servitor(int /*pow*/, god_type god, bool fail)
 {
     fail_check();
 
@@ -2671,7 +2649,6 @@ bool battlesphere_can_mirror(spell_type spell)
            || spell == SPELL_STICKY_FLAME
            || spell == SPELL_SANDBLAST
            || spell == SPELL_AIRSTRIKE
-           || spell == SPELL_DAZZLING_SPRAY
            || spell == SPELL_SEARING_RAY;
 }
 
@@ -3319,9 +3296,6 @@ static const map<spell_type, summon_cap> summonsdata =
     { SPELL_FIRE_ELEMENTALS,            { 3, 2 } },
     { SPELL_EARTH_ELEMENTALS,           { 3, 2 } },
     { SPELL_AIR_ELEMENTALS,             { 3, 2 } },
-#if TAG_MAJOR_VERSION == 34
-    { SPELL_IRON_ELEMENTALS,            { 3, 2 } },
-#endif
     { SPELL_SUMMON_SPECTRAL_ORCS,       { 3, 2 } },
     { SPELL_FIRE_SUMMON,                { 4, 2 } },
     { SPELL_SUMMON_MINOR_DEMON,         { 3, 3 } },
@@ -3480,7 +3454,7 @@ static bool _create_briar_patch(coord_def& target)
             MHITNOT, MG_FORCE_PLACE, GOD_FEDHAS);
     mgen.hd = mons_class_hit_dice(MONS_BRIAR_PATCH) +
         you.skill_rdiv(SK_INVOCATIONS);
-    mgen.set_summoned(&you, 3 + you.skill_rdiv(SK_INVOCATIONS, 1, 6),
+    mgen.set_summoned(&you, min(2 + you.skill_rdiv(SK_INVOCATIONS, 1, 5), 6),
             SPELL_NO_SPELL);
 
     if (create_monster(mgen))
@@ -3528,8 +3502,7 @@ bool fedhas_wall_of_briars()
 static void _overgrow_wall(const coord_def &pos)
 {
     const dungeon_feature_type feat = grd(pos);
-    const string what = feature_description(feat, NUM_TRAPS, "", DESC_THE,
-            false);
+    const string what = feature_description(feat, NUM_TRAPS, "", DESC_THE);
 
     if (monster_at(pos))
     {
@@ -3546,7 +3519,7 @@ static void _overgrow_wall(const coord_def &pos)
                                                     1, MONS_OKLOB_PLANT);
     mgen_data mgen(mon, BEH_FRIENDLY, pos, MHITYOU, MG_FORCE_PLACE);
     mgen.hd = mons_class_hit_dice(mon) + you.skill_rdiv(SK_INVOCATIONS);
-    mgen.set_summoned(&you, 3 + you.skill_rdiv(SK_INVOCATIONS, 1, 5),
+    mgen.set_summoned(&you, min(3 + you.skill_rdiv(SK_INVOCATIONS, 1, 5), 6),
             SPELL_NO_SPELL);
     if (const monster* const plant = create_monster(mgen))
     {
@@ -3626,7 +3599,7 @@ spret fedhas_grow_ballistomycete(bool fail)
             MG_FORCE_BEH | MG_FORCE_PLACE | MG_AUTOFOE);
     mgen.hd = mons_class_hit_dice(MONS_BALLISTOMYCETE) +
         you.skill_rdiv(SK_INVOCATIONS);
-    mgen.set_summoned(&you, 3 + you.skill_rdiv(SK_INVOCATIONS, 1, 5),
+    mgen.set_summoned(&you, min(3 + you.skill_rdiv(SK_INVOCATIONS, 1, 5), 6),
             SPELL_NO_SPELL);
 
     if (create_monster(mgen))
@@ -3683,7 +3656,7 @@ spret fedhas_grow_oklob(bool fail)
             MG_FORCE_BEH | MG_FORCE_PLACE | MG_AUTOFOE);
     mgen.hd = mons_class_hit_dice(MONS_OKLOB_PLANT) +
         you.skill_rdiv(SK_INVOCATIONS);
-    mgen.set_summoned(&you, 3 + you.skill_rdiv(SK_INVOCATIONS, 1, 5),
+    mgen.set_summoned(&you, min(3 + you.skill_rdiv(SK_INVOCATIONS, 1, 5), 6),
             SPELL_NO_SPELL);
 
     if (create_monster(mgen))
@@ -3693,4 +3666,41 @@ spret fedhas_grow_oklob(bool fail)
 
     return spret::success;
 
+}
+
+spret cast_foxfire(int pow, god_type god, bool fail)
+{
+    fail_check();
+    int created = 0;
+
+    for (fair_adjacent_iterator ai(you.pos()); ai; ++ai)
+    {
+        mgen_data fox(MONS_FOXFIRE, BEH_FRIENDLY,
+                      *ai, MHITNOT, MG_FORCE_PLACE | MG_AUTOFOE);
+        fox.set_summoned(&you, 0, SPELL_FOXFIRE, god);
+        fox.hd = pow;
+        monster *foxfire;
+
+        if (!cell_is_solid(*ai) && !monster_at(*ai)
+            && (foxfire = create_monster(fox)))
+        {
+            ++created;
+            foxfire->add_ench(ENCH_SHORT_LIVED);
+            foxfire->steps_remaining = you.current_vision + 2;
+
+            // Avoid foxfire without targets always moving towards (0,0)
+            if (!(foxfire->get_foe() && foxfire->get_foe()->is_monster()))
+                set_random_target(foxfire);
+        }
+
+        if (created == 2)
+            break;
+    }
+
+    if (created)
+        mpr("You conjure some foxfire!");
+    else
+        canned_msg(MSG_NOTHING_HAPPENS);
+
+    return spret::success;
 }

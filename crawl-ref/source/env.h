@@ -3,10 +3,13 @@
 #include <set>
 #include <memory> // unique_ptr
 
+#include "cloud.h"
 #include "coord.h"
 #include "fprop.h"
 #include "map-cell.h"
+#include "mapmark.h"
 #include "monster.h"
+#include "shopping.h"
 #include "trap-def.h"
 
 typedef FixedArray<short, GXM, GYM> grid_heightmap;

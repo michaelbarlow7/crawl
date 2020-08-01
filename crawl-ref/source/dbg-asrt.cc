@@ -131,14 +131,14 @@ static void _dump_player(FILE *file)
         && !in_bounds(you.pos()) && you.hp > 0 && you.hp_max > 0
         && you.strength() > 0 && you.intel() > 0 && you.dex() > 0)
     {
-        // Arena mode can change behavior of the rest of the code and/or lead
+        // Arena mode can change behaviour of the rest of the code and/or lead
         // to asserts.
         crawl_state.type            = GAME_TYPE_NORMAL;
         crawl_state.arena_suspended = false;
         return;
     }
 
-    // Arena mode can change behavior of the rest of the code and/or lead
+    // Arena mode can change behaviour of the rest of the code and/or lead
     // to asserts.
     crawl_state.arena_suspended = false;
 
@@ -611,7 +611,7 @@ void do_crash_dump()
         _dump_ver_stuff(stderr);
 
         fprintf(stderr, "%s\n\n", crash_signal_info().c_str());
-        write_stack_trace(stderr, 0);
+        write_stack_trace(stderr);
         call_gdb(stderr);
 
         return;
@@ -679,7 +679,7 @@ void do_crash_dump()
     // might themselves cause crashes.
     if (!signal_info.empty())
         fprintf(file, "%s\n\n", signal_info.c_str());
-    write_stack_trace(file, 0);
+    write_stack_trace(file);
     fprintf(file, "\n");
 
     call_gdb(file);
@@ -783,6 +783,7 @@ void do_crash_dump()
 
 NORETURN static void _BreakStrToDebugger(const char *mesg, bool assert)
 {
+    UNUSED(assert);
 // FIXME: this needs a way to get the SDL_window in windowmanager-sdl.cc
 #if 0
 #if defined(USE_TILE_LOCAL) && defined(TARGET_OS_WINDOWS)

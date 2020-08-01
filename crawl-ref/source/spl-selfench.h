@@ -12,9 +12,6 @@ int harvest_corpses(const actor &harvester,
                     bool dry_run = false, bool defy_god = false);
 spret corpse_armour(int pow, bool fail);
 
-spret deflection(int pow, bool fail);
-
-spret cast_regen(int pow, bool fail);
 spret cast_revivification(int pow, bool fail);
 
 spret cast_swiftness(int power, bool fail);
@@ -28,3 +25,6 @@ spret cast_song_of_slaying(int pow, bool fail);
 spret cast_liquefaction(int pow, bool fail);
 spret cast_shroud_of_golubria(int pow, bool fail);
 spret cast_transform(int pow, transformation which_trans, bool fail);
+
+spret cast_noxious_bog(int pow, bool fail);
+void noxious_bog_cell(coord_def p);

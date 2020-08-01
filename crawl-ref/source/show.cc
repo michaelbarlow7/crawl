@@ -19,10 +19,9 @@
 #include "libutil.h"
 #include "map-knowledge.h"
 #include "mon-place.h"
-#include "options.h"
 #include "state.h"
 #include "terrain.h"
-#include "tiledef-main.h"
+#include "rltiles/tiledef-main.h"
 #ifdef USE_TILE
  #include "tileview.h"
 #endif
@@ -169,6 +168,15 @@ static void _update_feat_at(const coord_def &gp)
 
     if (env.level_state & LSTATE_SLIMY_WALL && slime_wall_neighbour(gp))
         env.map_knowledge(gp).flags |= MAP_CORRODING;
+
+    // We want to give non-solid terrain and the icy walls themselves MAP_ICY
+    // so we can properly recolor both.
+    if (env.level_state & LSTATE_ICY_WALL
+        && (is_icecovered(gp)
+            || !feat_is_wall(feat) && count_adjacent_icy_walls(gp)))
+    {
+        env.map_knowledge(gp).flags |= MAP_ICY;
+    }
 
     if (emphasise(gp))
         env.map_knowledge(gp).flags |= MAP_EMPHASIZE;
@@ -491,6 +499,7 @@ void show_update_at(const coord_def &gp, layers_type layers)
     else
         env.map_knowledge(gp).clear_monster();
     // The sequence is grid, items, clouds, monsters.
+    // XX it actually seems to be grid monsters clouds items??
     _update_feat_at(gp);
 
     // If there's items on the boundary (shop inventory),

@@ -16,17 +16,14 @@
 #include "artefact.h"
 #include "art-enum.h"
 #include "branch.h"
-#include "butcher.h"
 #include "cio.h"
 #include "colour.h"
-#include "command.h"
 #include "decks.h"
 #include "describe.h"
 #include "dgn-overview.h"
 #include "english.h"
 #include "env.h" // LSTATE_STILL_WINDS
 #include "errors.h" // sysfail
-#include "evoke.h"
 #include "food.h"
 #include "god-item.h"
 #include "god-passive.h" // passive_t::want_curses, no_haste
@@ -41,8 +38,6 @@
 #include "notes.h"
 #include "options.h"
 #include "orb-type.h"
-#include "output.h"
-#include "place.h"
 #include "player.h"
 #include "prompt.h"
 #include "religion.h"
@@ -50,7 +45,6 @@
 #include "showsymb.h"
 #include "skills.h"
 #include "spl-book.h"
-#include "spl-summoning.h"
 #include "state.h"
 #include "stringutil.h"
 #include "throw.h"
@@ -89,7 +83,7 @@ static const char* _interesting_origin(const item_def &item)
         return "god gift";
 
     if (item.orig_monnum == MONS_DONALD && get_equip_desc(item)
-        && item.is_type(OBJ_ARMOUR, ARM_SHIELD))
+        && item.is_type(OBJ_ARMOUR, ARM_KITE_SHIELD))
     {
         return "Donald";
     }
@@ -413,7 +407,7 @@ static const char *weapon_brands_terse[] =
 #if TAG_MAJOR_VERSION == 34
     "obsolete", "obsolete",
 #endif
-    "venom", "protect", "drain", "speed", "buggy-vorpal",
+    "venom", "protect", "drain", "speed", "vorpal",
 #if TAG_MAJOR_VERSION == 34
     "obsolete", "obsolete",
 #endif
@@ -425,7 +419,7 @@ static const char *weapon_brands_terse[] =
 #if TAG_MAJOR_VERSION == 34
     "evade", "confuse",
 #endif
-    "penet", "reap", "buggy-num", "acid",
+    "penet", "reap", "vorpal", "acid",
 #if TAG_MAJOR_VERSION > 34
     "confuse",
 #endif
@@ -438,11 +432,11 @@ static const char *weapon_brands_verbose[] =
 #if TAG_MAJOR_VERSION == 34
     "orc slaying", "dragon slaying",
 #endif
-    "venom", "protection", "draining", "speed", "buggy-vorpal",
+    "venom", "protection", "draining", "speed", "vorpality",
 #if TAG_MAJOR_VERSION == 34
     "flame", "frost",
 #endif
-    "", "pain", "", "distortion",
+    "vampirism", "pain", "antimagic", "distortion",
 #if TAG_MAJOR_VERSION == 34
     "reaching", "returning",
 #endif
@@ -450,7 +444,7 @@ static const char *weapon_brands_verbose[] =
 #if TAG_MAJOR_VERSION == 34
     "evasion", "confusion",
 #endif
-    "penetration", "reaping", "buggy-num", "acid",
+    "penetration", "reaping", "vorpal", "acid",
 #if TAG_MAJOR_VERSION > 34
     "confusion",
 #endif
@@ -475,7 +469,7 @@ static const char *weapon_brands_adj[] =
 #if TAG_MAJOR_VERSION == 34
     "evasive", "confusing",
 #endif
-    "penetrating", "reaping", "buggy-num", "acidic",
+    "penetrating", "reaping", "vorpal", "acidic",
 #if TAG_MAJOR_VERSION > 34
     "confusing",
 #endif
@@ -487,38 +481,7 @@ static const set<brand_type> brand_prefers_adj =
             { SPWPN_VAMPIRISM, SPWPN_ANTIMAGIC, SPWPN_VORPAL };
 
 /**
- * What's the name of a type of vorpal brand?
- *
- * @param item      The weapon with the vorpal brand.
- * @param bool      Whether to use a terse or verbose name.
- * @return          The name of the given item's brand.
- */
-static const char* _vorpal_brand_name(const item_def &item, bool terse)
-{
-    // Dummy "All Hand Weapons" item from objstat.
-    if (item.sub_type == NUM_WEAPONS)
-        return "vorpal";
-
-    if (is_range_weapon(item))
-        return "velocity";
-
-    // Would be nice to implement this as an array (like other brands), but
-    // mapping the DVORP flags to array entries seems very fragile.
-    switch (get_vorpal_type(item))
-    {
-        case DVORP_CRUSHING: return terse ? "crush" :"crushing";
-        case DVORP_SLICING:  return terse ? "slice" : "slicing";
-        case DVORP_PIERCING: return terse ? "pierce" : "piercing";
-        case DVORP_CHOPPING: return terse ? "chop" : "chopping";
-        case DVORP_SLASHING: return terse ? "slash" :"slashing";
-        default:             return terse ? "buggy vorpal"
-                                          : "buggy destruction";
-    }
-}
-
-
-/**
- * What's the name of a weapon brand brand?
+ * What's the name of a type of weapon brand?
  *
  * @param brand             The type of brand in question.
  * @param bool              Whether to use a terse or verbose name.
@@ -551,17 +514,12 @@ const char* brand_type_adj(brand_type brand)
  *
  * @param item              The weapon with the brand.
  * @param bool              Whether to use a terse or verbose name.
- * @param override_brand    A brand type to use, instead of the weapon's actual
- *                          brand.
  * @return                  The name of the given item's brand.
  */
 const char* weapon_brand_name(const item_def& item, bool terse,
                               brand_type override_brand)
 {
     const brand_type brand = override_brand ? override_brand : get_weapon_brand(item);
-
-    if (brand == SPWPN_VORPAL)
-        return _vorpal_brand_name(item, terse);
 
     return brand_type_name(brand, terse);
 }
@@ -600,13 +558,16 @@ const char* armour_ego_name(const item_def& item, bool terse)
         case SPARM_ARCHMAGI:          return "the Archmagi";
 #if TAG_MAJOR_VERSION == 34
         case SPARM_JUMPING:           return "jumping";
-        case SPARM_PRESERVATION:      return "preservation";
 #endif
+        case SPARM_PRESERVATION:      return "preservation";
         case SPARM_REFLECTION:        return "reflection";
         case SPARM_SPIRIT_SHIELD:     return "spirit shield";
         case SPARM_ARCHERY:           return "archery";
         case SPARM_REPULSION:         return "repulsion";
+#if TAG_MAJOR_VERSION == 34
         case SPARM_CLOUD_IMMUNE:      return "cloud immunity";
+#endif
+        case SPARM_HARM:              return "harm";
         default:                      return "bugginess";
         }
     }
@@ -634,13 +595,16 @@ const char* armour_ego_name(const item_def& item, bool terse)
         case SPARM_ARCHMAGI:          return "Archmagi";
 #if TAG_MAJOR_VERSION == 34
         case SPARM_JUMPING:           return "obsolete";
-        case SPARM_PRESERVATION:      return "obsolete";
 #endif
+        case SPARM_PRESERVATION:      return "rCorr";
         case SPARM_REFLECTION:        return "reflect";
         case SPARM_SPIRIT_SHIELD:     return "Spirit";
         case SPARM_ARCHERY:           return "archery";
         case SPARM_REPULSION:         return "repulsion";
-        case SPARM_CLOUD_IMMUNE:      return "cloud immunity";
+#if TAG_MAJOR_VERSION == 34
+        case SPARM_CLOUD_IMMUNE:      return "obsolete";
+#endif
+        case SPARM_HARM:              return "harm";
         default:                      return "buggy";
         }
     }
@@ -660,7 +624,6 @@ static const char* _wand_type_name(int wandtype)
     case WAND_RANDOM_EFFECTS:  return "random effects";
     case WAND_DISINTEGRATION:  return "disintegration";
     case WAND_CLOUDS:          return "clouds";
-    case WAND_SCATTERSHOT:     return "scattershot";
     default:                   return item_type_removed(OBJ_WANDS, wandtype)
                                     ? "removedness"
                                     : "bugginess";
@@ -696,47 +659,24 @@ const char* potion_type_name(int potiontype)
     case POT_HEAL_WOUNDS:       return "heal wounds";
     case POT_HASTE:             return "haste";
     case POT_MIGHT:             return "might";
-    case POT_AGILITY:           return "agility";
+    case POT_STABBING:          return "stabbing";
     case POT_BRILLIANCE:        return "brilliance";
-#if TAG_MAJOR_VERSION == 34
-    case POT_GAIN_STRENGTH:     return "gain strength";
-    case POT_GAIN_DEXTERITY:    return "gain dexterity";
-    case POT_GAIN_INTELLIGENCE: return "gain intelligence";
-    case POT_STRONG_POISON:     return "strong poison";
-    case POT_PORRIDGE:          return "porridge";
-    case POT_SLOWING:           return "slowing";
-#endif
     case POT_FLIGHT:            return "flight";
-#if TAG_MAJOR_VERSION == 34
-    case POT_POISON:            return "poison";
-#endif
     case POT_CANCELLATION:      return "cancellation";
     case POT_AMBROSIA:          return "ambrosia";
     case POT_INVISIBILITY:      return "invisibility";
     case POT_DEGENERATION:      return "degeneration";
-#if TAG_MAJOR_VERSION == 34
-    case POT_DECAY:             return "decay";
-#endif
     case POT_EXPERIENCE:        return "experience";
     case POT_MAGIC:             return "magic";
-#if TAG_MAJOR_VERSION == 34
-    case POT_RESTORE_ABILITIES: return "restore abilities";
-#endif
     case POT_BERSERK_RAGE:      return "berserk rage";
-#if TAG_MAJOR_VERSION == 34
-    case POT_CURE_MUTATION:     return "cure mutation";
-#endif
     case POT_MUTATION:          return "mutation";
-#if TAG_MAJOR_VERSION == 34
-    case POT_BLOOD:             return "blood";
-    case POT_BLOOD_COAGULATED:  return "coagulated blood";
-#endif
     case POT_RESISTANCE:        return "resistance";
     case POT_LIGNIFY:           return "lignification";
-#if TAG_MAJOR_VERSION == 34
-    case POT_BENEFICIAL_MUTATION: return "beneficial mutation";
-#endif
-    default:                    return "bugginess";
+
+    // FIXME: Remove this once known-items no longer uses this as a sentinel.
+    default:
+                                return "bugginess";
+    CASE_REMOVED_POTIONS(potiontype);
     }
 }
 
@@ -819,12 +759,12 @@ const char* jewellery_effect_name(int jeweltype, bool terse)
 #if TAG_MAJOR_VERSION == 34
         case RING_TELEPORT_CONTROL:      return "teleport control";
 #endif
-        case AMU_RAGE:              return "rage";
-        case AMU_HARM:              return "harm";
         case AMU_MANA_REGENERATION: return "magic regeneration";
-        case AMU_THE_GOURMAND:      return "gourmand";
         case AMU_ACROBAT:           return "the acrobat";
 #if TAG_MAJOR_VERSION == 34
+        case AMU_RAGE:              return "rage";
+        case AMU_THE_GOURMAND:      return "gourmand";
+        case AMU_HARM:              return "harm";
         case AMU_CONSERVATION:      return "conservation";
         case AMU_CONTROLLED_FLIGHT: return "controlled flight";
 #endif
@@ -863,23 +803,14 @@ const char* jewellery_effect_name(int jeweltype, bool terse)
         case RING_FLIGHT:                return "+Fly";
         case RING_LIFE_PROTECTION:       return "rN+";
         case RING_PROTECTION_FROM_MAGIC: return "MR+";
-        case AMU_RAGE:                   return "+Rage";
         case AMU_REGENERATION:           return "Regen";
-        case AMU_REFLECTION:             return "Reflect";
+#if TAG_MAJOR_VERSION == 34
+        case AMU_RAGE:                   return "+Rage";
+#endif
         case AMU_ACROBAT:                return "Acrobat";
         case AMU_NOTHING:                return "";
         default: return "buggy";
         }
-    }
-}
-
-// lua doesn't want "the" in gourmand, but we do, so...
-static const char* _jewellery_effect_prefix(int jeweltype)
-{
-    switch (static_cast<jewellery_type>(jeweltype))
-    {
-    case AMU_THE_GOURMAND: return "the ";
-    default:               return "";
     }
 }
 
@@ -915,9 +846,8 @@ static const char* _jewellery_class_name(int jeweltype)
  */
 static string jewellery_type_name(int jeweltype)
 {
-    return make_stringf("%s %s%s", _jewellery_class_name(jeweltype),
-                                   _jewellery_effect_prefix(jeweltype),
-                                    jewellery_effect_name(jeweltype));
+    return make_stringf("%s %s", _jewellery_class_name(jeweltype),
+                                 jewellery_effect_name(jeweltype));
 }
 
 
@@ -1000,7 +930,7 @@ const char* rune_type_name(short p)
     }
 }
 
-static string misc_type_name(int type, bool known)
+static string misc_type_name(int type)
 {
 #if TAG_MAJOR_VERSION == 34
     if (is_deck_type(type))
@@ -1009,14 +939,14 @@ static string misc_type_name(int type, bool known)
 
     switch (static_cast<misc_item_type>(type))
     {
-    case MISC_CRYSTAL_BALL_OF_ENERGY:    return "crystal ball of energy";
+#if TAG_MAJOR_VERSION == 34
+    case MISC_CRYSTAL_BALL_OF_ENERGY:    return "removed crystal ball";
+#endif
     case MISC_BOX_OF_BEASTS:             return "box of beasts";
 #if TAG_MAJOR_VERSION == 34
     case MISC_BUGGY_EBONY_CASKET:        return "removed ebony casket";
-#endif
-    case MISC_FAN_OF_GALES:              return "fan of gales";
-    case MISC_LAMP_OF_FIRE:              return "lamp of fire";
-#if TAG_MAJOR_VERSION == 34
+    case MISC_FAN_OF_GALES:              return "removed fan of gales";
+    case MISC_LAMP_OF_FIRE:              return "removed lamp of fire";
     case MISC_BUGGY_LANTERN_OF_SHADOWS:  return "removed lantern of shadows";
 #endif
     case MISC_HORN_OF_GERYON:            return "horn of Geryon";
@@ -1028,12 +958,15 @@ static string misc_type_name(int type, bool known)
 #endif
     case MISC_QUAD_DAMAGE:               return "quad damage";
     case MISC_PHIAL_OF_FLOODS:           return "phial of floods";
-    case MISC_SACK_OF_SPIDERS:           return "sack of spiders";
+#if TAG_MAJOR_VERSION == 34
+    case MISC_SACK_OF_SPIDERS:           return "removed sack of spiders";
+#endif
     case MISC_PHANTOM_MIRROR:            return "phantom mirror";
     case MISC_ZIGGURAT:                  return "figurine of a ziggurat";
 #if TAG_MAJOR_VERSION == 34
     case MISC_XOMS_CHESSBOARD:           return "removed chess piece";
 #endif
+    case MISC_TIN_OF_TREMORSTONES:       return "tin of tremorstones";
 
     default:
         return "buggy miscellaneous item";
@@ -1079,7 +1012,7 @@ static const char* _book_type_name(int booktype)
     case BOOK_FIRE:                   return "Fire";
     case BOOK_ICE:                    return "Ice";
     case BOOK_SPATIAL_TRANSLOCATIONS: return "Spatial Translocations";
-    case BOOK_ENCHANTMENTS:           return "Enchantments";
+    case BOOK_HEXES:                  return "Hexes";
     case BOOK_TEMPESTS:               return "the Tempests";
     case BOOK_DEATH:                  return "Death";
     case BOOK_MISFORTUNE:             return "Misfortune";
@@ -1145,7 +1078,9 @@ static const char* staff_type_name(int stafftype)
     switch ((stave_type)stafftype)
     {
     case STAFF_WIZARDRY:    return "wizardry";
+#if TAG_MAJOR_VERSION == 34
     case STAFF_POWER:       return "power";
+#endif
     case STAFF_FIRE:        return "fire";
     case STAFF_COLD:        return "cold";
     case STAFF_POISON:      return "poison";
@@ -1242,7 +1177,7 @@ string sub_type_string(const item_def &item, bool known)
 #if TAG_MAJOR_VERSION == 34
     case OBJ_RODS:   return "removed rod";
 #endif
-    case OBJ_MISCELLANY: return misc_type_name(sub_type, known);
+    case OBJ_MISCELLANY: return misc_type_name(sub_type);
     // these repeat as base_type_string
     case OBJ_ORBS: return "orb of Zot";
     case OBJ_CORPSES: return "corpse";
@@ -1280,26 +1215,15 @@ string ghost_brand_name(brand_type brand, monster_type mtype)
         return make_stringf("%s touch", brand_type_adj(brand));
 }
 
-string ego_type_string(const item_def &item, bool terse, brand_type override_brand)
+string ego_type_string(const item_def &item, bool terse)
 {
     switch (item.base_type)
     {
     case OBJ_ARMOUR:
         return armour_ego_name(item, terse);
     case OBJ_WEAPONS:
-        if (!terse)
-        {
-            brand_type checkbrand = override_brand ? override_brand
-                                            : get_weapon_brand(item);
-            // this is specialcased out of weapon_brand_name
-            // ("vampiric hand axe", etc)
-            if (checkbrand == SPWPN_VAMPIRISM)
-                return "vampirism";
-            else if (checkbrand == SPWPN_ANTIMAGIC)
-                return "antimagic";
-        }
         if (get_weapon_brand(item) != SPWPN_NORMAL)
-            return weapon_brand_name(item, terse, override_brand);
+            return weapon_brand_name(item, terse);
         else
             return "";
     case OBJ_MISSILES:
@@ -1441,46 +1365,37 @@ static string _cosmetic_text(const item_def &weap, iflags_t ignore_flags)
 }
 
 /**
- * The ego-describing prefix to a weapon's name, including trailing space if
- * appropriate. (Empty if the weapon's brand shouldn't be prefixed.)
+ * Surrounds a given string with the weapon's brand-describing prefix/suffix
+ * as appropriate.
  */
-static string _ego_prefix(const item_def &weap, description_level_type desc,
-                          bool terse, bool ident, iflags_t ignore_flags)
+string weapon_brand_desc(const char *body, const item_def &weap,
+                         bool terse, brand_type override_brand)
 {
-    if (!_know_ego(weap, desc, ident, ignore_flags) || terse)
-        return "";
 
-    switch (get_weapon_brand(weap))
-    {
-        case SPWPN_VAMPIRISM:
-            return "vampiric ";
-        case SPWPN_ANTIMAGIC:
-            return "antimagic ";
-        case SPWPN_NORMAL:
-            if (!_know_pluses(weap, desc, ident, ignore_flags)
-                && get_equip_desc(weap))
-            {
-                return "enchanted ";
-            }
-            // fallthrough to default
-        default:
-            return "";
-    }
-}
+    const string brand_name = weapon_brand_name(weap, terse, override_brand);
 
-/**
- * The ego-describing suffix to a weapon's name, May be empty. Does not include
- * trailing space.
- */
-static string _ego_suffix(const item_def &weap, bool terse)
-{
-    const string brand_name = weapon_brand_name(weap, terse);
     if (brand_name.empty())
-        return "";
+        return body;
 
     if (terse)
-        return make_stringf(" (%s)", brand_name.c_str());
-    return " of " + brand_name;
+        return make_stringf("%s (%s)", body, brand_name.c_str());
+
+    switch (override_brand ? override_brand : get_weapon_brand(weap))
+    {
+        case SPWPN_VAMPIRISM:
+            return make_stringf("vampiric %s", body);
+        case SPWPN_ANTIMAGIC:
+            return make_stringf("antimagic %s", body);
+        case SPWPN_VORPAL:
+            return make_stringf("vorpal %s", body);
+        case SPWPN_NORMAL:
+            if (get_equip_desc(weap))
+                return make_stringf("enchanted %s", body);
+            else
+                return body;
+        default:
+            return make_stringf("%s of %s", body, brand_name.c_str());
+    }
 }
 
 /**
@@ -1565,14 +1480,14 @@ static string _name_weapon(const item_def &weap, description_level_type desc,
 
     const string cosmetic_text
         = show_cosmetic ? _cosmetic_text(weap, ignore_flags) : "";
-    const string ego_prefix
-        = _ego_prefix(weap, desc, terse, ident, ignore_flags);
-    const string ego_suffix = know_ego ? _ego_suffix(weap, terse) : "";
+    const string base_name = item_base_name(weap);
+    const string name_with_ego
+        = know_ego ? weapon_brand_desc(base_name.c_str(), weap, terse)
+        : base_name;
     const string curse_suffix
         = know_curse && weap.cursed() && terse ? " (curse)" :  "";
-    return curse_prefix + plus_text + cosmetic_text + ego_prefix
-           + item_base_name(weap)
-           + ego_suffix + curse_suffix;
+    return curse_prefix + plus_text + cosmetic_text
+           + name_with_ego + curse_suffix;
 }
 
 // Note that "terse" is only currently used for the "in hand" listing on
@@ -1904,11 +1819,12 @@ string item_def::name_aux(description_level_type desc, bool terse, bool ident,
         if (!dbname && item_typ == MISC_ZIGGURAT && you.zigs_completed > 0)
             buff << "+" << you.zigs_completed << " ";
 
-        buff << misc_type_name(item_typ, know_type);
+        buff << misc_type_name(item_typ);
 
         if (is_xp_evoker(*this) && !dbname && !evoker_charges(sub_type))
             buff << " (inert)";
-        else if (!dbname && evoker_max_charges(sub_type) > 1)
+        else if (is_xp_evoker(*this) &&
+                 !dbname && evoker_max_charges(sub_type) > 1)
         {
             buff << " (" << evoker_charges(sub_type) << "/"
                  << evoker_max_charges(sub_type) << ")";
@@ -2206,412 +2122,6 @@ bool get_ident_type(object_class_type basetype, int subtype)
     return you.type_ids[basetype][subtype];
 }
 
-class KnownMenu : public InvMenu
-{
-public:
-    // This loads items in the order they are put into the list (sequentially)
-    menu_letter load_items_seq(const vector<const item_def*> &mitems,
-                               MenuEntry *(*procfn)(MenuEntry *me) = nullptr,
-                               menu_letter ckey = 'a')
-    {
-        for (const item_def *item : mitems)
-        {
-            InvEntry *ie = new InvEntry(*item);
-            if (tag == "pickup")
-                ie->tag = "pickup";
-            // If there's no hotkey, provide one.
-            if (ie->hotkeys[0] == ' ')
-                ie->hotkeys[0] = ckey++;
-            do_preselect(ie);
-
-            add_entry(procfn? (*procfn)(ie) : ie);
-        }
-
-        return ckey;
-    }
-
-protected:
-    string help_key() const override
-    {
-        return "known-menu";
-    }
-
-    bool process_key(int key) override
-    {
-        bool resetting = (lastch == CONTROL('D'));
-        if (resetting)
-        {
-            //return the menu title to its previous text.
-            set_title(temp_title);
-            num = -2;
-
-            // Disarm ^D here, because process_key doesn't always set lastch.
-            lastch = ' ';
-        }
-        else
-            num = -1;
-
-        switch (key)
-        {
-        case ',':
-            return true;
-        case '*':
-            if (!resetting)
-                break;
-        case '^':
-            key = ',';
-            break;
-
-        case '-':
-        case '\\':
-        case CK_ENTER:
-        CASE_ESCAPE
-            lastch = key;
-            return false;
-
-        case CONTROL('D'):
-            // If we cannot select anything (e.g. on the unknown items
-            // page), ignore Ctrl-D. Likewise if the last key was
-            // Ctrl-D (we have already disarmed Ctrl-D for the next
-            // keypress by resetting lastch).
-            if (flags & (MF_SINGLESELECT | MF_MULTISELECT) && !resetting)
-            {
-                lastch = CONTROL('D');
-                temp_title = title->text;
-                set_title("Select to reset item to default: ");
-            }
-
-            return true;
-        }
-        return Menu::process_key(key);
-    }
-};
-
-class KnownEntry : public InvEntry
-{
-public:
-    KnownEntry(InvEntry* inv) : InvEntry(*inv->item)
-    {
-        hotkeys[0] = inv->hotkeys[0];
-        selected_qty = inv->selected_qty;
-    }
-
-    virtual string get_text(bool need_cursor) const override
-    {
-        need_cursor = need_cursor && show_cursor;
-        int flags = item->base_type == OBJ_WANDS ? 0 : ISFLAG_KNOW_PLUSES;
-
-        string name;
-
-        if (item->base_type == OBJ_FOOD)
-        {
-            switch (item->sub_type)
-            {
-            case FOOD_CHUNK:
-                name = "chunks";
-                break;
-            case FOOD_RATION:
-                name = "rations";
-                break;
-#if TAG_MAJOR_VERSION == 34
-            default:
-                name = "removed food";
-                break;
-#endif
-            }
-        }
-        else if (item->base_type == OBJ_MISCELLANY)
-            name = pluralise(item->name(DESC_DBNAME));
-        else if (item->is_type(OBJ_BOOKS, BOOK_MANUAL))
-            name = "manuals";
-        else if (item->base_type == OBJ_GOLD)
-        {
-            name = lowercase_string(item_class_name(item->base_type));
-            name = pluralise(name);
-        }
-        else if (item->base_type == OBJ_RUNES)
-            name = "runes";
-        else if (item->sub_type == get_max_subtype(item->base_type))
-            name = "unknown " + lowercase_string(item_class_name(item->base_type));
-        else
-        {
-            name = item->name(DESC_PLAIN,false,true,false,false,flags);
-            name = pluralise(name);
-        }
-
-        char symbol;
-        if (selected_qty == 0)
-            symbol = item_needs_autopickup(*item) ? '+' : '-';
-        else if (selected_qty == 1)
-            symbol = '+';
-        else
-            symbol = '-';
-
-        return make_stringf(" %c%c%c%c%s", hotkeys[0], need_cursor ? '[' : ' ',
-                                           symbol, need_cursor ? ']' : ' ',
-                                           name.c_str());
-    }
-
-    virtual int highlight_colour() const override
-    {
-        if (selected_qty >= 1)
-            return WHITE;
-        else if (is_useless_item(*item))
-            return DARKGREY;
-        else
-            return MENU_ITEM_STOCK_COLOUR;
-
-    }
-
-    virtual bool selected() const override
-    {
-        return selected_qty != 0 && quantity;
-    }
-
-    virtual void select(int qty) override
-    {
-        // Toggle  grey -> - -> + -> grey  if we autopickup the item by
-        // default, or  grey -> + -> - -> grey  if we do not.
-        if (qty == -2)
-            selected_qty = 0;
-        else if (selected_qty == 0)
-            selected_qty = item_needs_autopickup(*item, true) ? 2 : 1;
-        else if (selected_qty == (item_needs_autopickup(*item, true) ? 2 : 1))
-            selected_qty = 3 - selected_qty; // 2 <-> 1
-        else
-            selected_qty = 0;
-
-        if (selected_qty == 2)
-            set_item_autopickup(*item, AP_FORCE_OFF);
-        else if (selected_qty == 1)
-            set_item_autopickup(*item, AP_FORCE_ON);
-        else
-            set_item_autopickup(*item, AP_FORCE_NONE);
-    }
-};
-
-class UnknownEntry : public InvEntry
-{
-public:
-    UnknownEntry(InvEntry* inv) : InvEntry(*inv->item)
-    {
-    }
-
-    virtual string get_text(const bool = false) const override
-    {
-        int flags = item->base_type == OBJ_WANDS ? 0 : ISFLAG_KNOW_PLUSES;
-
-        return string(" ") + item->name(DESC_PLAIN, false, true, false,
-                                        false, flags);
-    }
-};
-
-static MenuEntry *known_item_mangle(MenuEntry *me)
-{
-    unique_ptr<InvEntry> ie(dynamic_cast<InvEntry*>(me));
-    KnownEntry *newme = new KnownEntry(ie.get());
-    return newme;
-}
-
-static MenuEntry *unknown_item_mangle(MenuEntry *me)
-{
-    unique_ptr<InvEntry> ie(dynamic_cast<InvEntry*>(me));
-    UnknownEntry *newme = new UnknownEntry(ie.get());
-    return newme;
-}
-
-static bool _identified_item_names(const item_def *it1,
-                                   const item_def *it2)
-{
-    int flags = it1->base_type == OBJ_WANDS ? 0 : ISFLAG_KNOW_PLUSES;
-    return it1->name(DESC_PLAIN, false, true, false, false, flags)
-         < it2->name(DESC_PLAIN, false, true, false, false, flags);
-}
-
-// Allocate (with new) a new item_def with the given base and sub types,
-// add a pointer to it to the items vector, and if it has a force_autopickup
-// setting add a corresponding SelItem to selected.
-static void _add_fake_item(object_class_type base, int sub,
-                           vector<SelItem> &selected,
-                           vector<const item_def*> &items,
-                           bool force_known_type = false)
-{
-    item_def* ptmp = new item_def;
-
-    ptmp->base_type = base;
-    ptmp->sub_type  = sub;
-    ptmp->quantity  = 1;
-    ptmp->rnd       = 1;
-
-    if (base == OBJ_WANDS && sub != NUM_WANDS)
-        ptmp->charges = wand_charge_value(ptmp->sub_type);
-    else if (base == OBJ_GOLD)
-        ptmp->quantity = 18;
-    else if (ptmp->is_type(OBJ_FOOD, FOOD_CHUNK))
-    {
-        ptmp->freshness = 100;
-        ptmp->mon_type = MONS_RAT;
-    }
-
-    if (force_known_type)
-        ptmp->flags |= ISFLAG_KNOW_TYPE;
-
-    items.push_back(ptmp);
-
-    if (you.force_autopickup[base][sub] == AP_FORCE_ON)
-        selected.emplace_back(0, 1, ptmp);
-    else if (you.force_autopickup[base][sub] == AP_FORCE_OFF)
-        selected.emplace_back(0, 2, ptmp);
-}
-
-void check_item_knowledge(bool unknown_items)
-{
-    vector<const item_def*> items;
-    vector<const item_def*> items_missile; //List of missiles should go after normal items
-    vector<const item_def*> items_food;    //List of foods should come next
-    vector<const item_def*> items_misc;
-    vector<const item_def*> items_other;   //List of other items should go after everything
-    vector<SelItem> selected_items;
-
-    bool all_items_known = true;
-    for (int ii = 0; ii < NUM_OBJECT_CLASSES; ii++)
-    {
-        object_class_type i = (object_class_type)ii;
-        if (!item_type_has_ids(i))
-            continue;
-        for (int j = 0; j < get_max_subtype(i); j++)
-        {
-            if (i == OBJ_JEWELLERY && j >= NUM_RINGS && j < AMU_FIRST_AMULET)
-                continue;
-
-            if (i == OBJ_BOOKS && (j > MAX_FIXED_BOOK || !unknown_items))
-                continue;
-
-            if (item_type_removed(i, j))
-                continue;
-
-            if (you.type_ids[i][j] != unknown_items) // logical xor
-                _add_fake_item(i, j, selected_items, items, !unknown_items);
-            else
-                all_items_known = false;
-        }
-    }
-
-    if (unknown_items)
-        all_items_known = false;
-    else
-    {
-        // items yet to be known
-        for (int ii = 0; ii < NUM_OBJECT_CLASSES; ii++)
-        {
-            object_class_type i = (object_class_type)ii;
-            if (i == OBJ_BOOKS || !item_type_has_ids(i))
-                continue;
-            _add_fake_item(i, get_max_subtype(i), selected_items, items);
-        }
-        // Missiles
-        for (int i = 0; i < NUM_MISSILES; i++)
-        {
-#if TAG_MAJOR_VERSION == 34
-            if (i == MI_NEEDLE)
-                continue;
-#endif
-            _add_fake_item(OBJ_MISSILES, i, selected_items, items_missile);
-        }
-        // Foods
-        for (int i = 0; i < NUM_FOODS; i++)
-        {
-#if TAG_MAJOR_VERSION == 34
-            if (!is_real_food(static_cast<food_type>(i)))
-                continue;
-#endif
-            _add_fake_item(OBJ_FOOD, i, selected_items, items_food);
-        }
-
-        for (int i = 0; i < NUM_MISCELLANY; i++)
-        {
-            if (i == MISC_HORN_OF_GERYON
-#if TAG_MAJOR_VERSION == 34
-                || is_deck_type(i)
-                || i == MISC_BUGGY_EBONY_CASKET
-                || i == MISC_BUGGY_LANTERN_OF_SHADOWS
-                || i == MISC_BOTTLED_EFREET
-                || i == MISC_RUNE_OF_ZOT
-                || i == MISC_STONE_OF_TREMORS
-                || i == MISC_XOMS_CHESSBOARD
-#endif
-                || (i == MISC_QUAD_DAMAGE && !crawl_state.game_is_sprint()))
-            {
-                continue;
-            }
-            _add_fake_item(OBJ_MISCELLANY, i, selected_items, items_misc);
-        }
-
-        // Misc.
-        static const pair<object_class_type, int> misc_list[] =
-        {
-            { OBJ_BOOKS, BOOK_MANUAL },
-            { OBJ_GOLD, 1 },
-            { OBJ_BOOKS, NUM_BOOKS },
-            { OBJ_RUNES, NUM_RUNE_TYPES },
-        };
-        for (auto e : misc_list)
-            _add_fake_item(e.first, e.second, selected_items, items_other);
-    }
-
-    sort(items.begin(), items.end(), _identified_item_names);
-    sort(items_missile.begin(), items_missile.end(), _identified_item_names);
-    sort(items_food.begin(), items_food.end(), _identified_item_names);
-    sort(items_misc.begin(), items_misc.end(), _identified_item_names);
-
-    KnownMenu menu;
-    string stitle;
-
-    if (unknown_items)
-        stitle = "Items not yet recognised: (toggle with -)";
-    else if (!all_items_known)
-        stitle = "Recognised items. (- for unrecognised, select to toggle autopickup)";
-    else
-        stitle = "You recognise all items. (Select to toggle autopickup)";
-
-    string prompt = "(_ for help)";
-    //TODO: when the menu is opened, the text is not justified properly.
-    stitle = stitle + string(max(0, 80 - strwidth(stitle) - strwidth(prompt)),
-                             ' ') + prompt;
-
-    menu.set_preselect(&selected_items);
-    menu.set_flags( MF_QUIET_SELECT | MF_ALLOW_FORMATTING | MF_USE_TWO_COLUMNS
-                    | ((unknown_items) ? MF_NOSELECT
-                                       : MF_MULTISELECT | MF_ALLOW_FILTER));
-    menu.set_type(menu_type::know);
-    menu_letter ml;
-    ml = menu.load_items(items, unknown_items ? unknown_item_mangle
-                                              : known_item_mangle, 'a', false);
-
-    ml = menu.load_items(items_missile, known_item_mangle, ml, false);
-    ml = menu.load_items(items_food, known_item_mangle, ml, false);
-    ml = menu.load_items(items_misc, known_item_mangle, ml, false);
-    if (!items_other.empty())
-    {
-        menu.add_entry(new MenuEntry("Other Items", MEL_SUBTITLE));
-        ml = menu.load_items_seq(items_other, known_item_mangle, ml);
-    }
-
-    menu.set_title(stitle);
-    menu.show(true);
-
-    auto last_char = menu.getkey();
-
-    deleteAll(items);
-    deleteAll(items_missile);
-    deleteAll(items_food);
-    deleteAll(items_misc);
-    deleteAll(items_other);
-
-    if (!all_items_known && (last_char == '\\' || last_char == '-'))
-        check_item_knowledge(!unknown_items);
-}
-
 static MenuEntry* _fixup_runeorb_entry(MenuEntry* me)
 {
     auto entry = static_cast<InvEntry*>(me);
@@ -2623,7 +2133,10 @@ static MenuEntry* _fixup_runeorb_entry(MenuEntry* me)
         colour_t colour;
         // Make Gloorx's rune more distinguishable from uncollected runes.
         if (you.runes[rune])
-            colour = (rune == RUNE_GLOORX_VLOQ) ? LIGHTGREY : rune_colour(rune);
+        {
+            colour = (rune == RUNE_GLOORX_VLOQ) ? colour_t{LIGHTGREY}
+                                                : rune_colour(rune);
+        }
         else
             colour = DARKGREY;
 
@@ -3155,20 +2668,11 @@ bool is_good_item(const item_def &item)
             return false;
         switch (item.sub_type)
         {
-#if TAG_MAJOR_VERSION == 34
-        case POT_CURE_MUTATION:
-        case POT_GAIN_STRENGTH:
-        case POT_GAIN_INTELLIGENCE:
-        case POT_GAIN_DEXTERITY:
-#endif
         case POT_EXPERIENCE:
             return true;
-#if TAG_MAJOR_VERSION == 34
-        case POT_BENEFICIAL_MUTATION:
-            return you.species != SP_GHOUL; // Mummies are already handled
-#endif
         default:
             return false;
+        CASE_REMOVED_POTIONS(item.sub_type)
         }
     default:
         return false;
@@ -3179,12 +2683,9 @@ bool is_good_item(const item_def &item)
  * Is an item strictly harmful?
  *
  * @param item The item being queried.
- * @param temp Should temporary conditions such as transformations and
- *             vampire hunger levels be taken into account?  Religion (but
- *             not its absence) is considered to be permanent here.
  * @return True if the item is known to have only harmful effects.
  */
-bool is_bad_item(const item_def &item, bool temp)
+bool is_bad_item(const item_def &item)
 {
     if (!item_type_known(item))
         return false;
@@ -3214,23 +2715,11 @@ bool is_bad_item(const item_def &item, bool temp)
 
         switch (item.sub_type)
         {
-#if TAG_MAJOR_VERSION == 34
-        case POT_SLOWING:
-            return !you.stasis();
-#endif
         case POT_DEGENERATION:
             return true;
-#if TAG_MAJOR_VERSION == 34
-        case POT_DECAY:
-            return you.res_rotting(temp) <= 0;
-        case POT_STRONG_POISON:
-        case POT_POISON:
-            // Poison is not that bad if you're poison resistant.
-            return player_res_poison(false) <= 0
-                   || !temp && you.species == SP_VAMPIRE;
-#endif
         default:
             return false;
+        CASE_REMOVED_POTIONS(item.sub_type);
         }
     case OBJ_JEWELLERY:
         // Potentially useful. TODO: check the properties.
@@ -3308,6 +2797,10 @@ bool is_dangerous_item(const item_def &item, bool temp)
         default:
             return false;
         }
+
+    case OBJ_MISCELLANY:
+        // Tremorstones will blow you right up.
+        return item.sub_type == MISC_TIN_OF_TREMORSTONES;
 
     default:
         return false;
@@ -3410,14 +2903,19 @@ bool is_useless_item(const item_def &item, bool temp)
         if (is_artefact(item))
             return false;
 
-        if (item.sub_type == ARM_SCARF
-            && item_type_known(item)
-            && (get_armour_ego_type(item) == SPARM_SPIRIT_SHIELD
-                && you.spirit_shield(false, false)
-                || get_armour_ego_type(item) == SPARM_CLOUD_IMMUNE
-                   && have_passive(passive_t::cloud_immunity)))
+        if (item.sub_type == ARM_SCARF && item_type_known(item))
         {
-            return true;
+            special_armour_type ego = get_armour_ego_type(item);
+            switch (ego)
+            {
+            case SPARM_SPIRIT_SHIELD:
+                return you.spirit_shield(false, false);
+            case SPARM_REPULSION:
+                return temp && have_passive(passive_t::upgraded_storm_shield)
+                       || you.get_mutation_level(MUT_DISTORTION_FIELD) == 3;
+            default:
+                return false;
+            }
         }
         return false;
 
@@ -3429,7 +2927,7 @@ bool is_useless_item(const item_def &item, bool temp)
             return false;
 
         // A bad item is always useless.
-        if (is_bad_item(item, temp))
+        if (is_bad_item(item))
             return true;
 
         switch (item.sub_type)
@@ -3489,7 +2987,7 @@ bool is_useless_item(const item_def &item, bool temp)
             return false;
 
         // A bad item is always useless.
-        if (is_bad_item(item, temp))
+        if (is_bad_item(item))
             return true;
 
         switch (item.sub_type)
@@ -3498,14 +2996,6 @@ bool is_useless_item(const item_def &item, bool temp)
             return !you.can_go_berserk(true, true, true, nullptr, temp);
         case POT_HASTE:
             return you.stasis();
-
-#if TAG_MAJOR_VERSION == 34
-        case POT_CURE_MUTATION:
-        case POT_BENEFICIAL_MUTATION:
-        case POT_GAIN_STRENGTH:
-        case POT_GAIN_INTELLIGENCE:
-        case POT_GAIN_DEXTERITY:
-#endif
         case POT_MUTATION:
             return !you.can_safely_mutate(temp);
 
@@ -3517,27 +3007,15 @@ bool is_useless_item(const item_def &item, bool temp)
         case POT_FLIGHT:
             return you.permanent_flight()
                    || you.racial_permanent_flight();
-
-#if TAG_MAJOR_VERSION == 34
-        case POT_PORRIDGE:
-            return you.species == SP_VAMPIRE
-                    || you.get_mutation_level(MUT_CARNIVOROUS) > 0;
-        case POT_BLOOD_COAGULATED:
-        case POT_BLOOD:
-            return you.species != SP_VAMPIRE;
-        case POT_DECAY:
-            return you.res_rotting(temp) > 0;
-        case POT_STRONG_POISON:
-        case POT_POISON:
-            // If you're poison resistant, poison is only useless.
-            return !is_bad_item(item, temp);
-        case POT_SLOWING:
-            return you.species == SP_FORMICID;
-#endif
         case POT_HEAL_WOUNDS:
             return !you.can_potion_heal();
         case POT_INVISIBILITY:
             return _invisibility_is_useless(temp);
+        case POT_BRILLIANCE:
+            return you_worship(GOD_TROG);
+        case POT_STABBING:
+            return will_have_passive(passive_t::no_stabbing);
+        CASE_REMOVED_POTIONS(item.sub_type)
         }
 
         return false;
@@ -3550,26 +3028,13 @@ bool is_useless_item(const item_def &item, bool temp)
         if (is_artefact(item))
             return false;
 
-        if (is_bad_item(item, temp))
+        if (is_bad_item(item))
             return true;
 
         switch (item.sub_type)
         {
-        case AMU_RAGE:
-            return you.undead_state(temp)
-                   && (you.species != SP_VAMPIRE
-                       || temp && !you.vampire_alive)
-                   || you.species == SP_FORMICID
-                   || you.get_mutation_level(MUT_NO_ARTIFICE);
-
         case RING_RESIST_CORROSION:
             return you.res_corr(false, false);
-
-        case AMU_THE_GOURMAND:
-            return player_likes_chunks(true)
-                   || you.get_mutation_level(MUT_GOURMAND) > 0
-                   || you.get_mutation_level(MUT_HERBIVOROUS) > 0
-                   || you.undead_state(temp);
 
         case AMU_FAITH:
             return (you.species == SP_DEMIGOD && !you.religion)
@@ -3605,7 +3070,7 @@ bool is_useless_item(const item_def &item, bool temp)
             return you_worship(GOD_TROG);
 
         case RING_TELEPORTATION:
-            return !is_bad_item(item, temp);
+            return !is_bad_item(item);
 
         case RING_FLIGHT:
             return you.permanent_flight()
@@ -3662,9 +3127,6 @@ bool is_useless_item(const item_def &item, bool temp)
                 return false;
         }
 
-        if (you_worship(GOD_FEDHAS) && item.is_type(OBJ_FOOD, FOOD_RATION))
-            return false;
-
         return true;
 
     case OBJ_CORPSES:
@@ -3697,7 +3159,6 @@ bool is_useless_item(const item_def &item, bool temp)
             return false;
 
         // Purely summoning misc items don't work w/ sac love
-        case MISC_SACK_OF_SPIDERS:
         case MISC_BOX_OF_BEASTS:
         case MISC_HORN_OF_GERYON:
         case MISC_PHANTOM_MIRROR:
@@ -3770,7 +3231,7 @@ string item_prefix(const item_def &item, bool temp)
         prefixes.push_back("good_item");
     if (is_dangerous_item(item, temp))
         prefixes.push_back("dangerous_item");
-    if (is_bad_item(item, temp))
+    if (is_bad_item(item))
         prefixes.push_back("bad_item");
     if (is_useless_item(item, temp))
         prefixes.push_back("useless_item");
@@ -3803,20 +3264,6 @@ string item_prefix(const item_def &item, bool temp)
 
         else if (is_noxious(item))
             prefixes.push_back("inedible");
-        break;
-
-    case OBJ_POTIONS:
-        if (is_good_god(you.religion) && item_type_known(item)
-            && is_blood_potion(item))
-        {
-            prefixes.push_back("evil_eating");
-            prefixes.push_back("forbidden");
-        }
-        if (is_preferred_food(item))
-        {
-            prefixes.push_back("preferred");
-            prefixes.push_back("food");
-        }
         break;
 
     case OBJ_STAVES:
@@ -3889,10 +3336,9 @@ void init_item_name_cache()
 
     for (int i = 0; i < NUM_OBJECT_CLASSES; i++)
     {
-        object_class_type base_type = static_cast<object_class_type>(i);
-        const int num_sub_types = get_max_subtype(base_type);
+        const object_class_type base_type = static_cast<object_class_type>(i);
 
-        for (int sub_type = 0; sub_type < num_sub_types; sub_type++)
+        for (const auto sub_type : all_item_subtypes(base_type))
         {
             if (base_type == OBJ_BOOKS)
             {

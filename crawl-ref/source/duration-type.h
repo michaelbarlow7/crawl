@@ -38,7 +38,9 @@ enum duration_type
     DUR_DIVINE_VIGOUR,          // duration of Ely's Divine Vigour
     DUR_DIVINE_STAMINA,         // duration of Zin's Divine Stamina
     DUR_DIVINE_SHIELD,          // duration of TSO's Divine Shield
+#if TAG_MAJOR_VERSION == 34
     DUR_REGENERATION,
+#endif
     DUR_SWIFTNESS,
 #if TAG_MAJOR_VERSION == 34
     DUR_CONTROLLED_FLIGHT,
@@ -62,9 +64,7 @@ enum duration_type
 #if TAG_MAJOR_VERSION == 34
     DUR_CONDENSATION_SHIELD,
     DUR_MAGIC_ARMOUR,
-#endif
     DUR_GOURMAND,
-#if TAG_MAJOR_VERSION == 34
     DUR_BARGAIN,
     DUR_INSULATION,
 #endif
@@ -201,5 +201,8 @@ enum duration_type
     DUR_RECITE_COOLDOWN,
     DUR_ACROBAT,
     DUR_SHAFT_IMMUNITY,
+    DUR_NOXIOUS_BOG,
+    DUR_FROZEN_RAMPARTS,
+    DUR_STABBING,
     NUM_DURATIONS
 };

@@ -405,7 +405,8 @@ static void _good_potion_or_scroll()
             (you.species == SP_MUMMY
              || you.species == SP_VINE_STALKER) ? 0 : 1 },
         { { OBJ_POTIONS, POT_HASTE },
-            you.species == SP_MUMMY ? 0 : 1 },
+            (you.species == SP_MUMMY
+             || you.species == SP_FORMICID) ? 0 : 1 },
         { { OBJ_POTIONS, POT_BERSERK_RAGE },
             (you.species == SP_FORMICID
              || you.is_lifeless_undead(false)) ? 0 : 1},
@@ -447,8 +448,7 @@ static void _wanderer_random_evokable()
     if (one_chance_in(3))
     {
         int selected_evoker =
-              random_choose(MISC_BOX_OF_BEASTS, MISC_LAMP_OF_FIRE,
-                            MISC_FAN_OF_GALES, MISC_PHIAL_OF_FLOODS);
+              random_choose(MISC_BOX_OF_BEASTS, MISC_PHIAL_OF_FLOODS);
 
         newgame_make_item(OBJ_MISCELLANY, selected_evoker, 1);
     }
@@ -524,7 +524,7 @@ static void _wanderer_good_equipment(skill_type & skill)
 
 
     case SK_SHIELDS:
-        newgame_make_item(OBJ_ARMOUR, ARM_SHIELD);
+        newgame_make_item(OBJ_ARMOUR, ARM_KITE_SHIELD);
         break;
 
     case SK_SPELLCASTING:

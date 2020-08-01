@@ -137,14 +137,6 @@ const int EXERCISE_QUEUE_SIZE = 100;
 
 const int MIN_HIT_MISS_PERCENTAGE = 5;
 
-const int LIGHTNING_CHARGE_MULT = 100;
-const int LIGHTNING_MAX_CHARGE = 4;
-
-// Evoker debt for evoking one XP evoker.
-const int XP_EVOKE_DEBT = 10;
-// Evoker debt for evoking a lightning rod once.
-const int XP_EVOKE_LIGHTNING_ROD_DEBT = 3;
-
 const int BASELINE_DELAY  = 10;
 const int INVIS_CONTAM_PER_TURN = 30;
 
@@ -175,8 +167,6 @@ const int MAX_KNOWN_SPELLS = 21;
 const int INVALID_ABSDEPTH = -1000;
 
 const int UNUSABLE_SKILL = -99;
-
-const int WU_JIAN_HEAVEN_TICK_TIME = 10;
 
 //#define DEBUG_MIMIC
 #ifdef DEBUG_MIMIC

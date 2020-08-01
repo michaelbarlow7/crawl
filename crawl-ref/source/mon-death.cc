@@ -40,7 +40,6 @@
 #include "item-status-flag-type.h"
 #include "items.h"
 #include "kills.h"
-#include "level-state-type.h"
 #include "libutil.h"
 #include "mapdef.h"
 #include "mapmark.h"
@@ -55,12 +54,10 @@
 #include "mutation.h"
 #include "nearby-danger.h"
 #include "notes.h"
-#include "output.h"
 #include "religion.h"
 #include "rot.h"
 #include "spl-damage.h"
 #include "spl-goditem.h"
-#include "spl-miscast.h"
 #include "spl-summoning.h"
 #include "sprint.h" // SPRINT_MULTIPLIER
 #include "state.h"
@@ -927,7 +924,7 @@ static void _jiyva_died()
 
 void fire_monster_death_event(monster* mons,
                               killer_type killer,
-                              int i, bool polymorph)
+                              bool polymorph)
 {
     int type = mons->type;
 
@@ -985,13 +982,10 @@ int mummy_curse_power(monster_type type)
     switch (type)
     {
         case MONS_GUARDIAN_MUMMY:
-            return 3;
         case MONS_MUMMY_PRIEST:
-            return 8;
         case MONS_GREATER_MUMMY:
-            return 11;
         case MONS_KHUFU:
-            return 15;
+            return mons_class_hit_dice(type);
         default:
             return 0;
     }
@@ -1146,7 +1140,7 @@ static void _setup_inner_flame_explosion(bolt & beam, const monster& origin,
 }
 
 static bool _explode_monster(monster* mons, killer_type killer,
-                             int killer_index, bool pet_kill, bool wizard)
+                             bool pet_kill, bool wizard)
 {
     if (mons->hit_points > 0 || mons->hit_points <= -15 || wizard
         || killer == KILL_RESET || killer == KILL_DISMISSED
@@ -1276,7 +1270,7 @@ static bool _explode_monster(monster* mons, killer_type killer,
     // FIXME: show_more == you.see_cell(mons->pos())
     if (type == MONS_LURKING_HORROR)
     {
-        targeter_los hitfunc(mons, LOS_SOLID);
+        targeter_radius hitfunc(mons, LOS_SOLID);
         flash_view_delay(UA_MONSTER, DARKGRAY, 300, &hitfunc);
     }
     else
@@ -1566,7 +1560,8 @@ static void _fire_kill_conducts(monster &mons, killer_type killer,
 {
     const bool your_kill = killer == KILL_YOU ||
                            killer == KILL_YOU_CONF ||
-                           killer == KILL_YOU_MISSILE;
+                           killer == KILL_YOU_MISSILE ||
+                           killer_index == YOU_FAULTLESS;
     const bool pet_kill = _is_pet_kill(killer, killer_index);
 
     // Pretend the monster is already dead, so that make_god_gifts_disappear
@@ -1580,6 +1575,7 @@ static void _fire_kill_conducts(monster &mons, killer_type killer,
     // player gets credit for reflection kills, but not blame
     const bool blameworthy = god_hates_killing(you.religion, mons)
                              && killer_index != YOU_FAULTLESS;
+
     // if you can't get piety for it & your god won't give penance/-piety for
     // it, no one cares
     // XXX: this will break holy death curses if they're added back...
@@ -1628,7 +1624,7 @@ static void _fire_kill_conducts(monster &mons, killer_type killer,
 
     // Fedhas shrooms cause confusion which leads to subsequent
     // confusion kills, sometimes of the player's own plants
-    if (fedhas_protects(mons) && killer != KILL_YOU_CONF)
+    if (fedhas_protects(&mons) && killer != KILL_YOU_CONF)
         did_kill_conduct(DID_KILL_PLANT, mons);
 
     // Cheibriados hates fast monsters.
@@ -1888,7 +1884,7 @@ item_def* monster_die(monster& mons, killer_type killer,
         || mons.has_ench(ENCH_INNER_FLAME))
     {
         did_death_message =
-            _explode_monster(&mons, killer, killer_index, pet_kill, wizard);
+            _explode_monster(&mons, killer, pet_kill, wizard);
     }
     else if (mons.type == MONS_FULMINANT_PRISM && mons.prism_charge == 0)
     {
@@ -1901,7 +1897,8 @@ item_def* monster_die(monster& mons, killer_type killer,
     }
     else if (mons.type == MONS_FIRE_VORTEX
              || mons.type == MONS_SPATIAL_VORTEX
-             || mons.type == MONS_TWISTER)
+             || mons.type == MONS_TWISTER
+             || (mons.type == MONS_FOXFIRE && mons.steps_remaining == 0))
     {
         if (!silent && !mons_reset && !was_banished)
         {
@@ -1918,6 +1915,12 @@ item_def* monster_die(monster& mons, killer_type killer,
 
         if (killer == KILL_RESET)
             killer = KILL_DISMISSED;
+    }
+    else if (mons.type == MONS_FOXFIRE)
+    {
+        // Foxfires are unkillable, they either dissapate by timing out
+        // or hit something.
+        silent = true;
     }
     else if (mons.type == MONS_SIMULACRUM)
     {
@@ -2561,7 +2564,7 @@ item_def* monster_die(monster& mons, killer_type killer,
     }
 
     mons_remove_from_grid(mons);
-    fire_monster_death_event(&mons, killer, killer_index, false);
+    fire_monster_death_event(&mons, killer, false);
 
     if (crawl_state.game_is_arena())
         arena_monster_died(&mons, killer, killer_index, silent, corpse);
@@ -2791,7 +2794,7 @@ item_def* mounted_kill(monster* daddy, monster_type mc, killer_type killer,
 void mons_check_pool(monster* mons, const coord_def &oldpos,
                      killer_type killer, int killnum)
 {
-    // Flying/clinging monsters don't make contact with the terrain.
+    // Flying monsters don't make contact with the terrain.
     if (!mons->ground_level())
         return;
 

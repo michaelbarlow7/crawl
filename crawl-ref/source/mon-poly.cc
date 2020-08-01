@@ -13,7 +13,6 @@
 #include "describe.h"
 #include "dgn-overview.h"
 #include "dungeon.h"
-#include "exclude.h"
 #include "fineff.h"
 #include "god-conduct.h"
 #include "hints.h"
@@ -33,7 +32,6 @@
 #include "stringutil.h"
 #include "terrain.h"
 #include "traps.h"
-#include "view.h"
 #include "xom.h"
 
 bool feature_mimic_at(const coord_def &c)
@@ -229,7 +227,7 @@ void change_monster_type(monster* mons, monster_type targetc)
     }
 
     // Inform listeners that the original monster is gone.
-    fire_monster_death_event(mons, KILL_MISC, NON_MONSTER, true);
+    fire_monster_death_event(mons, KILL_MISC, true);
 
     // the actual polymorphing:
     auto flags =
@@ -408,8 +406,6 @@ void change_monster_type(monster* mons, monster_type targetc)
     // evaporating and reforming justifies this behaviour.
     mons->stop_constricting_all();
     mons->stop_being_constricted();
-
-    mons->check_clinging(false);
 }
 
 // If targetc == RANDOM_MONSTER, then relpower indicates the desired

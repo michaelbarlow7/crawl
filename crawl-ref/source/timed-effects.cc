@@ -11,13 +11,11 @@
 #include "act-iter.h"
 #include "areas.h"
 #include "beam.h"
-#include "bloodspatter.h"
 #include "cloud.h"
 #include "coordit.h"
 #include "database.h"
 #include "dgn-shoals.h"
 #include "dgn-event.h"
-#include "dungeon.h"
 #include "env.h"
 #include "exercise.h"
 #include "externs.h"
@@ -84,11 +82,8 @@ static void _random_hell_miscast()
                                  1, spschool::charms,
                                  1, spschool::hexes);
 
-    const int pow = 4 + random2(6);
-    const int fail = random2avg(97, 3);
-    MiscastEffect(&you, nullptr, {miscast_source::hell_effect}, which_miscast,
-                  pow, fail,
-                  "the effects of Hell");
+    miscast_effect(you, nullptr, {miscast_source::hell_effect}, which_miscast,
+                   5, random2avg(40, 3), "the effects of Hell");
 }
 
 /// The thematically appropriate hell effects for a given hell branch.
@@ -152,10 +147,8 @@ static void _themed_hell_summon_or_miscast()
     }
     else
     {
-        const int pow = 4 + random2(6);
-        const int fail = random2avg(97, 3);
-        MiscastEffect(&you, nullptr, {miscast_source::hell_effect},
-                      spec->miscast_type, pow, fail,
+        miscast_effect(you, nullptr, {miscast_source::hell_effect},
+                      spec->miscast_type, 5, random2avg(40, 3),
                       "the effects of Hell");
     }
 }
@@ -387,7 +380,7 @@ static void _jiyva_effects(int /*time_delta*/)
         jiyva_eat_offlevel_items();
 }
 
-static void _evolve(int time_delta)
+static void _evolve(int /*time_delta*/)
 {
     if (int lev = you.get_mutation_level(MUT_EVOLUTION))
         if (one_chance_in(2 / lev)
@@ -802,7 +795,6 @@ void monster::timeout_enchantments(int levels)
         case ENCH_FRIENDLY_BRIBED: case ENCH_CORROSION: case ENCH_GOLD_LUST:
         case ENCH_RESISTANCE: case ENCH_HEXED: case ENCH_IDEALISED:
         case ENCH_BOUND_SOUL: case ENCH_STILL_WINDS: case ENCH_RING_OF_THUNDER:
-        case ENCH_WHIRLWIND_PINNED:
             lose_ench_levels(entry.second, levels);
             break;
 
@@ -898,7 +890,7 @@ void update_level(int elapsedTime)
 #endif
 
     rot_floor_items(elapsedTime);
-    shoals_apply_tides(turns, true, turns < 5);
+    shoals_apply_tides(turns, true);
     timeout_tombs(turns);
 
     if (env.sanctuary_time)
@@ -1163,6 +1155,8 @@ void timeout_terrain_changes(int duration, bool force)
         return;
 
     int num_seen[NUM_TERRAIN_CHANGE_TYPES] = {0};
+    // n.b. unordered_set doesn't work here because pair isn't hashable
+    set<pair<coord_def, terrain_change_type>> revert;
 
     for (map_marker *mark : env.markers.get_all(MAT_TERRAIN_CHANGE))
     {
@@ -1184,6 +1178,12 @@ void timeout_terrain_changes(int duration, bool force)
             continue;
         }
 
+        if (marker->change_type == TERRAIN_CHANGE_BOG
+            && !you.see_cell(marker->pos))
+        {
+            marker->duration = 0;
+        }
+
         monster* mon_src = monster_by_mid(marker->mon_num);
         if (marker->duration <= 0
             || (marker->mon_num != 0
@@ -1191,10 +1191,13 @@ void timeout_terrain_changes(int duration, bool force)
         {
             if (you.see_cell(marker->pos))
                 num_seen[marker->change_type]++;
-            // will delete `marker`.
-            revert_terrain_change(marker->pos, marker->change_type);
+            revert.insert(pair<coord_def, terrain_change_type>(marker->pos,
+                                                        marker->change_type));
         }
     }
+    // finally, revert the changes and delete the markers
+    for (const auto &m_pos : revert)
+        revert_terrain_change(m_pos.first, m_pos.second);
 
     if (num_seen[TERRAIN_CHANGE_DOOR_SEAL] > 1)
         mpr("The runic seals fade away.");
@@ -1281,7 +1284,7 @@ void run_environment_effects()
 
     run_corruption_effects(you.time_taken);
     shoals_apply_tides(div_rand_round(you.time_taken, BASELINE_DELAY),
-                       false, true);
+                       false);
     timeout_tombs(you.time_taken);
     timeout_malign_gateways(you.time_taken);
     timeout_terrain_changes(you.time_taken);

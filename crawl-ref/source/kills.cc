@@ -20,7 +20,6 @@
 #include "mon-info.h"
 #include "monster.h"
 #include "options.h"
-#include "place.h"
 #include "stringutil.h"
 #include "tags.h"
 #include "travel.h"
@@ -62,9 +61,8 @@ bool KillMaster::empty() const
 
 void KillMaster::save(writer& outf) const
 {
-    // Write the version of the kills file
-    marshallByte(outf, KILLS_MAJOR_VERSION);
-    marshallByte(outf, KILLS_MINOR_VERSION);
+    const auto version = save_version(KILLS_MAJOR_VERSION, KILLS_MINOR_VERSION);
+    write_save_version(outf, version);
 
     for (int i = 0; i < KC_NCATEGORIES; ++i)
         categorized_kills[i].save(outf);
@@ -72,8 +70,9 @@ void KillMaster::save(writer& outf) const
 
 void KillMaster::load(reader& inf)
 {
-    int major = unmarshallByte(inf),
-        minor = unmarshallByte(inf);
+    const auto version = get_save_version(inf);
+    const auto major = version.major, minor = version.minor;
+
     if (major != KILLS_MAJOR_VERSION
         || (minor != KILLS_MINOR_VERSION && minor > 0))
     {
@@ -667,12 +666,14 @@ kill_monster_desc::kill_monster_desc(const monster* mon)
         modifier = M_SHAPESHIFTER;
 }
 
+// TODO: de-duplicate with the monster * version?
 kill_monster_desc::kill_monster_desc(const monster_info& mon)
 {
     monnum = mon.type;
     modifier = M_NORMAL;
     switch (mon.type)
     {
+        case MONS_ZOMBIE:
 #if TAG_MAJOR_VERSION == 34
         case MONS_ZOMBIE_LARGE: case MONS_ZOMBIE_SMALL:
 #endif

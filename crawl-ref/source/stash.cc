@@ -41,20 +41,17 @@
 #include "stringutil.h"
 #include "syscalls.h"
 #include "terrain.h"
+#include "tilepick.h"
 #include "traps.h"
 #include "travel.h"
 #include "unicode.h"
 #include "unwind.h"
 #include "viewmap.h"
-#ifdef USE_TILE
-# include "tilepick.h"
-#endif
 
 // Global
 StashTracker StashTrack;
 
-string userdef_annotate_item(const char *s, const item_def *item,
-                             bool exclusive)
+string userdef_annotate_item(const char *s, const item_def *item)
 {
 #ifdef CLUA_BINDINGS
     lua_stack_cleaner cleaner(clua);
@@ -70,9 +67,13 @@ string userdef_annotate_item(const char *s, const item_def *item,
 #endif
 }
 
-string stash_annotate_item(const char *s, const item_def *item, bool exclusive)
+string stash_annotate_item(const char *s, const item_def *item)
 {
-    string text = userdef_annotate_item(s, item, exclusive);
+    // the special-casing of gold here is for the sake of gozag players in
+    // extreme circumstances. It does mean that custom annotation code can't
+    // do anything with gold, but I'm not sure why you'd want to.
+    string text = item->base_type == OBJ_GOLD
+                            ? "{gold}" : userdef_annotate_item(s, item);
 
     if (item->has_spells())
     {
@@ -271,7 +272,7 @@ void Stash::update()
     if (feat == DNGN_FLOOR)
         feat_desc = "";
     else
-        feat_desc = feature_description_at(pos, false, DESC_A, false);
+        feat_desc = feature_description_at(pos, false, DESC_A);
 
     // If this is your position, you know what's on this square
     if (pos == you.pos())
@@ -488,17 +489,6 @@ vector<stash_search_result> Stash::matches_search(
         res.pos.pos = pos;
 
     return results;
-}
-
-/// Fedhas: rot away all corpses.
-void Stash::rot_all_corpses()
-{
-    for (int i = items.size() - 1; i >= 0; i--)
-    {
-        item_def &item = items[i];
-        if (item.is_type(OBJ_CORPSES, CORPSE_BODY) && item.stash_freshness >= 0)
-            item.stash_freshness = -1;
-    }
 }
 
 void Stash::_update_corpses(int rot_time)
@@ -728,7 +718,7 @@ vector<stash_search_result> ShopInfo::matches_search(
     {
         const string sname = shop_item_name(item);
         const string ann   = stash_annotate_item(STASH_LUA_SEARCH_ANNOTATE,
-                                                 &item, true);
+                                                 &item);
 
         if (search.matches(prefix + " " + ann + " " + sname +
                                                     " {" + shoptitle + "}")
@@ -968,13 +958,6 @@ void LevelStashes::get_matching_stashes(
             results.push_back(res);
         }
     }
-}
-
-/// Fedhas: rot away all corpses.
-void LevelStashes::rot_all_corpses()
-{
-    for (auto &entry : m_stashes)
-        entry.second.rot_all_corpses();
 }
 
 void LevelStashes::_update_corpses(int rot_time)
@@ -1750,7 +1733,6 @@ bool StashTracker::display_search_results(
                 me->colour = itemcol;
         }
 
-#ifdef USE_TILE
         if (res.item.defined())
         {
             vector<tile_def> item_tiles;
@@ -1777,7 +1759,6 @@ bool StashTracker::display_search_results(
             const tileidx_t idx = tileidx_feature_base(feat);
             me->add_tile(tile_def(idx, get_dngn_tex(idx)));
         }
-#endif
 
         stashmenu.add_entry(me);
         if (!res.in_inventory)
@@ -1813,7 +1794,7 @@ bool StashTracker::display_search_results(
         else
         {
             level_pos lp = res->pos;
-            if (show_map(lp, true, true, true))
+            if (show_map(lp, true, true))
             {
                 start_translevel_travel(lp);
                 return false;

@@ -10,26 +10,22 @@
 #include <cmath>
 
 #include "areas.h"
-#include "art-enum.h"
 #include "coordit.h" // radius_iterator
-#include "god-conduct.h"
+#include "env.h"
 #include "god-passive.h"
 #include "hints.h"
 #include "items.h" // stack_iterator
 #include "libutil.h"
-#include "macro.h"
 #include "message.h"
 #include "output.h"
 #include "prompt.h"
 #include "religion.h"
-#include "showsymb.h"
-#include "spl-transloc.h"
 #include "spl-util.h"
 #include "stringutil.h"
+#include "terrain.h"
 #include "transform.h"
 #include "tilepick.h"
 #include "view.h"
-#include "viewchar.h"
 
 spret cast_deaths_door(int pow, bool fail)
 {
@@ -70,24 +66,6 @@ spret ice_armour(int pow, bool fail)
     you.increase_duration(DUR_ICY_ARMOUR, random_range(40, 50), 50);
     you.props[ICY_ARMOUR_KEY] = pow;
     you.redraw_armour_class = true;
-
-    return spret::success;
-}
-
-spret deflection(int pow, bool fail)
-{
-    fail_check();
-    you.attribute[ATTR_DEFLECT_MISSILES] = 1;
-    mpr("You feel very safe from missiles.");
-
-    return spret::success;
-}
-
-spret cast_regen(int pow, bool fail)
-{
-    fail_check();
-    you.increase_duration(DUR_REGENERATION, 5 + roll_dice(2, pow / 3 + 1), 100,
-                          "Your skin crawls.");
 
     return spret::success;
 }
@@ -150,6 +128,7 @@ int cast_selective_amnesia(const string &pre_msg)
         spell = get_spell_by_letter(keyin);
         slot = get_spell_slot_by_letter(keyin);
 
+        const bool in_library = you.spell_library[spell];
         if (spell != SPELL_NO_SPELL)
         {
             const string prompt = make_stringf(
@@ -157,10 +136,9 @@ int cast_selective_amnesia(const string &pre_msg)
                     spell_title(spell), spell_levels_required(spell),
                     spell_levels_required(spell) != 1 ? "s" : "",
                     player_spell_levels() + spell_levels_required(spell),
-                    you.spell_library[spell] ? "" :
-                    " This spell is not in your library!");
+                    in_library ? "" : " This spell is not in your library!");
 
-            if (yesno(prompt.c_str(), true, 'n', false))
+            if (yesno(prompt.c_str(), in_library, 'n', false))
             {
                 if (!pre_msg.empty())
                     mpr(pre_msg);
@@ -254,4 +232,30 @@ spret cast_transform(int pow, transformation which_trans, bool fail)
     fail_check();
     transform(pow, which_trans);
     return spret::success;
+}
+
+spret cast_noxious_bog(int pow, bool fail)
+{
+    fail_check();
+    flash_view_delay(UA_PLAYER, LIGHTGREEN, 100);
+
+    if (!you.duration[DUR_NOXIOUS_BOG])
+        mpr("You begin spewing toxic sludge!");
+    else
+        mpr("Your toxic spew intensifies!");
+
+    you.props[NOXIOUS_BOG_KEY] = pow;
+    you.increase_duration(DUR_NOXIOUS_BOG, 5 + random2(pow / 10), 24);
+    return spret::success;
+}
+
+void noxious_bog_cell(coord_def p)
+{
+    if (grd(p) == DNGN_DEEP_WATER || grd(p) == DNGN_LAVA)
+        return;
+
+    const int turns = 10
+                    + random2avg(you.props[NOXIOUS_BOG_KEY].get_int() / 20, 2);
+    temp_change_terrain(p, DNGN_TOXIC_BOG, turns * BASELINE_DELAY,
+            TERRAIN_CHANGE_BOG, you.as_monster());
 }
