@@ -396,6 +396,7 @@ static GotoRegion _find_correct_region()
 
 void assert_valid_cursor_pos()
 {
+/*
 #ifndef TARGET_OS_WINDOWS
     GotoRegion region(get_cursor_region());
     coord_def pos(cgetpos(region));
@@ -404,6 +405,7 @@ void assert_valid_cursor_pos()
         pos.x, pos.y, region, cgetpos(_find_correct_region()).x,
         cgetpos(_find_correct_region()).y, _find_correct_region());
 #endif
+*/
 }
 
 static GotoRegion _current_region = GOTO_CRT;
