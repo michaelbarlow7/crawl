@@ -4,7 +4,7 @@ enum conduct_type
 {
     DID_NOTHING,
     DID_EVIL,                             // hated by good gods
-    DID_HOLY,                             // holy wrath, holy word scrolls
+    DID_HOLY,                             // holy wrath
     DID_ATTACK_HOLY,
     DID_ATTACK_NEUTRAL,
     DID_ATTACK_FRIEND,
@@ -23,7 +23,6 @@ enum conduct_type
     DID_SPELL_CASTING,
     DID_SPELL_PRACTISE,
     DID_CANNIBALISM,
-    DID_DESECRATE_SOULED_BEING,           // Zin
     DID_DELIBERATE_MUTATING,              // Zin
     DID_CAUSE_GLOWING,                    // Zin
     DID_UNCLEAN,                          // Zin (used unclean weapon/magic)
@@ -35,10 +34,8 @@ enum conduct_type
     DID_ATTACK_IN_SANCTUARY,              // Zin
     DID_KILL_NONLIVING,
     DID_EXPLORATION,                      // Ashenzari, wrath timers
-    DID_DESECRATE_HOLY_REMAINS,           // Zin/Ely/TSO/Yredelemnul
     DID_SEE_MONSTER,                      // TSO
     DID_SACRIFICE_LOVE,                   // Ru
-    DID_CHANNEL,                          // Pakellas
     DID_HURT_FOE,                         // Uskayaw
     DID_WIZARDLY_ITEM,                    // Trog
     NUM_CONDUCTS

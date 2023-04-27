@@ -64,7 +64,7 @@ static unsigned _get_travel_colour(const coord_def& p)
         return Options.tc_excluded;
 
     const unsigned no_travel_col
-        = feat_is_traversable(grd(p)) ? Options.tc_forbidden
+        = feat_is_traversable(env.grid(p)) ? Options.tc_forbidden
                                       : Options.tc_dangerous;
 
     const short dist = travel_point_distance[p.x][p.y];
@@ -183,14 +183,13 @@ static bool _is_feature_fudged(char32_t glyph, const coord_def& where)
 
     if (glyph == '<')
     {
-        return grd(where) == DNGN_EXIT_ABYSS
-               || grd(where) == DNGN_EXIT_PANDEMONIUM
-               || grd(where) == DNGN_ENTER_HELL && player_in_hell();
+        return env.grid(where) == DNGN_EXIT_ABYSS
+               || env.grid(where) == DNGN_EXIT_PANDEMONIUM;
     }
     else if (glyph == '>')
     {
-        return grd(where) == DNGN_TRANSIT_PANDEMONIUM
-               || grd(where) == DNGN_TRANSPORTER;
+        return env.grid(where) == DNGN_TRANSIT_PANDEMONIUM
+               || env.grid(where) == DNGN_TRANSPORTER;
     }
 
     return false;
@@ -275,21 +274,19 @@ static int _get_number_of_lines_levelmap()
 }
 
 static void _draw_level_map(int start_x, int start_y, bool travel_mode,
-        bool on_level)
+        bool on_level, ui::Region region)
 {
-    const int num_lines = min(_get_number_of_lines_levelmap(), GYM);
-    const int num_cols  = min(get_number_of_cols(),            GXM);
+    region.width = min(region.width, GXM);
+    region.height = min(region.height, GYM);
 
-    const coord_def extents(num_cols, num_lines);
+    const coord_def extents(region.width, region.height);
     crawl_view_buffer vbuf(extents);
-    screen_cell_t *cell= vbuf;
+    screen_cell_t *cell = vbuf;
 
     cursor_control cs(false);
 
-    int top = 2;
-    cgotoxy(1, top);
-    for (int screen_y = 0; screen_y < num_lines; screen_y++)
-        for (int screen_x = 0; screen_x < num_cols; screen_x++)
+    for (int screen_y = 0; screen_y < region.height; screen_y++)
+        for (int screen_x = 0; screen_x < region.width; screen_x++)
         {
             coord_def c(start_x + screen_x, start_y + screen_y);
 
@@ -355,9 +352,9 @@ static void _draw_level_map(int start_x, int start_y, bool travel_mode,
             cell++;
         }
 
-    puttext(1, top, vbuf);
+    puttext(region.x + 1, region.y + 1, vbuf);
 }
-#endif // USE_TILE_LOCAL
+#endif // !USE_TILE_LOCAL
 
 static void _reset_travel_colours(vector<coord_def> &features, bool on_level)
 {
@@ -365,7 +362,7 @@ static void _reset_travel_colours(vector<coord_def> &features, bool on_level)
     features.clear();
 
     if (on_level)
-        find_travel_pos(you.pos(), nullptr, nullptr, &features);
+        fill_travel_point_distance(you.pos(), &features);
     else
     {
         travel_pathfind tp;
@@ -457,9 +454,8 @@ public:
 };
 
 #ifndef USE_TILE_LOCAL
-static void _draw_title(const coord_def& cpos, const feature_list& feats)
+static void _draw_title(const coord_def& cpos, const feature_list& feats, const int columns)
 {
-    const int columns = get_number_of_cols();
     const formatted_string help =
         formatted_string::parse_string("(Press <w>?</w> for help)");
     const int helplen = help.width();
@@ -576,10 +572,58 @@ static coord_def _recentre_map_target(const level_id level,
 }
 
 #ifndef USE_TILE_LOCAL
-static map_view_state _get_view_state(const map_control_state& state)
+static map_view_state _get_view_state(coord_def cur_ul, const map_control_state& state)
 {
-    map_view_state view;
+    // TODO: why should local tiles use different logic?
+    // also, these might make more sense as member functions of UIMapView.
 
+    // recalculate cursor position, and scroll if necessary
+    map_view_state view;
+    const int num_lines = _get_number_of_lines_levelmap();
+
+    view.start.x = cur_ul.x;
+    view.start.y = cur_ul.y;
+
+    // Scroll when needed to keep MARGIN rows/cols to the left or right of the
+    // cursor -- as long as there is map to scroll to.
+    const int MARGIN = 3;
+
+    // careful with off-by-one errors in these calcs
+    view.cursor = state.lpos.pos - view.start + coord_def(1,1);
+    const auto bounds = known_map_bounds();
+    const coord_def map_min = state.lpos.pos - bounds.first;
+    const coord_def map_max = bounds.second - state.lpos.pos;
+    const coord_def ul_margin(max(0, min(MARGIN, map_min.x)),
+                              max(0, min(MARGIN, map_min.y)));
+    const coord_def lr_margin(max(0, min(MARGIN, map_max.x)),
+                              max(0, min(MARGIN, map_max.y)));
+
+    // First check upper-left margins
+    // In principle x doesn't need to scroll; a level can't be larger than 80
+    // columns. But let's make the logic general.
+    coord_def shift = coord_def(min(0, view.cursor.x - ul_margin.x - 1),
+                                min(0, view.cursor.y - ul_margin.y - 1));
+
+    // If we didn't enforce any margins on the upper-left, check lower-right
+    if (shift.x >= 0)
+        shift.x = max(0, view.cursor.x - get_number_of_cols() + lr_margin.x);
+    if (shift.y >= 0)
+        shift.y = max(0, view.cursor.y - num_lines + lr_margin.y);
+
+    view.start += shift;
+
+    // now calculate the final cursor position relative to any view shifting
+    // that happened to enforce margins
+    view.cursor = state.lpos.pos - view.start + coord_def(1,1);
+    return view;
+}
+
+static map_view_state _init_view_state(const map_control_state& state)
+{
+    // initial placement calculations for the map viewport window.
+    // This code is a bit inscrutable but it seems to do some heuristics to
+    // try to make partially explored levels look reasonable in console map
+    // view, mostly to do with placement in the x direction.
     const int num_lines = _get_number_of_lines_levelmap();
     const int half_screen = (num_lines - 1) / 2;
 
@@ -591,8 +635,7 @@ static map_view_state _get_view_state(const map_control_state& state)
 
     const auto map_lines = max_y - min_y + 1;
 
-    view.start.x = (min_x + max_x + 1) / 2 - 40;  // no x scrolling.
-    view.start.y = 0;                             // y does scroll.
+    coord_def ul((min_x + max_x + 1) / 2 - 40, 0);
 
     auto screen_y = state.lpos.pos.y;
 
@@ -611,14 +654,237 @@ static map_view_state _get_view_state(const map_control_state& state)
     else if (screen_y + half_screen > max_y)
         screen_y = max_y - half_screen;
 
-    view.cursor.x = state.lpos.pos.x - view.start.x + 1;
-    view.cursor.y = state.lpos.pos.y - screen_y + half_screen + 1;
+    ul.y = screen_y - half_screen;
 
-    view.start.y = screen_y - half_screen;
-
-    return view;
+    // Finally, adjust the upper left corner for the view state so that it is
+    // appropriately scrolled relative to the cursor.
+    return _get_view_state(ul, state);
 }
 #endif
+
+class UIMapView : public ui::Widget
+{
+public:
+    UIMapView(level_pos& lp, levelview_excursion& le, bool travel_mode,
+              bool allow_offlevel)
+        : m_reentry(false)
+    {
+        m_state.lpos = lp;
+        m_state.features = &m_features;
+        m_state.feats = &m_feats;
+        m_state.excursion = &le;
+        m_state.allow_offlevel = allow_offlevel;
+        m_state.travel_mode = travel_mode;
+        m_state.original = level_id::current();
+        m_state.map_alive = true;
+        m_state.redraw_map = true;
+        m_state.search_anchor = coord_def(-1, -1);
+        m_state.chose = false;
+        m_state.on_level = true;
+
+        goto_level();
+    }
+    ~UIMapView() {}
+
+    void _render() override
+    {
+#ifdef USE_TILE
+        tiles.load_dungeon(m_state.lpos.pos);
+#endif
+
+#ifdef USE_TILE_LOCAL
+        display_message_window();
+        tiles.render_current_regions();
+        glmanager->reset_transform();
+#endif
+
+#ifndef USE_TILE_LOCAL
+        const auto view = _get_view_state(view_ul, m_state);
+        view_ul = view.start;
+        _draw_title(m_state.lpos.pos, *m_state.feats, m_region.width);
+        const ui::Region map_region = {0, 1, m_region.width, m_region.height - 1};
+        _draw_level_map(view_ul.x, view_ul.y, m_state.travel_mode,
+                        m_state.on_level, map_region);
+        // the `+ 1` here is for the map overview line
+        ui::show_cursor_at(view.cursor.x, view.cursor.y + 1);
+#endif
+    }
+
+    void _allocate_region() override
+    {
+        // Note: Tile versions just center on the current cursor
+        // location. It silently ignores everything else going
+        // on in this function.  --Enne
+#ifdef USE_TILE_LOCAL
+        if (first_run)
+        {
+            tiles.update_tabs();
+            first_run = false;
+        }
+#endif
+        _expose();
+    }
+
+    bool on_event(const ui::Event& ev) override
+    {
+        if (ev.type() == ui::Event::Type::KeyDown)
+        {
+            auto key = static_cast<const ui::KeyEvent&>(ev).key();
+#ifndef USE_TILE_LOCAL
+            key = unmangle_direction_keys(key, KMC_LEVELMAP);
+#endif
+            command_type cmd = key_to_command(key, KMC_LEVELMAP);
+            if (cmd < CMD_MIN_OVERMAP || cmd > CMD_MAX_OVERMAP)
+                cmd = CMD_NO_CMD;
+            process_command(cmd);
+            if (m_state.redraw_map)
+                _expose();
+            return true;
+        }
+
+#ifdef USE_TILE_LOCAL
+        if (ev.type() == ui::Event::Type::MouseMove
+            || ev.type() == ui::Event::Type::MouseDown)
+        {
+            auto wm_event = to_wm_event(static_cast<const ui::MouseEvent&>(ev));
+            int k = tiles.handle_mouse(wm_event);
+            // XX this really seems like it shouldn't be here, maybe should be
+            // in tilereg stuff?
+            // in any case, CK_MOUSE_CLICK *should* be what only tilereg-dgn.cc
+            // could returns, if the player clicked in the dungeon region.
+            if (k == CK_MOUSE_CLICK && ev.type() == ui::Event::Type::MouseDown)
+            {
+                if (tiles.get_cursor() == m_state.lpos.pos)
+                {
+                    process_command(CMD_MAP_GOTO_TARGET);
+                    return true;
+                }
+                else
+                {
+                    m_state.lpos.pos
+                        = tiles.get_cursor().clamped(known_map_bounds());
+                }
+            }
+            _expose();
+            return true;
+        }
+#endif
+
+        return false;
+    }
+
+    void process_command(command_type cmd)
+    {
+        auto ret = process_map_command(cmd, m_state);
+        // reentry happens if during the process, something else called in to
+        // set_lpos. E.g. this can happen via a describe popup. If this
+        // happened, then it set m_state and we don't want to overwrite it.
+        // TODO some refactoring to make this cleaner
+        if (!check_and_reset_reentry())
+            m_state = move(ret);
+
+        if (!m_state.map_alive)
+            return;
+
+        if (m_state.lpos.id != level_id::current())
+            goto_level();
+
+        m_state.lpos.pos = m_state.lpos.pos.clamped(known_map_bounds());
+    }
+
+    void set_lpos(level_pos dest)
+    {
+        map_control_state state = m_state;
+        state.map_alive = true;
+        state.chose = false;
+
+        if (!dest.id.is_valid()
+            || dest.id != level_id::current() && !state.allow_offlevel)
+        {
+            return;
+        }
+        los_changed();
+
+        state.lpos = dest;
+        m_state = state;
+
+        if (m_state.lpos.id != level_id::current())
+            goto_level();
+
+        m_state.lpos.pos = m_state.lpos.pos.clamped(known_map_bounds());
+        m_reentry = true;
+    }
+
+    void goto_level()
+    {
+        if (m_state.lpos.id != level_id::current())
+            m_state.excursion->go_to(m_state.lpos.id);
+
+        m_state.on_level = (level_id::current() == m_state.original);
+
+        // Vector to track all state.features we can travel to, in
+        // order of distance.
+        if (m_state.travel_mode)
+            _reset_travel_colours(*m_state.features, m_state.on_level);
+        m_state.feats->init();
+        m_state.search_index = 0;
+        m_state.search_anchor.reset();
+
+        // This happens when CMD_MAP_PREV_LEVEL etc. assign dest to lpos,
+        // with a position == (-1, -1).
+        if (!map_bounds(m_state.lpos.pos))
+        {
+            m_state.lpos.pos =
+                _recentre_map_target(m_state.lpos.id, m_state.original);
+            m_state.lpos.id = level_id::current();
+        }
+#ifndef USE_TILE_LOCAL
+        auto s = _init_view_state(m_state);
+        view_ul = s.start;
+#endif
+
+        _expose();
+    }
+
+    bool is_alive() const
+    {
+        return m_state.map_alive;
+    }
+
+    bool chose() const
+    {
+        return m_state.chose;
+    }
+
+    level_pos lpos() const
+    {
+        return m_state.lpos;
+    }
+
+    bool check_and_reset_reentry()
+    {
+        const bool ret = m_reentry;
+        m_reentry = false;
+        return ret;
+    }
+
+private:
+    map_control_state m_state;
+
+    // Vector to track all features we can travel to, in order of distance.
+    vector<coord_def> m_features;
+    // List of all interesting features for display in the (console) title.
+    feature_list m_feats;
+    bool m_reentry;
+
+#ifndef USE_TILE_LOCAL
+    coord_def view_ul;
+#endif
+
+#ifdef USE_TILE_LOCAL
+    bool first_run = true;
+#endif
+};
 
 // show_map() now centers the known map along x or y. This prevents
 // the player from getting "artificial" location clues by using the
@@ -626,218 +892,94 @@ static map_view_state _get_view_state(const map_control_state& state)
 // to get that. This function is still a mess, though. -- bwr
 bool show_map(level_pos &lpos, bool travel_mode, bool allow_offlevel)
 {
-#ifdef USE_TILE_LOCAL
-    bool first_run  = true;
+    static shared_ptr<UIMapView> map_view = nullptr;
 
-    mouse_control mc(MOUSE_MODE_NORMAL);
-    tiles.do_map_display();
+    if (map_view)
+    {
+        ASSERT(map_view->is_alive());
+        // handle reentry -- just attempt to set the position. Ignore both
+        // the travel_mode and the allow_offlevel params -- inherit from the
+        // running map.
+        map_view->set_lpos(lpos);
+        return false;
+    }
+    else
+    {
+#ifdef USE_TILE_LOCAL
+        mouse_control mc(MOUSE_MODE_NORMAL);
+        tiles.do_map_display();
 #endif
 
 #ifdef USE_TILE
-    ui::cutoff_point ui_cutoff_point;
+        ui::cutoff_point ui_cutoff_point;
 #endif
 #ifdef USE_TILE_WEB
-    tiles_ui_control ui(UI_VIEW_MAP);
+        tiles_ui_control ui(UI_VIEW_MAP);
 #endif
-
-    map_control_state state;
-
-    {
-        // this RAII object must not be in the same scope as the
-        // redraw_screen call at the end of the function
-        levelview_excursion le(travel_mode);
 
         if (!lpos.id.is_valid() || !allow_offlevel)
             lpos.id = level_id::current();
 
-        cursor_control ccon(!Options.use_fake_cursor);
-
-        bool new_level = true;
-
-        // Vector to track all features we can travel to, in order of distance.
-        vector<coord_def> features;
-        // List of all interesting features for display in the (console) title.
-        feature_list feats;
-
-    #ifndef USE_TILE_LOCAL
-        // so that cursor positions are valid in case viewwindow is triggered
-        // during map rendering (which can happen at least for webtiles).
-        set_cursor_region(GOTO_CRT);
-
-        const int top = 2;
-        clrscr();
-    #endif
-        textcolour(DARKGREY);
-
-        state.lpos = lpos;
-        state.features = &features;
-        state.feats = &feats;
-        state.excursion = &le;
-        state.allow_offlevel = allow_offlevel;
-        state.travel_mode = travel_mode;
-        state.original = level_id::current();
-        state.map_alive = true;
-        state.redraw_map = true;
-        state.search_anchor = coord_def(-1, -1);
-        state.chose = false;
-
-        while (state.map_alive)
-        {
-            if (state.lpos.id != level_id::current())
-            {
-                le.go_to(state.lpos.id);
-                new_level = true;
-            }
-
-            if (new_level)
-            {
-                state.on_level = (level_id::current() == state.original);
-
-                // Vector to track all state.features we can travel to, in
-                // order of distance.
-                if (travel_mode)
-                    _reset_travel_colours(*state.features, state.on_level);
-                state.feats->init();
-                state.search_index = 0;
-                state.search_anchor.reset();
-
-                // This happens when CMD_MAP_PREV_LEVEL etc. assign dest to lpos,
-                // with a position == (-1, -1).
-                if (!map_bounds(state.lpos.pos))
-                {
-                    state.lpos.pos = _recentre_map_target(state.lpos.id,
-                            state.original);
-                    state.lpos.id = level_id::current();
-                }
-
-                state.redraw_map = true;
-                new_level = false;
-            }
-
-            // If we've received a HUP signal then the user can't choose a
-            // location, so indicate this by returning an invalid position.
-            if (crawl_state.seen_hups)
-            {
-                state.lpos = level_pos();
-                state.chose = false;
-            }
-
-            state.lpos.pos = state.lpos.pos.clamped(known_map_bounds());
-            ASSERT(map_bounds(state.lpos.pos));
-
-    #ifndef USE_TILE_LOCAL
-            const auto view = _get_view_state(state);
-    #endif
-
-            if (state.redraw_map)
-            {
-                // Note: Tile versions just center on the current cursor
-                // location. It silently ignores everything else going
-                // on in this function.  --Enne
-    #ifdef USE_TILE_LOCAL
-                if (first_run)
-                {
-                    tiles.update_tabs();
-                    first_run = false;
-                }
-    #endif
-    #ifdef USE_TILE
-                tiles.load_dungeon(state.lpos.pos);
-    #endif
-    #ifndef USE_TILE_LOCAL
-                _draw_title(state.lpos.pos, *state.feats);
-                _draw_level_map(view.start.x, view.start.y, state.travel_mode, state.on_level);
-    #endif
-            }
-    #ifndef USE_TILE_LOCAL
-            cursorxy(view.cursor.x, view.cursor.y + top - 1);
-    #endif
-            state.redraw_map = true;
-
-            c_input_reset(true);
-    #ifdef USE_TILE_LOCAL
-            const int key = getchm(KMC_LEVELMAP);
-            command_type cmd = key_to_command(key, KMC_LEVELMAP);
-    #else
-            const int key = unmangle_direction_keys(getchm(KMC_LEVELMAP),
-                                                    KMC_LEVELMAP);
-            command_type cmd = key_to_command(key, KMC_LEVELMAP);
-    #endif
-            if (cmd < CMD_MIN_OVERMAP || cmd > CMD_MAX_OVERMAP)
-                cmd = CMD_NO_CMD;
-
-            if (key == CK_MOUSE_CLICK)
-            {
-    #ifdef USE_TILE_LOCAL
-                const coord_def grdp = tiles.get_cursor();
-                const coord_def delta = grdp - state.lpos.pos;
-
-                if (delta.zero()) // clicked on current position
-                    cmd = CMD_MAP_GOTO_TARGET; // go to current cursor pos
-                else
-                    cmd = CMD_NEXT_CMD; // a dummy command
-    #else
-                const c_mouse_event cme = get_mouse_event();
-                const coord_def grdp = cme.pos + view.start - coord_def(1, top);
-
-                if (cme.left_clicked() && in_bounds(grdp))
-                {
-                    state.lpos       = level_pos(level_id::current(), grdp);
-                    state.chose      = true;
-                    state.map_alive  = false;
-                }
-                else if (cme.scroll_up())
-                    cmd = CMD_MAP_SCROLL_UP;
-                else if (cme.scroll_down())
-                    cmd = CMD_MAP_SCROLL_DOWN;
-    #endif
-            }
-
-            if (key == CK_REDRAW)
-            {
-                if (Options.messages_at_top)
-                {
-                    display_message_window();
-                    viewwindow();
-                }
-                else
-                {
-                    viewwindow();
-                    display_message_window();
-                }
-                continue;
-            }
-
-            c_input_reset(false);
-
-            state = process_map_command(cmd, state);
-            if (!state.map_alive)
-                break;
-        }
-
-        // TODO: is this needed?
-        state.lpos.pos = state.lpos.pos.clamped(known_map_bounds());
-        ASSERT(map_bounds(state.lpos.pos));
-    }
-
-#ifdef USE_TILE
-    tiles.place_cursor(CURSOR_MAP, NO_CURSOR);
-#endif
-
-    redraw_screen();
+        levelview_excursion le(travel_mode);
+        map_view = make_shared<UIMapView>(lpos, le, travel_mode, allow_offlevel);
 
 #ifdef USE_TILE_LOCAL
-    tiles.set_map_display(false);
+        unwind_bool inhibit_rendering(ui::should_render_current_regions, false);
+#else
+        cursor_control cc(!Options.use_fake_cursor);
 #endif
 
-    if (state.chose)
-        lpos = state.lpos;
+        ui::push_layout(map_view, KMC_LEVELMAP);
+        while (map_view->is_alive() && !crawl_state.seen_hups)
+            ui::pump_events();
+        ui::pop_layout();
 
-    return state.chose;
+#ifdef USE_TILE_LOCAL
+        tiles.set_map_display(false);
+#endif
+#ifdef USE_TILE
+        tiles.place_cursor(CURSOR_MAP, NO_CURSOR);
+#endif
+
+        lpos = map_view->lpos();
+        const bool result = map_view->chose();
+        map_view = nullptr;
+        return result;
+    }
+}
+
+level_pos map_follow_stairs(bool up, const coord_def &pos)
+{
+    level_pos dest = _stair_dest(pos, up ? CMD_GO_UPSTAIRS : CMD_GO_DOWNSTAIRS);
+
+    if (!dest.id.is_valid())
+    {
+        dest.id = up ? find_up_level(level_id::current())
+            : find_down_level(level_id::current());
+        dest.pos = coord_def(-1, -1);
+    }
+
+    if (dest.id.is_valid() && dest.id != level_id::current()
+        && you.level_visited(dest.id))
+    {
+        return dest;
+    }
+    else
+        return level_pos();
+}
+
+void process_map_command(command_type cmd)
+{
+    // XX cleaner API for this
+    shared_ptr<ui::Widget> l = ui::top_layout();
+    if (UIMapView *mv = dynamic_cast<UIMapView *>(l.get()))
+        mv->process_command(cmd);
 }
 
 map_control_state process_map_command(command_type cmd, const map_control_state& prev_state)
 {
+    // the map needs a cursor, but we need to hide it here
+    cursor_control cc(false);
     map_control_state state = prev_state;
     state.map_alive = true;
     state.chose = false;
@@ -968,24 +1110,13 @@ map_control_state process_map_command(command_type cmd, const map_control_state&
         if (!state.allow_offlevel)
             break;
 
-        const bool up = (cmd == CMD_MAP_PREV_LEVEL);
-        level_pos dest =
-            _stair_dest(state.lpos.pos,
-                        up ? CMD_GO_UPSTAIRS : CMD_GO_DOWNSTAIRS);
-
-        if (!dest.id.is_valid())
-        {
-            dest.id = up ? find_up_level(level_id::current())
-                : find_down_level(level_id::current());
-            dest.pos = coord_def(-1, -1);
-        }
-
-        if (dest.id.is_valid() && dest.id != level_id::current()
-            && you.level_visited(dest.id))
+        const level_pos dest = map_follow_stairs(
+                                    cmd == CMD_MAP_PREV_LEVEL, state.lpos.pos);
+        if (dest.id.is_valid())
         {
             state.lpos = dest;
+            los_changed();
         }
-        los_changed();
         break;
     }
 
@@ -1160,6 +1291,7 @@ map_control_state process_map_command(command_type cmd, const map_control_state&
     case CMD_MAP_ANNOTATE_LEVEL:
         state.excursion->go_to(state.original);
         redraw_screen();
+        update_screen();
         state.excursion->go_to(state.lpos.id);
 
         if (!is_map_persistent())
@@ -1169,7 +1301,7 @@ map_control_state process_map_command(command_type cmd, const map_control_state&
 #ifdef USE_TILE_WEB
             tiles_ui_control msgwin(UI_NORMAL);
 #endif
-            do_annotate(state.lpos.id);
+            annotate_level(state.lpos.id);
         }
 
         state.redraw_map = true;
@@ -1214,7 +1346,13 @@ map_control_state process_map_command(command_type cmd, const map_control_state&
     case CMD_MAP_DESCRIBE:
         if (map_bounds(state.lpos.pos) && env.map_knowledge(state.lpos.pos).known())
         {
-            full_describe_square(state.lpos.pos, false);
+            if (full_describe_square(state.lpos.pos, false))
+            {
+                state.map_alive = false;
+                state.chose = false; // don't go to the location
+            }
+            // n.b. it's possible for the describe popup to trigger a reentrant
+            // call and overwrite state
             state.redraw_map = true;
         }
         break;

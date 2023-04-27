@@ -9,9 +9,7 @@ axes AXES_ON
 maces_flails MACES_FLAILS_ON
 polearms POLEARMS_ON
 staves STAVES_ON
-slings SLINGS_ON
-bows BOWS_ON
-crossbows CROSSBOWS_ON
+bows RANGED_WEAPONS_ON
 throwing THROWING_ON
 armour ARMOUR_ON
 dodging DODGING_ON
@@ -24,7 +22,6 @@ unarmed_combat_tentacle UNARMED_COMBAT_TENTACLE_ON
 spellcasting SPELLCASTING_ON
 conjurations CONJURATIONS_ON
 hexes HEXES_ON
-charms CHARMS_ON
 summonings SUMMONINGS_ON
 necromancy NECROMANCY_ON
 translocations TRANSLOCATIONS_ON
@@ -65,9 +62,7 @@ axes AXES_FOCUS
 maces_flails MACES_FLAILS_FOCUS
 polearms POLEARMS_FOCUS
 staves STAVES_FOCUS
-slings SLINGS_FOCUS
-bows BOWS_FOCUS
-crossbows CROSSBOWS_FOCUS
+bows RANGED_WEAPONS_FOCUS
 throwing THROWING_FOCUS
 armour ARMOUR_FOCUS
 dodging DODGING_FOCUS
@@ -80,7 +75,6 @@ unarmed_combat_tentacle UNARMED_COMBAT_TENTACLE_FOCUS
 spellcasting SPELLCASTING_FOCUS
 conjurations CONJURATIONS_FOCUS
 hexes HEXES_FOCUS
-charms CHARMS_FOCUS
 summonings SUMMONINGS_FOCUS
 necromancy NECROMANCY_FOCUS
 translocations TRANSLOCATIONS_FOCUS
@@ -121,9 +115,7 @@ axes AXES_OFF
 maces_flails MACES_FLAILS_OFF
 polearms POLEARMS_OFF
 staves STAVES_OFF
-slings SLINGS_OFF
-bows BOWS_OFF
-crossbows CROSSBOWS_OFF
+bows ANGED_WEAPONS_OFF
 throwing THROWING_OFF
 armour ARMOUR_OFF
 dodging DODGING_OFF
@@ -136,7 +128,6 @@ unarmed_combat_tentacle UNARMED_COMBAT_TENTACLE_OFF
 spellcasting SPELLCASTING_OFF
 conjurations CONJURATIONS_OFF
 hexes HEXES_OFF
-charms CHARMS_OFF
 summonings SUMMONINGS_OFF
 necromancy NECROMANCY_OFF
 translocations TRANSLOCATIONS_OFF
@@ -177,9 +168,7 @@ axes AXES_INACTIVE
 maces_flails MACES_FLAILS_INACTIVE
 polearms POLEARMS_INACTIVE
 staves STAVES_INACTIVE
-slings SLINGS_INACTIVE
-bows BOWS_INACTIVE
-crossbows CROSSBOWS_INACTIVE
+bows RANGED_WEAPONS_INACTIVE
 throwing THROWING_INACTIVE
 armour ARMOUR_INACTIVE
 dodging DODGING_INACTIVE
@@ -192,7 +181,6 @@ unarmed_combat_tentacle UNARMED_COMBAT_TENTACLE_INACTIVE
 spellcasting SPELLCASTING_INACTIVE
 conjurations CONJURATIONS_INACTIVE
 hexes HEXES_INACTIVE
-charms CHARMS_INACTIVE
 summonings SUMMONINGS_INACTIVE
 necromancy NECROMANCY_INACTIVE
 translocations TRANSLOCATIONS_INACTIVE
@@ -233,9 +221,7 @@ axes AXES_MAX
 maces_flails MACES_FLAILS_MAX
 polearms POLEARMS_MAX
 staves STAVES_MAX
-slings SLINGS_MAX
-bows BOWS_MAX
-crossbows CROSSBOWS_MAX
+bows RANGED_WEAPONS_MAX
 throwing THROWING_MAX
 armour ARMOUR_MAX
 dodging DODGING_MAX
@@ -248,7 +234,6 @@ unarmed_combat_tentacle UNARMED_COMBAT_TENTACLE_MAX
 spellcasting SPELLCASTING_MAX
 conjurations CONJURATIONS_MAX
 hexes HEXES_MAX
-charms CHARMS_MAX
 summonings SUMMONINGS_MAX
 necromancy NECROMANCY_MAX
 translocations TRANSLOCATIONS_MAX

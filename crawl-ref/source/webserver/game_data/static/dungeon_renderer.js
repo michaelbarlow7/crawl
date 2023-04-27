@@ -1,5 +1,7 @@
-define(["jquery", "./cell_renderer", "./map_knowledge", "./options", "./tileinfo-dngn", "./util", "./view_data", "./enums"],
-function ($, cr, map_knowledge, options, dngn, util, view_data, enums) {
+define(["jquery", "comm", "./cell_renderer", "./map_knowledge", "./options",
+    "./tileinfo-dngn", "./util", "./view_data", "./enums", "./mouse_control"],
+function ($, comm, cr, map_knowledge, options, dngn, util, view_data, enums,
+    mouse_control) {
     "use strict";
     var global_anim_counter = 0;
 
@@ -52,6 +54,7 @@ function ($, cr, map_knowledge, options, dngn, util, view_data, enums) {
         this.view = { x: 0, y: 0 };
         this.view_center = { x: 0, y: 0 };
         this.ui_state = -1;
+        this.last_sent_cursor = { x: 0, y: 0 };
     }
 
     DungeonViewRenderer.prototype = new cr.DungeonCellRenderer();
@@ -101,8 +104,21 @@ function ($, cr, map_knowledge, options, dngn, util, view_data, enums) {
 
                 view_data.place_cursor(enums.CURSOR_MOUSE, loc);
 
+                if (game.can_target())
+                {
+                    // XX refactor into mouse_control.js?
+                    if (loc.x != this.last_sent_cursor.x
+                        || loc.y != this.last_sent_cursor.y)
+                    {
+                        this.last_sent_cursor = {x: loc.x, y: loc.y};
+                        comm.send_message("target_cursor",
+                                                    this.last_sent_cursor);
+                    }
+                }
+
                 if (ev.type === "mousemove")
                 {
+
                     if (this.tooltip_timeout)
                         clearTimeout(this.tooltip_timeout);
 
@@ -251,13 +267,9 @@ function ($, cr, map_knowledge, options, dngn, util, view_data, enums) {
 
             if (options.get("tile_display_mode") == "glyphs")
             {
-                // font size ratio: handled in cell_renderer.js
-                var margin = 2 * ratio;
-                this.ctx.font = this.glyph_mode_font_name();
-                var metrics = this.ctx.measureText("@");
-                this.set_cell_size(metrics.width + margin,
-                        Math.floor(this.glyph_mode_font_size * scale / 100)
-                        + margin);
+                this.glyph_mode_update_font_metrics();
+                this.set_cell_size(this.glyph_mode_font_width,
+                                    this.glyph_mode_line_height);
             }
             else if ((min_diameter * cell_size.w / ratio > width)
                 || (min_diameter * cell_size.h / ratio > height))
@@ -340,14 +352,6 @@ function ($, cr, map_knowledge, options, dngn, util, view_data, enums) {
             }
         },
 
-        draw_overlay: function(idx, x, y)
-        {
-            if (this.in_view(x, y))
-                this.draw_main(idx,
-                               (x - this.view.x) * this.cell_width,
-                               (y - this.view.y) * this.cell_height);
-        },
-
         // This is mostly here so that it can inherit cell size
         new_renderer: function(tiles)
         {
@@ -366,7 +370,13 @@ function ($, cr, map_knowledge, options, dngn, util, view_data, enums) {
         set_ui_state: function(s)
         {
             this.ui_state = s;
-        }
+        },
+
+        update_mouse_mode: function (m)
+        {
+            if (!game.can_target())
+                this.last_sent_cursor = { x: 0, y: 0 };
+        },
     });
 
     var renderer = new DungeonViewRenderer();

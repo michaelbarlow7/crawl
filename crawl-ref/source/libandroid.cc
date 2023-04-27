@@ -560,13 +560,13 @@ void enable_smart_cursor(bool dummy)
 
 inline unsigned get_brand(int col)
 {
-    return (col & COLFLAG_FRIENDLY_MONSTER) ? Options.friend_brand :
-           (col & COLFLAG_NEUTRAL_MONSTER)  ? Options.neutral_brand :
-           (col & COLFLAG_ITEM_HEAP)        ? Options.heap_brand :
-           (col & COLFLAG_WILLSTAB)         ? Options.stab_brand :
-           (col & COLFLAG_MAYSTAB)          ? Options.may_stab_brand :
-           (col & COLFLAG_FEATURE_ITEM)     ? Options.feature_item_brand :
-           (col & COLFLAG_TRAP_ITEM)        ? Options.trap_item_brand :
+    return (col & COLFLAG_FRIENDLY_MONSTER) ? Options.friend_highlight :
+           (col & COLFLAG_NEUTRAL_MONSTER)  ? Options.neutral_highlight :
+           (col & COLFLAG_ITEM_HEAP)        ? Options.heap_highlight :
+           (col & COLFLAG_WILLSTAB)         ? Options.stab_highlight :
+           (col & COLFLAG_MAYSTAB)          ? Options.may_stab_highlight :
+           (col & COLFLAG_FEATURE_ITEM)     ? Options.feature_item_highlight :
+           (col & COLFLAG_TRAP_ITEM)        ? Options.trap_item_highlight :
            (col & COLFLAG_REVERSE)          ? CHATTR_REVERSE
                                             : CHATTR_NORMAL;
 }
@@ -646,4 +646,29 @@ bool kbhit()
 int num_to_lines(int num)
 {
     return num;
+}
+
+// Mostly taken from libunix.cc, not really sure what this is for
+lib_display_info::lib_display_info()
+    : type("Console"),
+    term("N/A"), // Not sure?
+    fg_colors(Options.bold_brightens_foreground != MB_FALSE ? 16 : 8),
+    bg_colors(Options.blink_brightens_background ? 16 : 8)
+{
+}
+
+// Also taken from libunix.cc ¯\_(ツ)_/¯
+COLOURS default_hover_colour()
+{
+    // DARKGREY backgrounds go to black with 8 colors. I think this is
+    // generally what we want, rather than applying a workaround (like the
+    // DARKGREY -> BLUE foreground trick), but this means that using a
+    // DARKGREY hover, which arguably looks better in 16colors, won't work.
+    // DARKGREY is also not safe under bold_brightens_foreground, since a
+    // terminal that supports this won't necessarily handle a bold background.
+
+    // n.b. if your menu uses just one color, and you set that as the hover,
+    // you will get automatic color inversion. That is generally the safest
+    // option where possible.
+    return Options.blink_brightens_background ? DARKGREY : BLUE;
 }

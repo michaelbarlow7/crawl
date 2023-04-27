@@ -5,7 +5,6 @@ enum operation_types
     OPER_WIELD    = 'w',
     OPER_QUAFF    = 'q',
     OPER_DROP     = 'd',
-    OPER_EAT      = 'e',
     OPER_TAKEOFF  = 'T',
     OPER_WEAR     = 'W',
     OPER_PUTON    = 'P',
@@ -20,4 +19,5 @@ enum operation_types
     OPER_ATTACK   = 'a',
     OPER_BUTCHER  = 'c',
     OPER_ANY      = 0,
+    OPER_NONE     = -1, // could this be 0?
 };

@@ -22,12 +22,14 @@
 #include "losglobal.h"
 #include "message.h"
 #include "mon-behv.h"
+#include "mutation.h"
 #include "religion.h"
 #include "stepdown.h"
 #include "terrain.h"
 #include "traps.h"
 #include "travel.h"
 
+/// Bitmasks for area properties
 enum class areaprop
 {
     sanctuary_1   = (1 << 0),
@@ -36,14 +38,16 @@ enum class areaprop
     halo          = (1 << 3),
     liquid        = (1 << 4),
     actual_liquid = (1 << 5),
-    orb           = (1 << 6),
+    orb           = (1 << 6), ///< The glow of the Orb of Zot
     umbra         = (1 << 7),
     quad          = (1 << 8),
     disjunction   = (1 << 9),
     soul_aura     = (1 << 10),
 };
+/// Bit field for the area properties
 DEF_BITFIELD(areaprops, areaprop);
 
+/// Center of an area effect
 struct area_centre
 {
     area_centre_type type;
@@ -55,10 +59,15 @@ struct area_centre
 
 typedef FixedArray<areaprops, GXM, GYM> propgrid_t;
 
+/// The area center cache. Contains centers of all area effects.
 static vector<area_centre> _agrid_centres;
 
-static propgrid_t _agrid;
+static propgrid_t _agrid; ///< The area grid cache
+/// \brief Is the area grid cache up-to-date?
+/// \details If false, each check for area effects that affect a coordinate
+/// would trigger an update of the area grid cache.
 static bool _agrid_valid = false;
+/// \brief If true, the level has no area effect
 static bool no_areas = false;
 
 static void _set_agrid_flag(const coord_def& p, areaprop f)
@@ -71,6 +80,11 @@ static bool _check_agrid_flag(const coord_def& p, areaprop f)
     return bool(_agrid(p) & f);
 }
 
+/// \brief Invalidates the area effect cache
+/// \details Invalidates the area effect cache, causing the next request for
+/// area effects to re-calculate which locations are covered by halos, etc.
+/// If \p recheck_new is false, the cache will only be invalidated if the level
+/// had existing area effects.
 void invalidate_agrid(bool recheck_new)
 {
     _agrid_valid = false;
@@ -84,13 +98,19 @@ void areas_actor_moved(const actor* act, const coord_def& oldpos)
     if (act->alive() &&
         (you.entering_level
          || act->halo_radius() > -1 || act->silence_radius() > -1
-         || act->liquefying_radius() > -1 || act->umbra_radius() > -1))
+         || act->liquefying_radius() > -1 || act->umbra_radius() > -1
+         || act->demon_silence_radius() > -1))
     {
         // Not necessarily new, but certainly potentially interesting.
         invalidate_agrid(true);
     }
 }
 
+/// \brief Add some of the actor's area effects to the grid and center caches
+/// \param actor The actor
+/// \details Adds some but not all of an actor's area effects (e.g. silence)
+/// to the area grid (\ref _agrid) and center (\ref _agrid_centres) caches.
+/// Sets \ref no_areas to false if the actor generates those area effects.
 static void _actor_areas(actor *a)
 {
     int r;
@@ -100,6 +120,15 @@ static void _actor_areas(actor *a)
         _agrid_centres.emplace_back(area_centre_type::silence, a->pos(), r);
 
         for (radius_iterator ri(a->pos(), r, C_SQUARE); ri; ++ri)
+            _set_agrid_flag(*ri, areaprop::silence);
+        no_areas = false;
+    }
+
+    if ((r = a->demon_silence_radius()) >= 0)
+    {
+        _agrid_centres.emplace_back(area_centre_type::silence, a->pos(), r);
+
+        for (radius_iterator ri(a->pos(), r, C_SQUARE, LOS_DEFAULT, true); ri; ++ri)
             _set_agrid_flag(*ri, areaprop::silence);
         no_areas = false;
     }
@@ -119,7 +148,7 @@ static void _actor_areas(actor *a)
 
         for (radius_iterator ri(a->pos(), r, C_SQUARE, LOS_SOLID); ri; ++ri)
         {
-            dungeon_feature_type f = grd(*ri);
+            dungeon_feature_type f = env.grid(*ri);
 
             _set_agrid_flag(*ri, areaprop::liquid);
 
@@ -417,6 +446,14 @@ void create_sanctuary(const coord_def& center, int time)
 
         env.pgrid(pos) &= ~(FPROP_BLOODY);
 
+        if (env.grid(pos) == DNGN_FOUNTAIN_BLOOD)
+        {
+            if (you.see_cell(pos))
+                blood_count++;
+
+            dungeon_terrain_changed(pos, DNGN_FOUNTAIN_BLUE);
+        }
+
         // Scare all attacking monsters inside sanctuary, and make
         // all friendly monsters inside sanctuary stop attacking and
         // move towards the player.
@@ -476,7 +513,7 @@ void create_sanctuary(const coord_def& center, int time)
 // dur starts at 10 (low power) and is capped at 100
 // maximal range: 5
 // last 6 turns: range 0, hence only the player affected
-static int _shrinking_aoe_range(int dur)
+int shrinking_aoe_range(int dur)
 {
     if (dur <= 0)
         return -1;
@@ -489,7 +526,14 @@ static int _shrinking_aoe_range(int dur)
 
 int player::silence_radius() const
 {
-    return _shrinking_aoe_range(duration[DUR_SILENCE]);
+    return shrinking_aoe_range(duration[DUR_SILENCE]);
+}
+
+int player::demon_silence_radius() const
+{
+    if (you.get_mutation_level(MUT_SILENCE_AURA))
+        return 1;
+    return -1;
 }
 
 int monster::silence_radius() const
@@ -504,9 +548,15 @@ int monster::silence_radius() const
     // The below is arbitrarily chosen to make monster decay look reasonable.
     const int moddur = BASELINE_DELAY
                        * max(7, stepdown_value(dur * 10 - 60, 10, 5, 45, 100));
-    return _shrinking_aoe_range(moddur);
+    return shrinking_aoe_range(moddur);
 }
 
+int monster::demon_silence_radius() const
+{
+    return -1;
+}
+
+/// Check if a coordinate is silenced
 bool silenced(const coord_def& p)
 {
     if (!map_bounds(p))
@@ -546,6 +596,8 @@ int player::halo_radius() const
 
     if (player_equip_unrand(UNRAND_EOS))
         size = max(size, 3);
+    else if (wearing_ego(EQ_ALL_ARMOUR, SPARM_LIGHT))
+        size = max(size, 3);
     else if (you.props.exists(WU_JIAN_HEAVENLY_STORM_KEY))
         size = max(size, 2);
 
@@ -570,6 +622,7 @@ static int _mons_class_halo_radius(monster_type type)
     case MONS_SERAPH:
         return 7; // highest rank among sentient ones
     case MONS_HOLY_SWINE:
+    case MONS_SUN_MOTH:
         return 1;  // only notionally holy
     case MONS_MENNAS:
         return 2;  // ???  Low on grace or what?
@@ -586,6 +639,9 @@ int monster::halo_radius() const
     if (weap && is_unrandom_artefact(*weap, UNRAND_EOS))
         size = 3;
 
+    if (wearing_ego(EQ_ALL_ARMOUR, SPARM_LIGHT))
+        size = 3;
+
     if (!(holiness() & MH_HOLY))
         return size;
 
@@ -598,7 +654,7 @@ int monster::halo_radius() const
 
 int player::liquefying_radius() const
 {
-    return _shrinking_aoe_range(duration[DUR_LIQUEFYING]);
+    return shrinking_aoe_range(duration[DUR_LIQUEFYING]);
 }
 
 int monster::liquefying_radius() const
@@ -609,7 +665,7 @@ int monster::liquefying_radius() const
     // The below is arbitrarily chosen to make monster decay look reasonable.
     const int moddur = BASELINE_DELAY *
         max(7, stepdown_value(dur * 10 - 60, 10, 5, 45, 100));
-    return _shrinking_aoe_range(moddur);
+    return shrinking_aoe_range(moddur);
 }
 
 bool liquefied(const coord_def& p, bool check_actual)
@@ -620,7 +676,7 @@ bool liquefied(const coord_def& p, bool check_actual)
     if (!_agrid_valid)
         _update_agrid();
 
-    if (feat_is_water(grd(p)) || feat_is_lava(grd(p)))
+    if (feat_is_water(env.grid(p)) || feat_is_lava(env.grid(p)))
         return false;
 
     // "actually" liquefied (ie, check for movement)
@@ -720,7 +776,7 @@ int monster::umbra_radius() const
         return -1;
 
     // Enslaved holies get an umbra.
-    if (mons_enslaved_soul(*this))
+    if (mons_bound_soul(*this))
         return _mons_class_halo_radius(base_monster);
 
     switch (type)

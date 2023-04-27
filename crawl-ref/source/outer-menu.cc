@@ -9,6 +9,7 @@
 
 #include "cio.h"
 #include "outer-menu.h"
+#include "tilepick.h"
 #include "tileweb.h"
 #include "unwind.h"
 
@@ -19,7 +20,7 @@ bool OuterMenu::focus_button_on_mouseenter = false;
 MenuButton::MenuButton()
 {
     on_hotkey_event([this](const KeyEvent& event) {
-        if (event.key() == hotkey)
+        if (numpad_to_regular(event.key(), true) == hotkey)
             return activate();
         return false;
     });
@@ -150,7 +151,7 @@ bool MenuButton::on_event(const Event& event)
         return activate();
     else if (event.type() == Event::Type::KeyDown)
     {
-        const auto key = static_cast<const KeyEvent&>(event).key();
+        const auto key = numpad_to_regular(static_cast<const KeyEvent&>(event).key(), true);
         if (key == CK_ENTER || key == ' ')
             return activate();
     }
@@ -164,7 +165,7 @@ static void serialize_image(const Image* image)
     tile_def tile = image->get_tile();
     tiles.json_open_object();
     tiles.json_write_int("t", tile.tile);
-    tiles.json_write_int("tex", tile.tex);
+    tiles.json_write_int("tex", get_tile_texture(tile.tile));
     if (tile.ymax != TILE_Y)
         tiles.json_write_int("ymax", tile.ymax);
     tiles.json_close_object();
@@ -176,7 +177,7 @@ void MenuButton::serialize()
     tiles.json_write_int("hotkey", hotkey);
     tiles.json_write_int("highlight_colour", highlight_colour);
     if (auto text = dynamic_cast<Text*>(m_child.get()))
-        tiles.json_write_string("label", text->get_text().to_colour_string());
+        tiles.json_write_string("label", text->get_text().to_colour_string(LIGHTGREY));
     else if (auto box = dynamic_cast<Box*>(m_child.get()))
     {
         if (box->num_children() <= 1)
@@ -186,7 +187,7 @@ void MenuButton::serialize()
             serialize_image(tile);
         else if (auto tilestack = dynamic_cast<Stack*>(((*box)[0].get())))
         {
-            for (const auto it : *tilestack)
+            for (const auto &it : *tilestack)
                 if (auto t = dynamic_cast<Image*>(it.get()))
                     serialize_image(t);
         }
@@ -195,7 +196,7 @@ void MenuButton::serialize()
         tiles.json_open_array("labels");
         for (size_t i = 1; i < box->num_children(); i++)
             if (auto text2 = dynamic_cast<Text*>((*box)[i].get()))
-                tiles.json_write_string(text2->get_text().to_colour_string());
+                tiles.json_write_string(text2->get_text().to_colour_string(LIGHTGREY));
         tiles.json_close_array();
     }
 }
@@ -389,7 +390,7 @@ bool OuterMenu::scroller_event_hook(const Event& ev)
     if (ev.type() != Event::Type::KeyDown)
         return false;
 
-    const auto key = static_cast<const KeyEvent&>(ev).key();
+    const auto key = numpad_to_regular(static_cast<const KeyEvent&>(ev).key(), true);
 
     if (key == CK_DOWN || key == CK_UP || key == CK_LEFT || key == CK_RIGHT
             || key == CK_HOME || key == CK_END || key == CK_PGUP || key == CK_PGDN)
@@ -460,7 +461,7 @@ void OuterMenu::serialize(string name)
         tiles.json_open_object();
         tiles.json_write_int("x", label.second.x);
         tiles.json_write_int("y", label.second.y);
-        tiles.json_write_string("label", label.first.to_colour_string());
+        tiles.json_write_string("label", label.first.to_colour_string(LIGHTGREY));
         tiles.json_close_object();
     }
     tiles.json_close_array();

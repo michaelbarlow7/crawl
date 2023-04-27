@@ -96,17 +96,6 @@ sorciers, car il permet aux plus doués de répandre la destruction avec la
 facilité d'un claquement de doigt. Cependant, les médiocres courent à leur
 perte s'ils essaient de le lire.
 %%%%
-book of battle
-
-Un livre de sorts utilisés par les skalds, dont les chants de batailles leur
-accorde une aide magique.
-%%%%
-book of beasts
-
-Un livre de sorts aux pages faites de peaux d'animaux et à la couverture
-couverte de morsure dont le contenu est principalement concentré sur la
-production magiques de bêtes.
-%%%%
 book of burglary
 
 Un livre contenant de nombreux sorts utiles pour voler, entrer par effraction,
@@ -271,12 +260,6 @@ commandement de serviteurs morts-vivants. Ce livre terrible irradie une aura
 malfaisante, et ses pages de parchemin tremblent et frémissent parfois toutes
 seules.
 %%%%
-book of war chants
-
-Un livre de sorts utile pour un guerrier. Les versions présentées ici ont une
-forme musicale, suivant les traditions des skalds guerriers. Fonctionnellement,
-cependant, ils sont identiques aux sorts dont les mots sont simplement parlés.
-%%%%
 book of wizardry
 
 Un livre contenant divers sorts utiles aux laceurs de sorts suffisamment
@@ -320,11 +303,6 @@ Un morceau de fromage.
 choko
 
 Un légume vert presque insipide, qui pousse sur des vignes.
-%%%%
-chunk of flesh
-
-Un morceau de viande crue trouvé dans le donjon. Il ne va pas rester frais bien
-longtemps.
 %%%%
 cloak
 
@@ -825,11 +803,6 @@ scroll of magic mapping
 
 Ce parchemin révèle les environs de celui qui le lit.
 %%%%
-scroll of random uselessness
-
-Il est facile d'être aveuglé par le sentiment d'accomplissement que l'on a à
-faire marcher ce parchemin, au vu de sa particulière inutilité.
-%%%%
 scroll of remove curse
 
 Lire ce parchemin permet de libérer les objets que vous portez ou tenez en main
@@ -879,16 +852,6 @@ pointue fixée au bout.
 staff of conjuration
 
 Ce bâton accroit la puissance des conjurations de son porteur.
-%%%%
-staff of energy
-
-Ce bâton permet à son porteur de contrôler l'énergie magique : jeter des sorts
-ne donne plus faim et il peut canaliser la magie ambiante.
-%%%%
-staff of wizardry
-
-Ce bâton accroit significativement l'aptitude de son porteur à lancer des
-sorts.
 %%%%
 steam dragon hide
 
@@ -959,49 +922,14 @@ Une armure magique confectionnée à partir de la peau raide et bosselée d'un
 troll. Elle est capable de régénérer les tissus de son porteur à un rythme lent
 (sauf si le porteur est déjà un troll).
 %%%%
-wand of cold
-
-Un instrument magique permettant de tirer de puissants missiles de froid.
-%%%%
 wand of digging
 
 Un instrument magique qui creuse des tunnels a travers la roche brute.
-%%%%
-wand of disintegration
-
-Un instrument magique qui désagrège la structure physique de n'importe quoi, à
-l’exception notable des murs les plus durs – cela inclue les statues rigides,
-bref tout ce qui n'est pas de chair.
-%%%%
-wand of enslavement
-
-Un instrument magique qui provoque une servitude aveugle chez une créature.
-%%%%
-wand of fire
-
-Un instrument magique qui tire de puissants missiles de feu.
-%%%%
-wand of fireball
-
-Un instrument magique qui tire des salves de flammes explosives.
-%%%%
-wand of invisibility
-
-Un instrument magique qui cache une créature à la vue des autres.
-%%%%
-wand of magic darts
-
-Un instrument magique qui tire de petits missiles d'énergie destructrice. Ils
-ne ratent jamais.
 %%%%
 wand of polymorph
 
 Un instrument magique qui métamorphose la créature ciblée en une autre
 créature. Ceci est particulièrement efficace contre les changeurs de forme.
-%%%%
-wand of random effects
-
-Un instrument magique qui peut produire une grande variété d'effets.
 %%%%
 whip
 

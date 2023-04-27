@@ -26,6 +26,8 @@ struct show_type;
 
 bool is_door_tile(tileidx_t tile);
 
+TextureID get_tile_texture(tileidx_t idx);
+
 // Tile index lookup from Crawl data.
 tileidx_t tileidx_feature(const coord_def &gc);
 tileidx_t tileidx_trap(trap_type type);
@@ -37,13 +39,11 @@ void tileidx_out_of_los(tileidx_t *fg, tileidx_t *bg, tileidx_t *cloud, const co
 tileidx_t tileidx_monster(const monster_info& mon);
 tileidx_t tileidx_draco_base(const monster_info& mon);
 tileidx_t tileidx_draco_job(const monster_info& mon);
-tileidx_t tileidx_demonspawn_base(const monster_info& mon);
-tileidx_t tileidx_demonspawn_job(const monster_info& mon);
 tileidx_t tileidx_player_mons();
 tileidx_t tileidx_tentacle(const monster_info& mon);
 
-tileidx_t tileidx_item(const item_info &item);
-tileidx_t tileidx_item_throw(const item_info &item, int dx, int dy);
+tileidx_t tileidx_item(const item_def &item);
+tileidx_t tileidx_item_throw(const item_def &item, int dx, int dy);
 tileidx_t tileidx_known_base_item(tileidx_t label);
 
 tileidx_t tileidx_cloud(const cloud_info &cl);
@@ -63,6 +63,8 @@ tileidx_t tileidx_known_brand(const item_def &item);
 tileidx_t tileidx_corpse_brand(const item_def &item);
 
 tileidx_t tileidx_unseen_flag(const coord_def &gc);
+
+set<tileidx_t> status_icons_for(const monster_info &mon);
 
 // Return the level of enchantment as an int. None is 0, Randart is 4.
 int enchant_to_int(const item_def &item);

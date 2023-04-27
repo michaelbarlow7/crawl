@@ -83,7 +83,10 @@ void clear_map_or_travel_trail()
     }
     else
     {
-        mpr("Clearing level map.");
+        mpr("Clearing monster memory.");
+        /* Items (other than corpses) cannot in general be moved or destroyed
+         * once they have been seen, so there is no need to clear them.
+         */
         clear_map();
         crawl_view.set_player_at(you.pos());
     }
@@ -123,7 +126,7 @@ void reautomap_level()
 
 void set_terrain_seen(const coord_def pos)
 {
-    const dungeon_feature_type feat = grd(pos);
+    const dungeon_feature_type feat = env.grid(pos);
     map_cell* cell = &env.map_knowledge(pos);
 
     // First time we've seen a notable feature.
@@ -172,7 +175,7 @@ void map_cell::set_detected_item()
 {
     clear_item();
     flags |= MAP_DETECTED_ITEM;
-    _item = new item_info();
+    _item = new item_def();
     _item->base_type = OBJ_DETECTED;
     _item->rnd       = 1;
 }

@@ -1,5 +1,11 @@
 #pragma once
 
+#include <vector>
+
+#include "tag-version.h"
+
+using std::vector;
+
 enum potion_type
 {
     POT_CURING,
@@ -7,7 +13,7 @@ enum potion_type
     POT_HASTE,
     POT_MIGHT,
     POT_BRILLIANCE,
-    POT_STABBING,
+    POT_ATTRACTION,
 #if TAG_MAJOR_VERSION == 34
     POT_GAIN_STRENGTH,
     POT_GAIN_DEXTERITY,
@@ -51,6 +57,28 @@ enum potion_type
     POT_DUMMY_AGILITY,
 #endif
     NUM_POTIONS
+};
+
+// used for objstat
+const vector<potion_type> potion_types =
+{
+    POT_CURING,
+    POT_HEAL_WOUNDS,
+    POT_HASTE,
+    POT_MIGHT,
+    POT_BRILLIANCE,
+    POT_ATTRACTION,
+    POT_FLIGHT,
+    POT_CANCELLATION,
+    POT_AMBROSIA,
+    POT_INVISIBILITY,
+    POT_DEGENERATION,
+    POT_EXPERIENCE,
+    POT_MAGIC,
+    POT_BERSERK_RAGE,
+    POT_MUTATION,
+    POT_RESISTANCE,
+    POT_LIGNIFY,
 };
 
 #if TAG_MAJOR_VERSION == 34

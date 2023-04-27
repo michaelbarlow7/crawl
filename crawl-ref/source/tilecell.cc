@@ -11,6 +11,7 @@
 #include "tile-flags.h"
 #include "rltiles/tiledef-dngn.h"
 #include "rltiles/tiledef-main.h"
+#include "tag-version.h"
 #include "viewgeom.h"
 
 void packed_cell::clear()
@@ -352,17 +353,12 @@ static dungeon_feature_type _safe_feat(coord_def gc, crawl_view_buffer& vbuf)
     return vbuf(gc).tile.map_knowledge.feat();
 }
 
-static bool _feat_is_mangrove(dungeon_feature_type feat)
-{
-    return feat == DNGN_TREE && player_in_branch(BRANCH_SWAMP);
-}
-
 static bool _is_seen_land(coord_def gc, crawl_view_buffer& vbuf)
 {
     const auto feat = _safe_feat(gc, vbuf);
 
     return feat != DNGN_UNSEEN && !feat_is_water(feat) && !feat_is_lava(feat)
-           && !_feat_is_mangrove(feat);
+           && feat != DNGN_MANGROVE;
 }
 
 static bool _is_seen_shallow(coord_def gc, crawl_view_buffer& vbuf)
@@ -372,7 +368,7 @@ static bool _is_seen_shallow(coord_def gc, crawl_view_buffer& vbuf)
     if (!vbuf(gc).tile.map_knowledge.seen())
         return false;
 
-    return feat == DNGN_SHALLOW_WATER || _feat_is_mangrove(feat);
+    return feat == DNGN_SHALLOW_WATER || feat == DNGN_MANGROVE;
 }
 
 static tileidx_t _base_wave_tile(colour_t colour)
@@ -393,8 +389,8 @@ static void _pack_default_waves(const coord_def &gc, crawl_view_buffer& vbuf)
     auto feat = cell.map_knowledge.feat();
     auto colour = cell.map_knowledge.feat_colour();
 
-    // Treat trees in Swamp as though they were shallow water.
-    if (cell.mangrove_water && feat == DNGN_TREE)
+    // Treat mangroves as though they were shallow water.
+    if (cell.mangrove_water && feat == DNGN_MANGROVE)
         feat = DNGN_SHALLOW_WATER;
 
     if (!feat_is_water(feat) && !feat_is_lava(feat))
@@ -436,7 +432,7 @@ static bool _is_seen_wall(coord_def gc, crawl_view_buffer& vbuf)
 {
     const auto feat = _safe_feat(gc, vbuf);
     return (feat_is_opaque(feat) || feat_is_wall(feat))
-           && feat != DNGN_TREE && feat != DNGN_UNSEEN;
+           && !feat_is_tree(feat) && feat != DNGN_UNSEEN;
 }
 
 static void _pack_wall_shadows(const coord_def &gc, crawl_view_buffer& vbuf,
@@ -480,25 +476,18 @@ static void _pack_wall_shadows(const coord_def &gc, crawl_view_buffer& vbuf,
 
 static bool _is_seen_slimy_wall(const coord_def& gc, crawl_view_buffer &vbuf)
 {
-    const auto feat = _safe_feat(gc, vbuf);
-
-    return feat == DNGN_SLIMY_WALL;
+    return _safe_feat(gc, vbuf) == DNGN_SLIMY_WALL;
 }
 
 static bool _is_seen_icy_wall(const coord_def& gc, crawl_view_buffer &vbuf)
 {
-    if (gc.x < 0 || gc.x >= vbuf.size().x || gc.y < 0 || gc.y >= vbuf.size().y)
-        return false;
-
-    return feat_is_wall(vbuf(gc).tile.map_knowledge.feat())
+    return feat_is_wall(_safe_feat(gc, vbuf))
            && vbuf(gc).tile.map_knowledge.flags & MAP_ICY;
 }
 
 void pack_cell_overlays(const coord_def &gc, crawl_view_buffer &vbuf)
 {
     auto& cell = vbuf(gc).tile;
-
-    cell.num_dngn_overlay = 0;
 
     if (cell.map_knowledge.feat() == DNGN_UNSEEN)
         return; // Don't put overlays on unseen tiles

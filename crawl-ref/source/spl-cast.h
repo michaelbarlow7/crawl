@@ -5,7 +5,19 @@
 
 #pragma once
 
+#include <vector>
+#include <memory>
+#include <functional>
+
 #include "enum.h"
+#include "item-def.h"
+#include "skill-type.h"
+#include "spell-type.h"
+
+using std::vector;
+
+struct monster_info;
+class dist;
 
 enum class spflag
 {
@@ -16,7 +28,6 @@ enum class spflag
                      //  0x00000008,
                                           // used to test for targeting
     targeting_mask     = spflag::dir_or_target | spflag::target,
-    // TODO: we need a new flag if we want to target corpses too.
     obj                = 0x00000010,      // TARG_MOVABLE_OBJECT used
     helpful            = 0x00000020,      // TARG_FRIEND used
     neutral            = 0x00000040,      // TARG_ANY used
@@ -25,7 +36,7 @@ enum class spflag
     unclean            = 0x00000200,      // counts as "unclean"
     chaotic            = 0x00000400,      // counts as "chaotic"
     hasty              = 0x00000800,      // counts as "hasty"
-    emergency          = 0x00001000,      // monsters use in emergencies
+                     //  0x00001000,
     escape             = 0x00002000,      // useful for running away
     recovery           = 0x00004000,      // healing or recovery spell
     area               = 0x00008000,      // area affect
@@ -40,7 +51,7 @@ enum class spflag
     utility            = 0x01000000,      // usable no matter what foe is
     no_ghost           = 0x02000000,      // ghosts can't get this spell
     cloud              = 0x04000000,      // makes a cloud
-    MR_check           = 0x08000000,      // spell that checks monster MR
+    WL_check           = 0x08000000,      // spell that checks monster WL
     mons_abjure        = 0x10000000,      // monsters can cast abjuration
                                           // instead of this spell
     not_evil           = 0x20000000,      // not considered evil by the
@@ -71,39 +82,46 @@ enum class spret
 #define IOOD_FLAWED "iood_flawed"
 #define IOOD_TPOS "iood_tpos"
 
+#define INNATE_SPELLS_KEY "innate_spells"
+
 #define fail_check() if (fail) return spret::fail
 
 void surge_power(const int enhanced);
 void surge_power_wand(const int mp_cost);
 
-typedef bool (*spell_selector)(spell_type spell);
-
 int list_spells(bool toggle_with_I = true, bool viewing = false,
                 bool allow_preselect = true,
-                const string &title = "Your Spells",
-                spell_selector selector = nullptr);
+                const string &title = "Your Spells");
 int raw_spell_fail(spell_type spell);
-int stepdown_spellpower(int power, int scale = 1);
 int calc_spell_power(spell_type spell, bool apply_intel,
                      bool fail_rate_chk = false, bool cap_power = true,
                      int scale = 1);
-int calc_spell_range(spell_type spell, int power = 0, bool allow_bonus = true);
+int calc_spell_range(spell_type spell, int power = 0, bool allow_bonus = true,
+                     bool ignore_shadows = false);
 
-bool cast_a_spell(bool check_range, spell_type spell = SPELL_NO_SPELL);
-
-int apply_enhancement(const int initial_power, const int enhancer_levels);
+spret cast_a_spell(bool check_range, spell_type spell = SPELL_NO_SPELL,
+                   dist *_target = nullptr, bool force_failure = false);
 
 void inspect_spells();
-bool can_cast_spells(bool quiet = false, bool exegesis = false);
+bool can_cast_spells(bool quiet = false);
 void do_cast_spell_cmd(bool force);
 
 int hex_success_chance(const int mr, int powc, int scale,
                        bool round_up = false);
 class targeter;
-vector<string> desc_success_chance(const monster_info& mi, int pow, bool evoked,
-                                   targeter* hitfunc);
-spret your_spells(spell_type spell, int powc = 0, bool allow_fail = true,
-                  const item_def* const evoked_item = nullptr);
+unique_ptr<targeter> find_spell_targeter(spell_type spell, int pow, int range);
+bool spell_has_targeter(spell_type spell);
+string target_desc(const monster_info& mi, spell_type spell);
+vector<string> desc_wl_success_chance(const monster_info& mi, int pow,
+                                      targeter* hitfunc);
+vector<string> desc_beam_hit_chance(const monster_info& mi, targeter* hitfunc);
+
+typedef function<vector<string> (const monster_info& mi)> (desc_filter);
+desc_filter targeter_addl_desc(spell_type spell, int powc, spell_flags flags,
+                                       targeter *hitfunc);
+spret your_spells(spell_type spell, int powc = 0, bool actual_spell = true,
+                  const item_def* const evoked_item = nullptr,
+                  dist *_target = nullptr, bool force_failure = false);
 
 extern const char *fail_severity_adjs[];
 
@@ -115,14 +133,15 @@ string failure_rate_to_string(int fail);
 
 int power_to_barcount(int power);
 
+int spell_power_percent(spell_type spell);
 string spell_power_string(spell_type spell);
+string spell_damage_string(spell_type spell, bool evoked = false);
+int spell_acc(spell_type spell);
 string spell_range_string(spell_type spell);
 string range_string(int range, int maxrange, char32_t caster_char);
 string spell_schools_string(spell_type spell);
-string spell_hunger_string(spell_type spell);
 string spell_failure_rate_string(spell_type spell);
 string spell_noise_string(spell_type spell, int chop_wiz_display_width = 0);
 
 void spell_skills(spell_type spell, set<skill_type> &skills);
-
-bool spell_removed(spell_type spell);
+void do_demonic_magic(int pow, int rank);

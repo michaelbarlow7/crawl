@@ -12,12 +12,12 @@
 #include "act-iter.h"
 #include "areas.h"
 #include "art-enum.h"
+#include "artefact.h" // is_unrandom_artefact (woodcutter)
 #include "coordit.h"
 #include "dgn-event.h"
 #include "english.h"
 #include "env.h"
 #include "fight.h"
-#include "food.h"
 #include "god-abil.h" // RU_SAC_XP_LEVELS
 #include "god-conduct.h"
 #include "god-item.h"
@@ -27,9 +27,11 @@
 #include "item-prop.h"
 #include "item-use.h"
 #include "message.h"
+#include "movement.h"
 #include "player-stats.h"
 #include "religion.h"
 #include "spl-damage.h"
+#include "spl-monench.h"
 #include "state.h"
 #include "terrain.h"
 #include "transform.h"
@@ -70,14 +72,19 @@ bool player::is_summoned(int* _duration, int* summon_type) const
 
 void player::moveto(const coord_def &c, bool clear_net)
 {
-    if (clear_net && c != pos())
-        clear_trapping_net();
+    if (c != pos())
+    {
+        if (clear_net)
+            clear_trapping_net();
+        end_wait_spells();
+        // Remove spells that break upon movement
+        remove_ice_movement();
+    }
 
     crawl_view.set_player_at(c);
     set_position(c);
 
     clear_invalid_constrictions();
-    end_searing_ray();
 }
 
 bool player::move_to_pos(const coord_def &c, bool clear_net, bool /*force*/)
@@ -136,15 +143,19 @@ bool player::floundering() const
     return in_water() && !can_swim() && !extra_balanced();
 }
 
+/**
+ * Does the player get a balance bonus in their current terrain? If so, they
+ * will not count as floundering, even if they can't swim.
+ */
 bool player::extra_balanced() const
 {
-    const dungeon_feature_type grid = grd(pos());
-    return species == SP_GREY_DRACONIAN
-              || form == transformation::tree
-              || grid == DNGN_SHALLOW_WATER
-                  && (species == SP_NAGA // tails, not feet
-                      || body_size(PSIZE_BODY) >= SIZE_LARGE)
-                  && form_keeps_mutations();
+    // trees are balanced everywhere they can inhabit.
+    return form == transformation::tree
+        // Species or forms with large bodies (e.g. nagas) are ok in water.
+        // (N.b. all large form sizes can swim anyways, and also giant sized
+        // creatures can automatically swim, so the form part is a bit
+        // academic at the moment.)
+        || body_size(PSIZE_BODY) >= SIZE_LARGE;
 }
 
 int player::get_hit_dice() const
@@ -175,13 +186,13 @@ bool player::is_habitable_feat(dungeon_feature_type actual_grid) const
 
 size_type player::body_size(size_part_type psize, bool base) const
 {
+    const auto charsize = species::size(species, psize);
     if (base)
-        return species_size(species, psize);
+        return charsize;
     else
     {
         size_type tf_size = get_form()->size;
-        return tf_size == SIZE_CHARACTER ? species_size(species, psize)
-                                         : tf_size;
+        return tf_size == SIZE_CHARACTER ? charsize : tf_size;
     }
 }
 
@@ -223,25 +234,37 @@ brand_type player::damage_brand(int)
 
 
 /**
- * Return the delay caused by attacking with your weapon and this projectile.
+ * Return the delay caused by attacking with your weapon or this projectile.
  *
- * @param projectile  The projectile to be fired/thrown, if any.
- * @param rescale     Whether to re-scale the time to account for the fact that
- *                    finesse doesn't stack with haste.
- * @return            A random_var representing the range of possible values of
- *                    attack delay. It can be casted to an int, in which case
- *                    its value is determined by the appropriate rolls.
+ * @param projectile  The projectile to be thrown, if any.
+ * @param rescale         Whether to re-scale the time to account for the fact that
+ *                   finesse doesn't stack with haste.
+ * @return           A random_var representing the range of possible values of
+ *                   attack delay. It can be casted to an int, in which case
+ *                   its value is determined by the appropriate rolls.
  */
 random_var player::attack_delay(const item_def *projectile, bool rescale) const
 {
-    const item_def* weap = weapon();
+    return attack_delay_with(projectile, rescale, weapon());
+}
+
+random_var player::attack_delay_with(const item_def *projectile, bool rescale,
+                                     const item_def *weap) const
+{
+    // The delay for swinging non-weapons and tossing non-missiles.
     random_var attk_delay(15);
     // a semi-arbitrary multiplier, to minimize loss of precision from integer
     // math.
     const int DELAY_SCALE = 20;
-    const int base_shield_penalty = adjusted_shield_penalty(DELAY_SCALE);
 
-    if (projectile && is_launched(this, weap, *projectile) == launch_retval::THROWN)
+    const bool throwing = projectile && is_throwable(this, *projectile);
+    const bool unarmed_attack = !weap && !projectile;
+    const bool melee_weapon_attack = !projectile
+                                     && weap
+                                     && is_melee_weapon(*weap);
+    const bool ranged_weapon_attack = projectile
+                                      && is_launcher_ammo(*projectile);
+    if (throwing)
     {
         // Thrown weapons use 10 + projectile damage to determine base delay.
         const skill_type wpn_skill = SK_THROWING;
@@ -254,15 +277,13 @@ random_var player::attack_delay(const item_def *projectile, bool rescale) const
         attk_delay = rv::max(attk_delay,
                 random_var(FASTEST_PLAYER_THROWING_SPEED));
     }
-    else if (!projectile && !weap)
+    else if (unarmed_attack)
     {
         int sk = form_uses_xl() ? experience_level * 10 :
                                   skill(SK_UNARMED_COMBAT, 10);
         attk_delay = random_var(10) - div_rand_round(random_var(sk), 27*2);
     }
-    else if (weap &&
-             (projectile ? projectile->launched_by(*weap)
-                         : is_melee_weapon(*weap)))
+    else if (melee_weapon_attack || ranged_weapon_attack)
     {
         const skill_type wpn_skill = item_attack_skill(*weap);
         // Cap skill contribution to mindelay skill, so that rounding
@@ -271,6 +292,9 @@ random_var player::attack_delay(const item_def *projectile, bool rescale) const
                                   10 * weapon_min_delay_skill(*weap));
 
         attk_delay = random_var(property(*weap, PWPN_SPEED));
+        if (is_unrandom_artefact(*weap, UNRAND_WOODCUTTERS_AXE))
+            return attk_delay;
+
         attk_delay -= div_rand_round(random_var(wpn_sklev), DELAY_SCALE);
         if (get_weapon_brand(*weap) == SPWPN_SPEED)
             attk_delay = div_rand_round(attk_delay * 2, 3);
@@ -279,15 +303,17 @@ random_var player::attack_delay(const item_def *projectile, bool rescale) const
     // At the moment it never gets this low anyway.
     attk_delay = rv::max(attk_delay, random_var(3));
 
-    if (base_shield_penalty)
+    attk_delay +=
+        div_rand_round(random_var(adjusted_shield_penalty(DELAY_SCALE)),
+                       DELAY_SCALE);
+
+    // Slow attacks with ranged weapons, but not clumsy bashes.
+    // Don't slow throwing attacks while holding a ranged weapon.
+    // Don't slow tossing.
+    if (ranged_weapon_attack && is_slowed_by_armour(weap))
     {
-        // Calculate this separately to avoid overflowing the weights in
-        // the random_var.
-        random_var shield_penalty =
-            div_rand_round(rv::min(rv::roll_dice(1, base_shield_penalty),
-                                   rv::roll_dice(1, base_shield_penalty)),
-                           DELAY_SCALE);
-        attk_delay += shield_penalty;
+        const int aevp = you.adjusted_body_armour_penalty(DELAY_SCALE);
+        attk_delay += div_rand_round(random_var(aevp), DELAY_SCALE);
     }
 
     if (you.duration[DUR_FINESSE])
@@ -303,6 +329,8 @@ random_var player::attack_delay(const item_def *projectile, bool rescale) const
     // TODO: does this really have to depend on `you.time_taken`?  In basic
     // cases at least, `you.time_taken` is just `player_speed()`. See
     // `_prep_input`.
+    // We could simplify some code elsewhere if we fixed this,
+    // e.g. cast_manifold_assault().
     return rv::max(div_rand_round(attk_delay * you.time_taken, BASELINE_DELAY),
                    random_var(2));
 }
@@ -331,10 +359,12 @@ item_def *player::weapon(int /* which_attack */) const
 // Give hands required to wield weapon.
 hands_reqd_type player::hands_reqd(const item_def &item, bool base) const
 {
-    if (species == SP_FORMICID)
+    if (you.has_mutation(MUT_QUADRUMANOUS)
+        && (!is_weapon(item) || is_weapon_wieldable(item, SIZE_MEDIUM)))
+    {
         return HANDS_ONE;
-    else
-        return actor::hands_reqd(item, base);
+    }
+    return actor::hands_reqd(item, base);
 }
 
 bool player::can_wield(const item_def& item, bool ignore_curse,
@@ -373,8 +403,9 @@ bool player::can_wield(const item_def& item, bool ignore_curse,
 bool player::could_wield(const item_def &item, bool ignore_brand,
                          bool ignore_transform, bool quiet) const
 {
-    // Only ogres and trolls can wield large rocks (for sandblast).
-    if (!species_can_throw_large_rocks(you.species)
+    // Some lingering flavor from the days where sandblast ammo was wielded.
+    // harmless.
+    if (!can_throw_large_rocks()
         && item.is_type(OBJ_MISSILES, MI_LARGE_ROCK))
     {
         if (!quiet)
@@ -394,16 +425,23 @@ bool player::could_wield(const item_def &item, bool ignore_brand,
 
         return true;
     }
-    else if (species == SP_FELID)
+    else if (you.has_mutation(MUT_NO_GRASPING))
     {
         if (!quiet)
             mpr("You can't use weapons.");
         return false;
     }
+    else if (!ignore_transform && !form_can_wield())
+    {
+        if (!quiet)
+            mpr("You can't use weapons in this form.");
+        return false;
+    }
 
     const size_type bsize = body_size(PSIZE_TORSO, ignore_transform);
     // Small species wielding large weapons...
-    if (!is_weapon_wieldable(item, bsize))
+    if (!is_weapon_wieldable(item, bsize)
+        && !you.has_mutation(MUT_QUADRUMANOUS))
     {
         if (!quiet)
             mpr("That's too large for you to wield.");
@@ -431,14 +469,6 @@ bool player::could_wield(const item_def &item, bool ignore_brand,
 item_def *player::shield() const
 {
     return slot_item(EQ_SHIELD, false);
-}
-
-void player::make_hungry(int hunger_increase, bool silent)
-{
-    if (hunger_increase > 0)
-        ::make_hungry(hunger_increase, silent);
-    else if (hunger_increase < 0)
-        ::lessen_hunger(-hunger_increase, silent);
 }
 
 string player::name(description_level_type dt, bool, bool) const
@@ -471,21 +501,72 @@ string player::conj_verb(const string &verb) const
  *
  * @return A string describing the player's current hand or hand-equivalents.
  */
-static string _hand_name_singular()
+static string _hand_name_singular(bool temp)
 {
-    if (!get_form()->hand_name.empty())
+    // first handle potentially transient hand names
+    if (temp && !get_form()->hand_name.empty())
         return get_form()->hand_name;
 
-    if (you.species == SP_FELID)
-        return "paw";
+    if (you.has_mutation(MUT_PAWS, temp))
+        return "paw"; // XX redundant with species
 
     if (you.has_usable_claws())
         return "claw";
 
-    if (you.has_usable_tentacles())
+    // Storm Form inactivates tentacle constriction, but an octopode's
+    // electric body still maintains similar anatomy.
+    if (you.has_usable_tentacles(you.form != transformation::storm))
         return "tentacle";
 
-    return "hand";
+    // Storm Form inactivates the paws mutation, but graphically, a Felid's
+    // electric body still maintains similar anatomy.
+    if (temp && you.form == transformation::storm
+        && you.species == SP_FELID)
+    {
+        return "paw";
+    }
+
+    // For flavor reasons, use "fists" instead of "hands" in various places,
+    // but if the creature does have a custom hand name, let the above code
+    // preempt it.
+    if (temp && (you.form == transformation::statue
+                 || you.form == transformation::storm))
+    {
+        return "fist";
+    }
+
+    // player has no usable claws, but has the mutation -- they are suppressed
+    // by something. (The species names will give the wrong answer for this
+    // case, except for felids, where we want "blade paws".)
+    if (you.has_mutation(MUT_CLAWS, false))
+        return "hand";
+
+    // then fall back on the species name
+    return species::hand_name(you.species);
+}
+
+// XX: this is distinct from hand_name because of the actor api
+string player::base_hand_name(bool plural, bool temp, bool *can_plural) const
+{
+    bool _can_plural;
+    if (can_plural == nullptr)
+        can_plural = &_can_plural;
+    // note: octopodes have four primary tentacles, two pairs that are each used
+    // like a hand. So even with MUT_MISSING_HAND, they should flavorwise still
+    // use plurals when counting arms.
+    *can_plural = you.arm_count() > 1;
+
+    string singular;
+    // For flavor reasons we use "blade X" in a bunch of places, not just the
+    // UC weapon display, where X is the custom hand name. For that reason, we
+    // need to do the calculation here.
+    if (temp && form == transformation::blade_hands)
+        singular += "blade ";
+    singular += _hand_name_singular(temp);
+    if (plural && *can_plural)
+        return pluralise(singular);
+
+    return singular;
 }
 
 /**
@@ -497,16 +578,7 @@ static string _hand_name_singular()
  */
 string player::hand_name(bool plural, bool *can_plural) const
 {
-    bool _can_plural;
-    if (can_plural == nullptr)
-        can_plural = &_can_plural;
-    *can_plural = !get_mutation_level(MUT_MISSING_HAND);
-
-    const string singular = _hand_name_singular();
-    if (plural && *can_plural)
-        return pluralise(singular);
-
-    return singular;
+    return base_hand_name(plural, true, can_plural);
 }
 
 /**
@@ -532,13 +604,14 @@ static string _foot_name_singular(bool *can_plural)
         return "tentacles";
     }
 
-    if (you.species == SP_NAGA)
+    if (you.species == SP_NAGA
+        || you.species == SP_DJINNI)
     {
         *can_plural = false;
         return "underbelly";
     }
 
-    if (you.species == SP_FELID)
+    if (you.has_mutation(MUT_PAWS))
         return "paw";
 
     if (you.fishtail)
@@ -579,24 +652,17 @@ string player::arm_name(bool plural, bool *can_plural) const
     if (can_plural != nullptr)
         *can_plural = true;
 
+    string str = species::arm_name(species);
+
     string adj;
-    string str = "arm";
-
-    if (species_is_draconian(you.species) || species == SP_NAGA)
-        adj = "scaled";
-    else if (species == SP_TENGU)
-        adj = "feathered";
-    else if (species == SP_MUMMY)
-        adj = "bandage-wrapped";
-    else if (species == SP_OCTOPODE)
-        str = "tentacle";
-
     if (form == transformation::lich)
         adj = "bony";
     else if (form == transformation::shadow)
         adj = "shadowy";
+    else
+        adj = species::skin_name(species, true);
 
-    if (!adj.empty())
+    if (adj != "fleshy")
         str = adj + " " + str;
 
     if (plural)
@@ -612,13 +678,11 @@ string player::arm_name(bool plural, bool *can_plural) const
  *
  * @return  A string describing the player's UC attack 'weapon'.
  */
-string player::unarmed_attack_name() const
+string player::unarmed_attack_name(string default_name) const
 {
-    string default_name = "Nothing wielded";
-
     if (has_usable_claws(true))
     {
-        if (species == SP_FELID)
+        if (you.has_mutation(MUT_FANGS))
             default_name = "Teeth and claws";
         else
             default_name = "Claws";
@@ -648,7 +712,7 @@ bool player::fumbles_attack()
     return did_fumble;
 }
 
-void player::attacking(actor *other, bool ranged)
+void player::attacking(actor *other)
 {
     ASSERT(!crawl_state.game_is_arena());
 
@@ -661,13 +725,6 @@ void player::attacking(actor *other, bool ranged)
         if (!mon->friendly() && !mon->neutral())
             pet_target = mon->mindex();
     }
-
-    if (ranged || mons_is_firewood(*(monster*) other))
-        return;
-
-    const int chance = pow(3, get_mutation_level(MUT_BERSERK) - 1);
-    if (has_mutation(MUT_BERSERK) && x_chance_in_y(chance, 100))
-        go_berserk(false);
 }
 
 /**
@@ -678,45 +735,31 @@ void player::attacking(actor *other, bool ranged)
  */
 static bool _god_prevents_berserk_haste(bool intentional)
 {
-    const god_type old_religion = you.religion;
-
     if (!have_passive(passive_t::no_haste))
         return false;
 
-    // Chei makes berserk not speed you up.
-    // Unintentional would be forgiven "just this once" every time.
-    // Intentional could work as normal, but that would require storing
-    // whether you transgressed to start it -- so we just consider this
-    // a part of your penance.
-    if (!intentional)
-    {
+    if (intentional)
+        simple_god_message(" forces you to slow down.");
+    else
         simple_god_message(" protects you from inadvertent hurry.");
-        return true;
-    }
 
-    did_god_conduct(DID_HASTY, 8);
-    // Let's see if you've lost your religion...
-    if (!you_worship(old_religion))
-        return false;
-
-    simple_god_message(" forces you to slow down.");
     return true;
 }
 
 /**
  * Make the player go berserk!
- * @param intentional If true, this was initiated by the player, and additional
- *                    messages can be printed if we can't berserk.
+ * @param intentional If true, this was initiated by the player, so god conduts
+ *                    about anger apply.
  * @param potion      If true, this was caused by the player quaffing !berserk;
- *                    and we get the same additional messages as when
- *                    intentional is true.
+ *                    and we get additional messages if goingn berserk isn't
+ *                    possible.
  * @return            True if we went berserk, false otherwise.
  */
 bool player::go_berserk(bool intentional, bool potion)
 {
     ASSERT(!crawl_state.game_is_arena());
 
-    if (!you.can_go_berserk(intentional, potion))
+    if (!you.can_go_berserk(intentional, potion, !potion))
         return false;
 
     if (crawl_state.game_is_hints())
@@ -743,7 +786,7 @@ bool player::go_berserk(bool intentional, bool potion)
 
     you.berserk_penalty = 0;
 
-    you.redraw_quiver = true; // Account for no firing.
+    quiver::set_needs_redraw();
 
     if (player_equip_unrand(UNRAND_ZEALOT_SWORD))
         for (monster_near_iterator mi(you.pos(), LOS_NO_TRANS); mi; ++mi)
@@ -814,8 +857,8 @@ bool player::is_web_immune() const
 bool player::shove(const char* feat_name)
 {
     for (distance_iterator di(pos()); di; ++di)
-        if (in_bounds(*di) && !actor_at(*di) && !is_feat_dangerous(grd(*di))
-            && can_pass_through_feat(grd(*di)))
+        if (in_bounds(*di) && !actor_at(*di) && !is_feat_dangerous(env.grid(*di))
+            && can_pass_through_feat(env.grid(*di)))
         {
             moveto(*di);
             if (*feat_name)
@@ -829,27 +872,31 @@ bool player::shove(const char* feat_name)
 /*
  * Calculate base constriction damage.
  *
- * @param direct True if this is for direct constriction, false otherwise (e.g.
- *               Borg's Vile Clutch), false otherwise.
+ * @param typ   The type of constriction the player is doing -
+ *              direct (ala Naga/Octopode), BVC, etc.
  * @returns The base damage.
  */
-int player::constriction_damage(bool direct) const
+int player::constriction_damage(constrict_type typ) const
 {
-    if (direct)
+    switch (typ)
+    {
+    case CONSTRICT_BVC:
+        return roll_dice(2, div_rand_round(70 +
+                   you.props[VILE_CLUTCH_POWER_KEY].get_int(), 20));
+    case CONSTRICT_ROOTS:
+        // Assume we're using the wand.
+        // Min power 2d4, max power ~2d14 (also ramps over time)
+        return roll_dice(2, div_rand_round(25 +
+                    you.props[FASTROOT_POWER_KEY].get_int(), 10));
+    default:
         return roll_dice(2, div_rand_round(strength(), 5));
+    }
 
-    return roll_dice(2, div_rand_round(70 +
-                calc_spell_power(SPELL_BORGNJORS_VILE_CLUTCH, true), 20));
 }
 
-/**
- * How many heads does the player have, in their current form?
- *
- * Currently only checks for hydra form.
- */
-int player::heads() const
+bool player::is_dragonkind() const
 {
-    if (props.exists(HYDRA_FORM_HEADS_KEY))
-        return props[HYDRA_FORM_HEADS_KEY].get_int();
-    return 1; // not actually always true
+    if (actor::is_dragonkind())
+        return true;
+    return you.form == transformation::dragon;
 }

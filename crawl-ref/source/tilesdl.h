@@ -7,9 +7,13 @@
 
 #ifdef USE_TILE_LOCAL
 
+#include <vector>
+
 #include "cursor-type.h"
 #include "text-tag-type.h"
 #include "tilereg.h"
+
+using std::vector;
 
 #ifndef PROPORTIONAL_FONT
 # error PROPORTIONAL_FONT not defined
@@ -21,7 +25,6 @@
 class Popup;
 class Region;
 class CRTRegion;
-class CRTRegionSingleSelect;
 class MenuRegion;
 class TileRegion;
 class DungeonRegion;
@@ -59,6 +62,7 @@ enum tiles_key_mod
     TILES_MOD_SHIFT = 0x1,
     TILES_MOD_CTRL  = 0x2,
     TILES_MOD_ALT   = 0x4,
+    TILES_MOD_CMD   = 0x8, // mac only
 };
 
 #include "windowmanager.h"
@@ -165,8 +169,6 @@ public:
     int get_number_of_cols();
     bool is_using_small_layout();
     void zoom_dungeon(bool in);
-    bool zoom_to_minimap();
-    bool zoom_from_minimap();
 
     void deactivate_tab();
 
@@ -181,6 +183,7 @@ public:
     void redraw();
     bool update_dpi();
 
+    void maybe_redraw_screen();
     void render_current_regions();
 
     void place_cursor(cursor_type type, const coord_def &gc);
@@ -192,9 +195,6 @@ public:
     bool initialise_items();
 
     const coord_def &get_cursor() const;
-
-    void add_overlay(const coord_def &gc, tileidx_t idx);
-    void clear_overlays();
 
     void draw_doll_edit();
 
@@ -212,15 +212,15 @@ public:
     FontWrapper* get_tip_font() const { return m_tip_font; }
     FontWrapper* get_lbl_font() const { return m_lbl_font; }
 
-    CRTRegion* get_crt() { return m_region_crt; }
-
     const ImageManager* get_image_manager() { return m_image; }
     int to_lines(int num_tiles, int tile_height = TILE_Y);
+
+    int handle_mouse(wm_mouse_event &event);
+
 protected:
     void reconfigure_fonts();
     FontWrapper* load_font(const char *font_file, int font_size,
                   bool default_on_fail);
-    int handle_mouse(wm_mouse_event &event);
 
     bool m_map_mode_enabled;
 

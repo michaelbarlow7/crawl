@@ -8,11 +8,21 @@
 #include "fake-main.hpp"
 
 #include "coordit.h"
+#include "describe.h" // get_item_description
+#include "fight.h" // spines_damage
 #include "item-name.h"
 #include "item-prop.h"
+#include "item-status-flag-type.h" // ISFLAG_IDENT_MASK
 #include "los.h"
+#include "mapdef.h" // item_list
 #include "message.h"
+#include "mon-explode.h" // ball_lightning_damage
+#include "mon-project.h"
+#include "spl-damage.h"
+#include "spl-summoning.h" // mons_ball_lighting_hd
+#include "spl-zap.h"
 #include "syscalls.h"
+#include "tag-version.h"
 #include "version.h"
 
 const coord_def MONSTER_PLACE(20, 20);
@@ -142,8 +152,6 @@ static string monster_size(const monster& mon)
         return "Medium";
     case SIZE_LARGE:
         return "Large";
-    case SIZE_BIG:
-        return "Big";
     case SIZE_GIANT:
         return "Giant";
     default:
@@ -231,7 +239,7 @@ static void initialize_crawl()
 
     dgn_reset_level();
     for (rectangle_iterator ri(0); ri; ++ri)
-        grd(*ri) = DNGN_FLOOR;
+        env.grid(*ri) = DNGN_FLOOR;
 
     los_changed();
     you.hp = you.hp_max = PLAYER_MAXHP;
@@ -247,17 +255,17 @@ static string dice_def_string(dice_def dice)
 
 static dice_def mi_calc_iood_damage(monster* mons)
 {
-    const int power =
-        stepdown_value(6 * mons->get_experience_level(), 30, 30, 200, -1);
-    return dice_def(9, power / 4);
+    const int pow = mons_power_for_hd(SPELL_IOOD, mons->get_hit_dice());
+    return iood_damage(pow, INFINITE_DISTANCE);
 }
 
 static string mi_calc_smiting_damage(monster* /*mons*/) { return "7-17"; }
 
 static string mi_calc_airstrike_damage(monster* mons)
 {
-    int pow = 12 * mons->get_experience_level();
-    return make_stringf("8-%d", 2 + ( 6 + pow ) / 7);
+    const int pow = mons_power_for_hd(SPELL_AIRSTRIKE, mons->get_hit_dice());
+    dice_def dice = base_airstrike_damage(pow);
+    return describe_airstrike_dam(dice);
 }
 
 static string mi_calc_glaciate_damage(monster* mons)
@@ -273,21 +281,11 @@ static string mi_calc_glaciate_damage(monster* mons)
 
 static string mi_calc_chain_lightning_damage(monster* mons)
 {
-    int pow = 4 * mons->get_experience_level();
-
-    // Damage is 5d(9.2 + pow / 30), but if lots of targets are around
-    // it can hit the player precisely once at very low (e.g. 1) power
-    // and deal 5 damage.
-    int min = 5;
-
-    // Max damage per bounce is 46 + pow / 6; in the worst case every other
-    // bounce hits the player, losing 8 pow on the bounce away and 8 on the
-    // bounce back for a total of 16; thus, for n bounces, it's:
-    // (46 + pow/6) * n less 16/6 times the (n - 1)th triangular number.
-    int n = (pow + 15) / 16;
-    int max = (46 + (pow / 6)) * n - 4 * n * (n - 1) / 3;
-
-    return make_stringf("%d-%d", min, max);
+    const spell_type spell = SPELL_CHAIN_LIGHTNING;
+    const zap_type zap = spell_to_zap(spell);
+    const int pow = mons_power_for_hd(spell, mons->spell_hd(spell));
+    const dice_def dice = zap_damage(zap, pow, true, false);
+    return dice_def_string(dice);
 }
 
 static string mi_calc_vampiric_drain_damage(monster* mons)
@@ -309,19 +307,33 @@ static string mi_calc_major_healing(monster* mons)
     return make_stringf("%d-%d", min, max);
 }
 
+static string mi_calc_freeze_damage(monster* mons)
+{
+    const int pow = mons_power_for_hd(SPELL_FREEZE, mons->get_hit_dice());
+    return dice_def_string(freeze_damage(pow));
+}
+
+static string mi_calc_irradiate_damage(const monster &mon)
+{
+    const int pow = mons_power_for_hd(SPELL_IRRADIATE, mon.get_hit_dice());
+    return dice_def_string(irradiate_damage(pow));
+}
+
 /**
  * @return e.g.: "2d6", "5-12".
  */
 static string mons_human_readable_spell_damage_string(monster* monster,
                                                       spell_type sp)
 {
-    bolt spell_beam = mons_spell_beam(
-        monster, sp, mons_power_for_hd(sp, monster->spell_hd(sp)), true);
+    const int pow = mons_power_for_hd(sp, monster->spell_hd(sp));
+    bolt spell_beam = mons_spell_beam(monster, sp, pow, true);
     switch (sp)
     {
         case SPELL_PORTAL_PROJECTILE:
         case SPELL_LRD:
             return ""; // Fake damage beam
+        case SPELL_FREEZE:
+            return mi_calc_freeze_damage(monster);
         case SPELL_SMITING:
             return mi_calc_smiting_damage(monster);
         case SPELL_AIRSTRIKE:
@@ -330,8 +342,12 @@ static string mons_human_readable_spell_damage_string(monster* monster,
             return mi_calc_glaciate_damage(monster);
         case SPELL_CHAIN_LIGHTNING:
             return mi_calc_chain_lightning_damage(monster);
+        case SPELL_CONJURE_BALL_LIGHTNING:
+            return "3x" + dice_def_string(ball_lightning_damage(mons_ball_lightning_hd(pow, false)));
+        case SPELL_MARSHLIGHT:
+            return "2x" + dice_def_string(zap_damage(ZAP_FOXFIRE, pow, true));
         case SPELL_WATERSTRIKE:
-            spell_beam.damage = waterstrike_damage(*monster);
+            spell_beam.damage = waterstrike_damage(monster->spell_hd(sp));
             break;
         case SPELL_RESONANCE_STRIKE:
             return dice_def_string(resonance_strike_base_damage(*monster))
@@ -339,6 +355,8 @@ static string mons_human_readable_spell_damage_string(monster* monster,
         case SPELL_IOOD:
             spell_beam.damage = mi_calc_iood_damage(monster);
             break;
+        case SPELL_IRRADIATE:
+            return mi_calc_irradiate_damage(*monster);
         case SPELL_VAMPIRIC_DRAINING:
             return mi_calc_vampiric_drain_damage(monster);
         case SPELL_MAJOR_HEALING:
@@ -346,12 +364,10 @@ static string mons_human_readable_spell_damage_string(monster* monster,
         case SPELL_MINOR_HEALING:
         case SPELL_HEAL_OTHER:
             return dice_def_string(spell_beam.damage) + "+3";
+
         default:
             break;
     }
-
-    if (spell_beam.origin_spell == SPELL_IOOD)
-        spell_beam.damage = mi_calc_iood_damage(monster);
 
     if (spell_beam.damage.size && spell_beam.damage.num)
         return dice_def_string(spell_beam.damage);
@@ -540,7 +556,7 @@ static int _mi_create_monster(mons_spec spec)
     {
         monster->behaviour = BEH_SEEK;
         monster->foe = MHITYOU;
-        no_messages mx;
+        msg::suppress mx;
         monster->del_ench(ENCH_SUBMERGED);
         return monster->mindex();
     }
@@ -562,11 +578,7 @@ static void rebind_mspec(string* requested_name,
                          const string& actual_name, mons_spec* mspec)
 {
     if (*requested_name != actual_name
-        && (requested_name->find("draconian") == 0
-            || requested_name->find("blood saint") == 0
-            || requested_name->find("corrupter") == 0
-            || requested_name->find("warmonger") == 0
-            || requested_name->find("black sun") == 0))
+        && requested_name->find("draconian") == 0)
     {
         // If the user requested a drac, the game might generate a
         // coloured drac in response. Try to reuse that colour for further
@@ -623,7 +635,7 @@ static mons_spec _get_vault_monster(string monster_name, string* vault_spec)
 
             bool this_spec = false;
 
-            monster* mp = &menv[index];
+            monster* mp = &env.mons[index];
 
             if (mp)
             {
@@ -650,6 +662,54 @@ static mons_spec _get_vault_monster(string monster_name, string* vault_spec)
 
     return no_monster;
 }
+
+static bool _try_print_item(string target)
+{
+    trim_string(target);
+
+    item_list ilist;
+    auto prefixes = { "", "book of ", "book of the " };
+    string err = "";
+    for (string prefix : prefixes)
+    {
+        err = ilist.add_item(prefix + target, false);
+        if (err.empty())
+            break;
+    }
+    if (!err.empty())
+        return false;
+
+    const item_spec spec = ilist.get_item(0);
+    item_def it;
+    if (spec.ego < SP_FORBID_EGO)
+        make_item_unrandart(it, -spec.ego);
+    else
+    {
+        if (spec.base_type >= NUM_OBJECT_CLASSES
+            || spec.sub_type == OBJ_RANDOM)
+        {
+            return false;
+        }
+
+        it.base_type = spec.base_type;
+        it.sub_type = spec.sub_type;
+        it.plus = spec.plus;
+        it.plus2 = spec.plus2;
+        it.special = spec.ego;
+    }
+
+    it.quantity = 1;
+    it.rnd = 1;
+    set_ident_flags(it, ISFLAG_IDENT_MASK);
+
+    string desc = get_item_description(it, IDM_MONSTER).c_str();
+    desc = trim_string(desc);
+    desc = replace_all(desc, "\n\n", " | ");
+    desc = replace_all(desc, "\n", " | ");
+    printf("%s", desc.c_str());
+    return true;
+}
+
 static string canned_reports[][2] = {
     {"cang", ("cang (" + colour(LIGHTRED, "Ω")
               + (") | Spd: c | HD: i | HP: 666 | AC/EV: e/π | Dam: 999"
@@ -734,10 +794,14 @@ int main(int argc, char* argv[])
         if (spec_type < 0 || spec_type >= NUM_MONSTERS
             || spec_type == MONS_PLAYER_GHOST)
         {
-            if (err.empty())
-                printf("unknown monster: \"%s\"\n", target.c_str());
-            else
+            // This doesn't work as a monster. But maybe as an item?
+            if (_try_print_item(orig_target))
+                return 0;
+
+            if (!err.empty())
                 printf("%s\n", err.c_str());
+            else
+                printf("unknown monster/item: \"%s\"\n", target.c_str());
             return 1;
         }
 
@@ -782,7 +846,7 @@ int main(int argc, char* argv[])
     spell_damage_map damages;
     for (int i = 0; i < ntrials; ++i)
     {
-        monster* mp = &menv[index];
+        monster* mp = &env.mons[index];
         const string mname = mp->name(DESC_PLAIN, true);
         exper += exper_value(*mp);
         mac += mp->armour_class();
@@ -796,7 +860,7 @@ int main(int argc, char* argv[])
         // iterations as well.
         for (int obj : mp->inv)
             if (obj != NON_ITEM)
-                set_unique_item_status(mitm[obj], UNIQ_NOT_EXISTS);
+                set_unique_item_status(env.item[obj], UNIQ_NOT_EXISTS);
         // Destroy the monster.
         mp->reset();
         you.unique_creatures.set(spec_type, false);
@@ -815,7 +879,7 @@ int main(int argc, char* argv[])
     mac /= ntrials;
     mev /= ntrials;
 
-    monster& mon(menv[index]);
+    monster& mon(env.mons[index]);
 
     const string symbol(monster_symbol(mon));
 
@@ -824,16 +888,14 @@ int main(int argc, char* argv[])
                               || spec_type == MONS_GLOWING_SHAPESHIFTER;
 
     const bool nonbase =
-        mons_species(mon.type) == MONS_DRACONIAN && mon.type != MONS_DRACONIAN
-        || mons_species(mon.type) == MONS_DEMONSPAWN
-               && mon.type != MONS_DEMONSPAWN;
+        mons_species(mon.type) == MONS_DRACONIAN && mon.type != MONS_DRACONIAN;
 
     const monsterentry* me =
         shapeshifter ? get_monster_data(spec_type) : mon.find_monsterentry();
 
     const monsterentry* mbase =
-        nonbase ? get_monster_data(draco_or_demonspawn_subspecies(mon)) :
-                  (monsterentry*)0;
+        nonbase ? get_monster_data(draconian_subspecies(mon))
+                : (monsterentry*)0;
 
     if (me)
     {
@@ -872,8 +934,12 @@ int main(int argc, char* argv[])
         printf(" | AC/EV: %i/%i", mac, mev);
 
         string defenses;
-        if (mon.is_spiny() > 0)
-            defenses += colour(YELLOW, "(spiny 5d4)");
+        if (mon.is_spiny())
+        {
+            string dmg = dice_def_string(spines_damage(mon.type));
+            defenses += colour(YELLOW, make_stringf("(spiny %s)",
+                                                    dmg.c_str()));
+        }
         if (mons_species(mons_base_type(mon)) == MONS_MINOTAUR)
             defenses += colour(LIGHTRED, "(headbutt: d20-1)");
         if (!defenses.empty())
@@ -909,30 +975,27 @@ int main(int argc, char* argv[])
                 if (attk.type == AT_CLAW && mon.has_claws() >= 3)
                     monsterattacks += colour(LIGHTGREEN, "(claw)");
 
-                const attack_flavour flavour(orig_attk.flavour == AF_KLOWN
-                                                     || orig_attk.flavour
-                                                            == AF_DRAIN_STAT ?
+                const attack_flavour flavour(orig_attk.flavour == AF_DRAIN_STAT ?
                                                  orig_attk.flavour :
                                                  attk.flavour);
 
+                if (flavour_has_reach(flavour))
+                    monsterattacks += "(reach)";
                 switch (flavour)
                 {
-                case AF_REACH:
-                case AF_REACH_STING:
-                    monsterattacks += "(reach)";
-                    break;
-                case AF_KITE:
-                    monsterattacks += "(kite)";
-                    break;
                 case AF_SWOOP:
                     monsterattacks += "(swoop)";
                     break;
                 case AF_ACID:
+                case AF_REACH_TONGUE:
                     monsterattacks +=
-                        colour(YELLOW, damage_flavour("acid", "7d3"));
+                        colour(YELLOW, damage_flavour("acid", "4d3"));
                     break;
                 case AF_BLINK:
                     monsterattacks += colour(MAGENTA, "(blink self)");
+                    break;
+                case AF_BLINK_WITH:
+                    monsterattacks += colour(MAGENTA, "(blink together)");
                     break;
                 case AF_COLD:
                     monsterattacks += colour(
@@ -947,7 +1010,7 @@ int main(int argc, char* argv[])
                 case AF_DRAIN_STR:
                     monsterattacks += colour(RED, "(drain strength)");
                     break;
-                case AF_DRAIN_XP:
+                case AF_DRAIN:
                     monsterattacks += colour(LIGHTMAGENTA, "(drain)");
                     break;
                 case AF_CHAOTIC:
@@ -971,9 +1034,6 @@ int main(int argc, char* argv[])
                 case AF_STICKY_FLAME:
                     monsterattacks += colour(LIGHTRED, "(napalm)");
                     break;
-                case AF_HUNGER:
-                    monsterattacks += colour(BLUE, "(hunger)");
-                    break;
                 case AF_MUTATE:
                     monsterattacks += colour(LIGHTGREEN, "(mutation)");
                     break;
@@ -989,18 +1049,13 @@ int main(int argc, char* argv[])
                         LIGHTRED, damage_flavour("strong poison", hd * 11 / 3,
                                                  hd * 13 / 2));
                     break;
-                case AF_ROT:
-                    monsterattacks += colour(LIGHTRED, "(rot)");
-                    break;
                 case AF_VAMPIRIC:
                     monsterattacks += colour(RED, "(vampiric)");
-                    break;
-                case AF_KLOWN:
-                    monsterattacks += colour(LIGHTBLUE, "(klown)");
                     break;
                 case AF_SCARAB:
                     monsterattacks += colour(LIGHTMAGENTA, "(scarab)");
                     break;
+                case AF_RIFT:
                 case AF_DISTORT:
                     monsterattacks += colour(LIGHTBLUE, "(distort)");
                     break;
@@ -1052,13 +1107,25 @@ int main(int argc, char* argv[])
                 case AF_WEAKNESS:
                     monsterattacks += colour(LIGHTRED, "(weakness)");
                     break;
+                case AF_SEAR:
+                    monsterattacks += colour(LIGHTRED, "(sear fire resist)");
+                    break;
+                case AF_BARBS:
+                    monsterattacks += colour(RED, "(barbs)");
+                    break;
+                case AF_SPIDER:
+                    monsterattacks += colour(YELLOW, "(summon spider)");
+                    break;
                 case AF_CRUSH:
                 case AF_PLAIN:
+                case AF_REACH:
+                case AF_REACH_STING:
                     break;
 #if TAG_MAJOR_VERSION == 34
                 case AF_DISEASE:
                 case AF_PLAGUE:
                 case AF_STEAL_FOOD:
+                case AF_HUNGER:
                 case AF_POISON_MEDIUM:
                 case AF_POISON_NASTY:
                 case AF_POISON_STR:
@@ -1067,6 +1134,9 @@ int main(int argc, char* argv[])
                 case AF_POISON_STAT:
                 case AF_FIREBRAND:
                 case AF_MIASMATA:
+                case AF_ROT:
+                case AF_KLOWN:
+                case AF_KITE:
                     monsterattacks += colour(LIGHTRED, "(?\?\?)");
                     break;
 #endif
@@ -1145,8 +1215,6 @@ int main(int argc, char* argv[])
         mons_check_flag(bool(me->bitfields & M_FLIES), monsterflags, "fly");
         mons_check_flag(bool(me->bitfields & M_FAST_REGEN), monsterflags,
                         "regen");
-        mons_check_flag(bool(me->bitfields & M_WEB_SENSE), monsterflags,
-                        "web sense");
         mons_check_flag(mon.is_unbreathing(), monsterflags, "unbreathing");
 
         string spell_string = construct_spells(spell_lists, damages);
@@ -1157,33 +1225,33 @@ int main(int argc, char* argv[])
 
         printf("%s", monsterflags.c_str());
 
-        if (me->resist_magic == 5000)
+        if (me->willpower == 5000)
         {
             if (monsterresistances.empty())
                 monsterresistances = " | Res: ";
             else
                 monsterresistances += ", ";
-            monsterresistances += colour(LIGHTMAGENTA, "magic(immune)");
+            monsterresistances += colour(LIGHTMAGENTA, "will(invuln)");
         }
-        else if (me->resist_magic < 0)
+        else if (me->willpower < 0)
         {
-            const int res = (mbase) ? mbase->resist_magic : me->resist_magic;
+            const int res = (mbase) ? mbase->willpower : me->willpower;
             if (monsterresistances.empty())
                 monsterresistances = " | Res: ";
             else
                 monsterresistances += ", ";
             monsterresistances +=
                 colour(MAGENTA,
-                       "magic(" + to_string(hd * res * 4 / 3 * -1) + ")");
+                       "will(" + to_string(hd * res * 4 / 3 * -1) + ")");
         }
-        else if (me->resist_magic > 0)
+        else if (me->willpower > 0)
         {
             if (monsterresistances.empty())
                 monsterresistances = " | Res: ";
             else
                 monsterresistances += ", ";
             monsterresistances += colour(
-                MAGENTA, "magic(" + to_string(me->resist_magic) + ")");
+                MAGENTA, "will(" + to_string(me->willpower) + ")");
         }
 
         const resists_t res(shapeshifter ? me->resists :
@@ -1214,33 +1282,19 @@ int main(int argc, char* argv[])
             res2(YELLOW, blind, 1);
 
         res2(LIGHTBLUE, drown, mon.res_water_drowning());
-        res2(LIGHTRED, rot, mon.res_rotting());
+        res2(LIGHTRED, miasma, mon.res_miasma());
         res2(LIGHTMAGENTA, neg, mon.res_negative_energy(true));
         res2(YELLOW, holy, mon.res_holy_energy());
         res2(LIGHTMAGENTA, torm, mon.res_torment());
-        res2(LIGHTBLUE, tornado, mon.res_tornado());
+        res2(LIGHTBLUE, vortex, mon.res_polar_vortex());
         res2(LIGHTRED, napalm, mon.res_sticky_flame());
         res2(LIGHTCYAN, silver, mon.how_chaotic() ? -1 : 0);
 
         printf("%s", monsterresistances.c_str());
         printf("%s", monstervulnerabilities.c_str());
 
-        if (me->corpse_thingy != CE_NOCORPSE && me->corpse_thingy != CE_CLEAN)
-        {
-            printf(" | Chunks: ");
-            switch (me->corpse_thingy)
-            {
-            case CE_NOXIOUS:
-                printf("%s", colour(DARKGREY, "noxious").c_str());
-                break;
-            // We should't get here; including these values so we can get
-            // compiler
-            // warnings for unhandled enum values.
-            case CE_NOCORPSE:
-            case CE_CLEAN:
-                printf("???");
-            }
-        }
+        if (me->leaves_corpse)
+            printf(" | Corpse");
 
         printf(" | XP: %ld", exper);
 

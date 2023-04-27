@@ -67,9 +67,7 @@ bool read_bool(const string &field, bool def_value)
 }
 
 
-void BoolGameOption::reset() const { value = default_value; }
-
-string BoolGameOption::loadFromString(string field, rc_line_type) const
+string BoolGameOption::loadFromString(const string &field, rc_line_type ltyp)
 {
     string error;
     const maybe_bool result = read_maybe_bool(field);
@@ -80,24 +78,20 @@ string BoolGameOption::loadFromString(string field, rc_line_type) const
     }
 
     value = tobool(result, false);
-    return "";
+    return GameOption::loadFromString(field, ltyp);
 }
 
-void ColourGameOption::reset() const { value = default_value; }
-
-string ColourGameOption::loadFromString(string field, rc_line_type) const
+string ColourGameOption::loadFromString(const string &field, rc_line_type ltyp)
 {
     const int col = str_to_colour(field, -1, true, elemental);
     if (col == -1)
         return make_stringf("Bad %s -- %s\n", name().c_str(), field.c_str());
 
     value = col;
-    return "";
+    return GameOption::loadFromString(field, ltyp);
 }
 
-void CursesGameOption::reset() const { value = default_value; }
-
-string CursesGameOption::loadFromString(string field, rc_line_type) const
+string CursesGameOption::loadFromString(const string &field, rc_line_type ltyp)
 {
     string error;
     const unsigned result = _curses_attribute(field, error);
@@ -105,7 +99,7 @@ string CursesGameOption::loadFromString(string field, rc_line_type) const
         return make_stringf("%s (for %s)", error.c_str(), name().c_str());
 
     value = result;
-    return "";
+    return GameOption::loadFromString(field, ltyp);
 }
 
 #ifdef USE_TILE
@@ -114,42 +108,34 @@ TileColGameOption::TileColGameOption(VColour &val, std::set<std::string> _names,
         : GameOption(_names), value(val),
           default_value(str_to_tile_colour(_default)) { }
 
-void TileColGameOption::reset() const { value = default_value; }
-
-string TileColGameOption::loadFromString(string field, rc_line_type) const
+string TileColGameOption::loadFromString(const string &field, rc_line_type ltyp)
 {
     value = str_to_tile_colour(field);
-    return "";
+    return GameOption::loadFromString(field, ltyp);
 }
 #endif
 
-void IntGameOption::reset() const { value = default_value; }
-
-string IntGameOption::loadFromString(string field, rc_line_type) const
+string IntGameOption::loadFromString(const string &field, rc_line_type ltyp)
 {
     int val = default_value;
     if (!parse_int(field.c_str(), val))
         return make_stringf("Bad %s: \"%s\"", name().c_str(), field.c_str());
     if (val < min_value)
-        return make_stringf("Bad %s: %d < %d", name().c_str(), val, min_value);
+        return make_stringf("Bad %s: %d should be >= %d", name().c_str(), val, min_value);
     if (val > max_value)
-        return make_stringf("Bad %s: %d > %d", name().c_str(), val, max_value);
+        return make_stringf("Bad %s: %d should be <<= %d", name().c_str(), val, max_value);
     value = val;
-    return "";
+    return GameOption::loadFromString(field, ltyp);
 }
 
-void StringGameOption::reset() const { value = default_value; }
-
-string StringGameOption::loadFromString(string field, rc_line_type) const
+string StringGameOption::loadFromString(const string &field, rc_line_type ltyp)
 {
     value = field;
-    return "";
+    return GameOption::loadFromString(field, ltyp);
 }
 
-void ColourThresholdOption::reset() const { value = default_value; }
-
-string ColourThresholdOption::loadFromString(string field,
-                                             rc_line_type ltyp) const
+string ColourThresholdOption::loadFromString(const string &field,
+                                             rc_line_type ltyp)
 {
     string error;
     const colour_thresholds result = parse_colour_thresholds(field, &error);
@@ -173,11 +159,11 @@ string ColourThresholdOption::loadFromString(string field,
         default:
             die("Unknown rc line type for %s: %d!", name().c_str(), ltyp);
     }
-    return "";
+    return GameOption::loadFromString(field, ltyp);
 }
 
 colour_thresholds
-    ColourThresholdOption::parse_colour_thresholds(string field,
+    ColourThresholdOption::parse_colour_thresholds(const string &field,
                                                    string* error) const
 {
     colour_thresholds result;

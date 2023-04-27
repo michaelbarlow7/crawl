@@ -6,6 +6,7 @@
 #pragma once
 
 #include <functional>
+#include <vector>
 
 #include "format.h"
 #include "KeymapContext.h"
@@ -25,7 +26,11 @@
 # include "json.h"
 #endif
 
+using std::vector;
+
 struct wm_keyboard_event;
+
+#define UI_SCROLLER_SHADE_SIZE 12
 
 namespace ui {
 
@@ -119,6 +124,8 @@ public:
     constexpr Size() : width(0), height(0) {}
     explicit constexpr Size(int v) : width(v), height(v) {}
     constexpr Size(int w, int h) : width(w), height(h) {}
+
+    constexpr bool is_valid() const { return width >= 0 && height >= 0; }
 
     constexpr bool operator <= (const Size& other) const
     {
@@ -339,7 +346,7 @@ public:
     /**
      * Mark this widget as needing redraw. render() will be called.
      */
-    void _expose();
+    virtual void _expose();
 
     /**
      * Get/set visibility of this widget only, ignoring the visibility of its
@@ -362,7 +369,7 @@ public:
     // - caching
     void render();
     SizeReq get_preferred_size(Direction dim, int prosp_width);
-    void allocate_region(Region region);
+    virtual void allocate_region(Region region);
 
     Margin get_margin() const
     {
@@ -520,6 +527,22 @@ private:
         Slot<Widget, bool(const Event&)> hotkey;
         Slot<Widget, bool()> layout_pop;
     } slots;
+};
+
+/**
+ * An OverlayWidget is an "empty" widget that handles its own redrawing; it
+ * lives in the widget stack etc and uses the same API, but occupies 0 space
+ * and forces a render any time it is exposed. It is currently intended for
+ * using the widget API to render the regular screen, as in the widget-wrapped
+ * direction chooser, in order to simplify the amount of redrawing that
+ * happens. Not well-tested on local tiles (though in a quick test, it didn't
+ * cause any obvious issues).
+ */
+class OverlayWidget : public Widget
+{
+public:
+    void allocate_region(Region) override;
+    void _expose() override;
 };
 
 class Container : public Widget
@@ -778,6 +801,7 @@ protected:
     COLOURS m_bg_colour = BLACK;
 #endif
     Size m_wrapped_size = Size{-1};
+    Size m_wrapped_sizereq = Size{-1};
     string hl_pat;
     bool hl_line;
 };
@@ -801,7 +825,7 @@ public:
     SizeReq _get_preferred_size(Direction dim, int prosp_width) override;
 
 protected:
-    tile_def m_tile = {TILEG_ERROR, TEX_GUI};
+    tile_def m_tile = {TILEG_ERROR};
     int m_tw {0}, m_th {0};
 
 #ifdef USE_TILE_LOCAL
@@ -1251,10 +1275,6 @@ void force_render();
 void render();
 void delay(unsigned int ms);
 
-void push_scissor(Region scissor);
-void pop_scissor();
-Region get_scissor();
-
 void set_focused_widget(Widget* w);
 Widget* get_focused_widget();
 bool raise_event(Event& event);
@@ -1293,4 +1313,11 @@ private:
     unwind_bool no_more;
 };
 
+#ifdef USE_TILE_LOCAL
+wm_mouse_event to_wm_event(const MouseEvent &);
+#endif
+
+#ifdef USE_TILE_LOCAL
+extern bool should_render_current_regions;
+#endif
 }

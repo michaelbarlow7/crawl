@@ -145,7 +145,7 @@ class Species(MutableMapping):
         self['difficulty_priority'] = validate_int_range(difficulty_priority(
             s.get('difficulty_priority', 0)), 'difficulty_priority', 0, 1000)
         self['create_enum'] = validate_bool(
-                                    s.get('create_enum', True), 'create_enum')
+                                    s.get('create_enum', False), 'create_enum')
         self['walking_verb'] = quote_or_nullptr('walking_verb', s)
         self['altar_action'] = quote_or_nullptr('altar_action', s)
 
@@ -175,19 +175,21 @@ SPECIES_GROUP_TEMPLATE = """
     }},
 """
 ALL_APTITUDES = ('fighting', 'short_blades', 'long_blades', 'axes',
-    'maces_and_flails', 'polearms', 'staves', 'slings', 'bows', 'crossbows',
+    'maces_and_flails', 'polearms', 'staves', 'ranged weapons',
     'throwing', 'armour', 'dodging', 'stealth', 'shields', 'unarmed_combat',
-    'spellcasting', 'conjurations', 'hexes', 'charms', 'summoning',
+    'spellcasting', 'conjurations', 'hexes', 'summoning',
     'necromancy', 'transmutations', 'translocations', 'fire_magic',
     'ice_magic', 'air_magic', 'earth_magic', 'poison_magic', 'invocations',
     'evocations')
-UNDEAD_TYPES = ('US_ALIVE', 'US_HUNGRY_DEAD', 'US_UNDEAD', 'US_SEMI_UNDEAD')
+UNDEAD_TYPES = ('US_ALIVE', 'US_UNDEAD', 'US_SEMI_UNDEAD')
 SIZES = ('SIZE_TINY', 'SIZE_LITTLE', 'SIZE_SMALL', 'SIZE_MEDIUM', 'SIZE_LARGE',
-    'SIZE_BIG', 'SIZE_GIANT')
+    'SIZE_GIANT')
 ALL_STATS = ('str', 'int', 'dex')
 ALL_WEAPON_SKILLS = ('SK_SHORT_BLADES', 'SK_LONG_BLADES', 'SK_AXES',
-    'SK_MACES_FLAILS', 'SK_POLEARMS', 'SK_STAVES', 'SK_SLINGS', 'SK_BOWS',
-    'SK_CROSSBOWS', 'SK_UNARMED_COMBAT')
+    'SK_MACES_FLAILS', 'SK_POLEARMS', 'SK_STAVES', 'SK_RANGED_WEAPONS', 'SK_UNARMED_COMBAT')
+
+ALL_SPECIES_FLAGS = {'SPF_NO_HAIR', 'SPF_DRACONIAN', 'SPF_SMALL_TORSO',
+    'SPF_NO_BONES', 'SPF_BARDING'}
 
 def recommended_jobs(jobs):
     return ', '.join(validate_string(job, 'Job', 'JOB_[A-Z_]+') for job in jobs)
@@ -241,22 +243,13 @@ def quote(s):
         raise ValueError('Expected a string but got %s' % repr(s))
     return '"%s"' % s
 
-
 def species_flags(flags):
+    global ALL_SPECIES_FLAGS
     out = set()
     for f in flags:
-        if f == 'elven':
-            out.add('SPF_ELVEN')
-        elif f == 'draconian':
-            out.add('SPF_DRACONIAN')
-        elif f == 'orcish':
-            out.add('SPF_ORCISH')
-        elif f == 'hairless':
-            out.add('SPF_NO_HAIR')
-        elif f == 'small_torso':
-            out.add('SPF_SMALL_TORSO')
-        else:
+        if f not in ALL_SPECIES_FLAGS:
             raise ValueError("Unknown species flag %s" % f)
+        out.add(f)
     if not out:
         out.add('SPF_NONE')
     return ' | '.join(out)
@@ -363,6 +356,8 @@ def generate_aptitudes_data(s, template):
             aptitudes[apt] = 'UNUSABLE_SKILL'
         else:
             aptitudes[apt] = val
+    aptitudes['tag_major_version_opener'] = s['tag_major_version_opener']
+    aptitudes['tag_major_version_closer'] = s['tag_major_version_closer']
     return template.format(enum = s['enum'], **aptitudes)
 
 

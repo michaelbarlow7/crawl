@@ -1,5 +1,7 @@
 #pragma once
 
+#include "tag-version.h"
+
 // NOTE: The order of these is very important to their usage!
 // [dshaligram] If adding/removing from this list, also update viewchar.cc!
 enum dungeon_char_type
@@ -19,6 +21,7 @@ enum dungeon_char_type
     DCHAR_ARCH,
     DCHAR_FOUNTAIN,
     DCHAR_WAVY,
+    DCHAR_SHALLOW_WAVY,
     DCHAR_STATUE,
     DCHAR_INVIS_EXPOSED,
     DCHAR_ITEM_DETECTED,
@@ -27,7 +30,9 @@ enum dungeon_char_type
     DCHAR_ITEM_WEAPON,
     DCHAR_ITEM_ARMOUR,
     DCHAR_ITEM_WAND,
+#if TAG_MAJOR_VERSION == 34
     DCHAR_ITEM_FOOD,
+#endif
     DCHAR_ITEM_SCROLL,
     DCHAR_ITEM_RING,
     DCHAR_ITEM_POTION,

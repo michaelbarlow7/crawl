@@ -24,12 +24,6 @@ book of fixed theme
 
 Kniha kouzel.
 %%%%
-book of war chants
-
-Kniha kouzel určená bojovníkům. Verze v této knize jsou zhudebněné podle
-tradice bojujících skaldů. Funkčně jsou však identické s těmi, které jsou
-obyčejně vyslovovány.
-%%%%
 bow
 
 Zakřivený kus dřeva s tětivou, určený k střílení šípů. V boji způsobuje
@@ -213,8 +207,4 @@ wand of polymorph
 
 Magické zařízení, které způsobí, že se bytost promění do jiné formy. To je
 obzvláště účinné proti tvar-měnící bytosti.
-%%%%
-wand of random effects
-
-Magické zařízení, které může produkovat různé efekty.
 %%%%

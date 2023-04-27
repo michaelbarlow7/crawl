@@ -5,7 +5,11 @@
 
 #pragma once
 
+#include <vector>
+
 #include "player.h"
+
+using std::vector;
 
 const int MAX_SKILL_ORDER = 100;
 struct skill_state
@@ -20,13 +24,12 @@ struct skill_state
     FixedVector<unsigned int, NUM_SKILLS> training;
     FixedVector<unsigned int, NUM_SKILLS> skill_points;
     FixedVector<unsigned int, NUM_SKILLS> training_targets;
-    FixedVector<unsigned int, NUM_SKILLS> ct_skill_points;
     FixedVector<uint8_t, NUM_SKILLS>      skill_order;
+    FixedVector<unsigned int, NUM_SKILLS> skill_manual_points;
     int skill_cost_level;
     unsigned int total_experience;
     bool auto_training;
     int exp_available;
-    vector<int> manual_charges;
 
     void save();
     bool state_saved() const;
@@ -58,7 +61,7 @@ unsigned int skill_cost_needed(int level);
 int calc_skill_cost(int skill_cost_level);
 void check_skill_cost_change();
 
-bool training_restricted(skill_type sk);
+bool skill_default_shown(skill_type sk);
 void reassess_starting_skills();
 bool check_selected_skills();
 void init_train();
@@ -84,6 +87,7 @@ int get_skill_progress(skill_type sk, int level, int points, int scale);
 int get_skill_progress(skill_type sk, int scale);
 int get_skill_percentage(const skill_type x);
 const char *skill_name(skill_type which_skill);
+const char *skill_abbr(skill_type which_skill);
 skill_type str_to_skill(const string &skill);
 skill_type str_to_skill_safe(const string &skill);
 
@@ -103,6 +107,7 @@ skill_type best_skill(skill_type min_skill, skill_type max_skill,
 void init_skill_order();
 
 bool is_removed_skill(skill_type skill);
+bool can_sacrifice_skill(mutation_type mut);
 bool is_useless_skill(skill_type skill);
 bool is_harmful_skill(skill_type skill);
 bool can_enable_skill(skill_type sk, bool override = false);
@@ -117,7 +122,6 @@ unsigned int skill_exp_needed(int lev, skill_type sk,
 skill_diff skill_level_to_diffs(skill_type skill, double amount,
     int scaled_training=100, bool base_only=true);
 
-bool compare_skills(skill_type sk1, skill_type sk2);
 vector<skill_type> get_crosstrain_skills(skill_type sk);
 int get_crosstrain_points(skill_type sk);
 
@@ -125,9 +129,6 @@ int elemental_preference(spell_type spell, int scale = 1);
 
 void skill_menu(int flag = 0, int exp = 0);
 void dump_skills(string &text);
-int skill_transfer_amount(skill_type sk);
-int transfer_skill_points(skill_type fsk, skill_type tsk, int skp_max,
-                          bool simu, bool boost = false);
 int skill_bump(skill_type skill, int scale = 1);
 void fixup_skills();
 
@@ -139,26 +140,29 @@ bool check_training_targets();
 static const skill_type skill_display_order[] =
 {
     SK_TITLE,
-    SK_FIGHTING, SK_SHORT_BLADES, SK_LONG_BLADES,
+    SK_FIGHTING,
+
+    SK_BLANK_LINE,
+
     SK_MACES_FLAILS, SK_AXES, SK_POLEARMS, SK_STAVES, SK_UNARMED_COMBAT,
 
     SK_BLANK_LINE,
 
-    SK_BOWS, SK_CROSSBOWS, SK_THROWING, SK_SLINGS,
+    SK_SHORT_BLADES, SK_LONG_BLADES, SK_RANGED_WEAPONS,
 
     SK_BLANK_LINE,
 
-    SK_ARMOUR, SK_DODGING, SK_SHIELDS,
+    SK_ARMOUR, SK_DODGING, SK_SHIELDS, SK_STEALTH,
 
     SK_COLUMN_BREAK, SK_TITLE,
 
-    SK_SPELLCASTING, SK_CONJURATIONS, SK_HEXES, SK_CHARMS, SK_SUMMONINGS,
+    SK_SPELLCASTING, SK_CONJURATIONS, SK_HEXES, SK_SUMMONINGS,
     SK_NECROMANCY, SK_TRANSLOCATIONS, SK_TRANSMUTATIONS,
     SK_FIRE_MAGIC, SK_ICE_MAGIC, SK_AIR_MAGIC, SK_EARTH_MAGIC, SK_POISON_MAGIC,
 
     SK_BLANK_LINE,
 
-    SK_INVOCATIONS, SK_EVOCATIONS, SK_STEALTH,
+    SK_INVOCATIONS, SK_EVOCATIONS, SK_THROWING,
 
     SK_COLUMN_BREAK,
 };

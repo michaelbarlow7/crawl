@@ -12,7 +12,6 @@
 #include <unordered_map>
 
 #include "cloud.h"
-#include "food.h"
 #include "god-conduct.h"
 #include "god-passive.h"
 #include "god-wrath.h" // reduce_xp_penance
@@ -80,9 +79,7 @@ public:
     {
         // cure status effects
         if (you.duration[DUR_CONF]
-            || you.duration[DUR_POISONING]
-            || you.disease
-            || player_rotted())
+            || you.duration[DUR_POISONING])
         {
             return true;
         }
@@ -93,8 +90,7 @@ public:
                 *reason = "You can't heal while in death's door.";
             return false;
         }
-        if (!you.can_potion_heal()
-            || you.hp == you.hp_max && player_rotted() == 0)
+        if (!you.can_potion_heal())
         {
             if (reason)
                 *reason = "You have no ailments to cure.";
@@ -106,28 +102,13 @@ public:
     bool effect(bool=true, int=40, bool is_potion = true) const override
     {
         const bool ddoor = you.duration[DUR_DEATHS_DOOR];
-        bool unrotted = false;
 
-        if ((you.can_potion_heal() || !is_potion) && !ddoor || player_rotted())
+        if ((you.can_potion_heal() || !is_potion) && !ddoor)
         {
             int amount = 5 + random2(7);
-            if (is_potion && !you.can_potion_heal() && player_rotted())
-            {
-                // Treat the effectiveness of rot removal as if the player
-                // had two levels of MUT_NO_POTION_HEAL
-                unrot_hp(div_rand_round(amount,3));
-                unrotted = true;
-            }
-            else
-            {
-                if (is_potion)
-                    amount = you.scale_potion_healing(amount);
-                if (player_rotted())
-                    unrotted = true;
-                // Pay for rot right off the top.
-                amount = unrot_hp(amount);
-                inc_hp(amount);
-            }
+            if (is_potion)
+                amount = you.scale_potion_healing(amount);
+            inc_hp(amount);
         }
 
         if (ddoor)
@@ -135,8 +116,7 @@ public:
         else if (you.can_potion_heal()
                  || !is_potion
                  || you.duration[DUR_POISONING]
-                 || you.duration[DUR_CONF]
-                 || unrotted)
+                 || you.duration[DUR_CONF])
         {
             if (is_potion)
                 print_potion_heal_message();
@@ -148,7 +128,6 @@ public:
         if (you.duration[DUR_POISONING])
             you.redraw_hit_points = true;
         you.duration[DUR_POISONING] = 0;
-        you.disease = 0;
         you.duration[DUR_CONF] = 0;
         return true;
     }
@@ -170,7 +149,7 @@ public:
         if (!you.can_potion_heal())
         {
             if (reason)
-                *reason = "That would not heal you.";
+                *reason = "You cannot be healed by potions.";
             return false;
         }
         if (you.duration[DUR_DEATHS_DOOR])
@@ -179,7 +158,7 @@ public:
                 *reason = "You cannot heal while in death's door.";
             return false;
         }
-        if (you.hp == you.hp_max && player_rotted() == 0)
+        if (you.hp == you.hp_max)
         {
             if (reason)
                 *reason = "Your health is already full.";
@@ -204,8 +183,6 @@ public:
         int amount = 10 + random2avg(28, 3);
         if (is_potion)
             amount = you.scale_potion_healing(amount);
-        // Pay for rot right off the top.
-        amount = unrot_hp(amount);
         inc_hp(amount);
         if (is_potion)
             print_potion_heal_message();
@@ -296,25 +273,25 @@ public:
     }
 };
 
-class PotionStabbing : public PotionEffect
+class PotionAttraction : public PotionEffect
 {
 private:
-    PotionStabbing() : PotionEffect(POT_STABBING) { }
-    DISALLOW_COPY_AND_ASSIGN(PotionStabbing);
+    PotionAttraction() : PotionEffect(POT_ATTRACTION) { }
+    DISALLOW_COPY_AND_ASSIGN(PotionAttraction);
 public:
-    static const PotionStabbing &instance()
+    static const PotionAttraction &instance()
     {
-        static PotionStabbing inst; return inst;
+        static PotionAttraction inst; return inst;
     }
 
     bool effect(bool=true, int pow = 40, bool=true) const override
     {
-        const bool was_stabbing = you.duration[DUR_STABBING] > 0;
+        const bool was_attractive = you.duration[DUR_ATTRACTIVE] > 0;
 
-        mprf(MSGCH_DURATION, "You feel %sready to backstab.",
-             was_stabbing ? "more " : "");
+        mprf(MSGCH_DURATION, "You feel %sattractive to monsters.",
+             was_attractive ? "more " : "");
 
-        you.increase_duration(DUR_STABBING, 35 + random2(pow), 80);
+        you.increase_duration(DUR_ATTRACTIVE, 20 + random2(pow)/2);
         return true;
     }
 };
@@ -344,7 +321,6 @@ public:
 
     bool effect(bool=true, int pow = 40, bool=true) const override
     {
-        you.attribute[ATTR_FLIGHT_UNCANCELLABLE] = 1;
         fly_player(pow);
         return you.airborne();
     }
@@ -359,6 +335,25 @@ public:
     static const PotionCancellation &instance()
     {
         static PotionCancellation inst; return inst;
+    }
+
+    bool can_quaff(string *reason = nullptr) const override
+    {
+        if (!player_is_cancellable())
+        {
+            if (reason)
+                *reason = "Drinking this now will have no effect.";
+            return false;
+        }
+
+        return true;
+    }
+
+    bool quaff(bool was_known) const override {
+        if (was_known && !check_known_quaff())
+            return false;
+
+        return effect(was_known);
     }
 
     bool effect(bool=true, int=40, bool=true) const override
@@ -427,6 +422,8 @@ public:
                 afflictions.push_back("liquid flames");
             if (you.duration[DUR_QUAD_DAMAGE])
                 afflictions.push_back("!!!QUAD DAMAGE!!!");
+            if (you.has_mutation(MUT_GLOWING))
+                afflictions.push_back("body"); // all flesh is a curse...
             mprf(MSGCH_DURATION,
                  "You become %stransparent, but the glow from %s "
                  "%s prevents you from becoming completely invisible.",
@@ -462,7 +459,6 @@ public:
             return false;
 
         effect();
-        you.attribute[ATTR_INVIS_UNCANCELLABLE] = 1;
         return true;
     }
 };
@@ -478,29 +474,31 @@ public:
         static PotionExperience inst; return inst;
     }
 
-    bool effect(bool=true, int=40, bool=true) const override
+    bool effect(bool=true, int pow = 40, bool=true) const override
     {
         if (player_under_penance(GOD_HEPLIAKLQANA))
         {
             simple_god_message(" appreciates the memories.",
                                GOD_HEPLIAKLQANA);
-            reduce_xp_penance(GOD_HEPLIAKLQANA, 750 * you.experience_level);
+            reduce_xp_penance(GOD_HEPLIAKLQANA,
+                              750 * you.experience_level * pow / 40);
             return true;
         }
 
         if (you.experience_level < you.get_max_xl())
         {
+            const int levels = min(you.get_max_xl(), pow / 40);
             mpr("You feel more experienced!");
             // Defer calling level_change() until later in drink() to prevent
             // SIGHUP abuse.
-            adjust_level(1, true);
+            adjust_level(levels, true);
         }
         else
             mpr("A flood of memories washes over you.");
 
         // these are included in default force_more_message
-        const int exp = 7500 * you.experience_level;
-        if (you.species == SP_GNOLL)
+        const int exp = 7500 * you.experience_level * pow / 40;
+        if (you.has_mutation(MUT_DISTRIBUTED_TRAINING))
         {
             you.exp_available += exp;
             train_skills();
@@ -532,7 +530,12 @@ public:
         if (you.magic_points == you.max_magic_points)
         {
             if (reason)
-                *reason = "Your magic is already full.";
+            {
+                if (you.max_magic_points)
+                    *reason = "Your magic is already full.";
+                else
+                    *reason = "You have no magic to restore.";
+            }
             return false;
         }
         return true;
@@ -541,7 +544,10 @@ public:
     bool effect(bool=true, int = 40, bool=true) const override
     {
         inc_mp(POT_MAGIC_MP);
-        mpr("Magic courses through your body.");
+        if (you.has_mutation(MUT_HP_CASTING))
+            mpr("Magic washes over you without effect.");
+        else
+            mpr("Magic courses through your body.");
         return true;
     }
 };
@@ -564,7 +570,7 @@ public:
 
     bool effect(bool was_known = true, int = 40, bool=true) const override
     {
-        if (you.species == SP_VAMPIRE && !you.vampire_alive)
+        if (you.is_lifeless_undead())
         {
             mpr("You feel slightly irritated.");
             return false;
@@ -685,7 +691,7 @@ public:
 };
 
 const int MIN_REMOVED = 2;
-const int MAX_REMOVED = 4;
+const int MAX_REMOVED = 3;
 const int MIN_ADDED = 1;
 const int MAX_ADDED = 3;
 
@@ -726,8 +732,12 @@ public:
         // Add mutations.
         for (int i = 0; i < add_mutations; i++)
             mutated |= mutate(RANDOM_MUTATION, "potion of mutation", false);
-        // Always one good mutation.
-        mutated |= mutate(RANDOM_GOOD_MUTATION, "potion of mutation", false);
+        // Sometimes one good mutation.
+        if (coinflip())
+        {
+            mutated |= mutate(RANDOM_GOOD_MUTATION, "potion of mutation",
+                              false);
+        }
 
         learned_something_new(HINT_YOU_MUTATED);
         return mutated;
@@ -794,7 +804,7 @@ static const unordered_map<potion_type, const PotionEffect*, std::hash<int>> pot
     { POT_HASTE, &PotionHaste::instance(), },
     { POT_MIGHT, &PotionMight::instance(), },
     { POT_BRILLIANCE, &PotionBrilliance::instance(), },
-    { POT_STABBING, &PotionStabbing::instance(), },
+    { POT_ATTRACTION, &PotionAttraction::instance(), },
     { POT_FLIGHT, &PotionFlight::instance(), },
     { POT_CANCELLATION, &PotionCancellation::instance(), },
     { POT_AMBROSIA, &PotionAmbrosia::instance(), },

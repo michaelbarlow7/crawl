@@ -4,6 +4,7 @@
 
 #include "options.h"
 #include "unicode.h"
+#include "tag-version.h"
 
 // For order and meaning of symbols see dungeon_char_type in dungeon_char_type.h
 static const char32_t dchar_table[NUM_CSET][NUM_DCHAR_TYPES] =
@@ -18,6 +19,7 @@ static const char32_t dchar_table[NUM_CSET][NUM_DCHAR_TYPES] =
          U'\x2229', //∩
             U'\x2320', //⌠
             U'\x2248', //≈
+            '~', // sadly, ∼ (U+223C, not ascii ~) and ≃ are not in WGL4
             '8',  '{',
 #if defined(TARGET_OS_WINDOWS) && !defined(USE_TILE_LOCAL)
          U'\x2302', //⌂ // CP437 but "optional" in WGL4
@@ -25,7 +27,11 @@ static const char32_t dchar_table[NUM_CSET][NUM_DCHAR_TYPES] =
          U'\x2206', //∆ // WGL4 and DEC
 #endif
          '0', U'\x3c6', //φ
-            ')',  '[',  '/',  '%',  '?',  '=',  '!',  '(', ':',  '|',
+         ')',  '[',  '/',
+#if TAG_MAJOR_VERSION == 34
+         '%',
+#endif
+         '?',  '=',  '!',  '(', ':',  '|',
 #if TAG_MAJOR_VERSION == 34
          '\\',
 #endif
@@ -63,8 +69,11 @@ static const char32_t dchar_table[NUM_CSET][NUM_DCHAR_TYPES] =
     {
         // wall .. altar
          '#',  '#',  '*',  '.',  ',', '\'',  '+',  '^',  '>',  '<',  '#',  '_',
-        // arch .. item_food
-        '\\',  '}',  '~',  '8',  '{',  '{',  '{',  '}',  ')',  '[',  '/',  '%',
+        // arch .. item_wand
+        '\\',  '}',  '~', '~', '8',  '{',  '{',  '{',  '}',  ')',  '[',  '/',
+#if TAG_MAJOR_VERSION == 34
+        '%', // food
+#endif
         // item_scroll .. item_staff
          '?',  '=',  '!',  '(',  ':',  '|',
 #if TAG_MAJOR_VERSION == 34
@@ -95,10 +104,14 @@ dungeon_char_type dchar_by_name(const string &name)
     {
         "wall", "permawall", "wall_magic", "floor", "floor_magic", "door_open",
         "door_closed", "trap", "stairs_down", "stairs_up", "grate", "altar",
-        "arch", "fountain", "wavy", "statue", "invis_exposed", "item_detected",
-        "item_orb", "item_rune", "item_weapon", "item_armour", "item_wand",
-        "item_food", "item_scroll", "item_ring", "item_potion", "item_missile",
-        "item_book", "item_staff",
+        "arch", "fountain", "wavy", "shallow_wavy", "statue", "invis_exposed",
+        "item_detected", "item_orb", "item_rune", "item_weapon", "item_armour",
+        "item_wand",
+#if TAG_MAJOR_VERSION == 34
+        "item_food",
+#endif
+        "item_scroll", "item_ring", "item_potion", "item_missile", "item_book",
+        "item_staff",
 #if TAG_MAJOR_VERSION == 34
         "item_rod",
 #endif

@@ -7,12 +7,15 @@
 
 #include <cstdio>
 #include <string>
+#include <vector>
 
 #include "enum.h"
 #include "game-type.h"
 #include "item-prop-enum.h"
 #include "job-type.h"
 #include "unicode.h"
+
+using std::vector;
 
 int str_to_summon_type(const string &str);
 string gametype_to_str(game_type type);
@@ -75,7 +78,7 @@ struct newgame_def;
 void write_newgame_options_file(const newgame_def& prefs);
 
 void save_player_name();
-void save_seed_pref();
+void save_game_prefs();
 
 string channel_to_str(int ch);
 

@@ -184,7 +184,7 @@ static void _decide_monster_firing_position(monster* mon, actor* owner)
     else
     {
         // We have a foe but it's not the player.
-        monster* target = &menv[mon->foe];
+        monster* target = &env.mons[mon->foe];
         mon->target = target->pos();
 
         if (mons_class_flag(mon->type, M_MAINTAIN_RANGE)
@@ -197,7 +197,7 @@ static void _decide_monster_firing_position(monster* mon, actor* owner)
         // Hold position if we've reached our ideal range
         else if (mon->type == MONS_SPELLFORGED_SERVITOR
                  && (mon->pos() - target->pos()).rdist()
-                 <= mon->props["ideal_range"].get_int()
+                 <= mon->props[IDEAL_RANGE_KEY].get_int()
                  && !one_chance_in(8))
         {
             mon->firing_pos = mon->pos();
@@ -260,7 +260,8 @@ void handle_behaviour(monster* mon)
     bool wontAttack = mon->wont_attack() && !mon->has_ench(ENCH_INSANE);
 
     // Whether the player position is in LOS of the monster.
-    bool proxPlayer = !crawl_state.game_is_arena() && mon->see_cell(you.pos());
+    bool proxPlayer = !crawl_state.game_is_arena() && mon->see_cell(you.pos())
+                      && in_bounds(you.pos());
 
     // If set, pretend the player isn't there, but only for hostile monsters.
     if (proxPlayer && crawl_state.disables[DIS_MON_SIGHT] && !mon->wont_attack())
@@ -302,43 +303,12 @@ void handle_behaviour(monster* mon)
     actor *owner = (mon->summoner ? actor_by_mid(mon->summoner) : nullptr);
     if (mon->type == MONS_SPECTRAL_WEAPON)
     {
-        // Do nothing if we're still being placed
-        if (!mon->summoner)
-            return;
-
-        owner = actor_by_mid(mon->summoner);
-
-        if (!owner || !owner->alive())
-        {
+        if (mon->summoner && (!owner || !owner->alive()))
             end_spectral_weapon(mon, false);
-            return;
-        }
 
-        // Only go after the target if it's still near the owner, and
-        // so are we. The weapon is restricted to a leash range of 2,
-        // and things reachable within that leash range [qoala]
-        const int leash = 2;
-
-        if (grid_distance(owner->pos(), mon->pos()) > leash
-            || mon->foe == MHITNOT)
-        {
-            mon->foe = owner->mindex();
-            mon->target = owner->pos();
-        }
-        else if (mon->props.exists(SW_TARGET_MID))
-        {
-            actor *atarget = actor_by_mid(mon->props[SW_TARGET_MID].get_int());
-
-            if (atarget && atarget->alive()
-                && (grid_distance(owner->pos(), atarget->pos())
-                    <= ((mon->reach_range() == REACH_TWO) ? leash + 2 : leash + 1)))
-            {
-                mon->target = atarget->pos();
-                mon->foe = atarget->mindex();
-            }
-            else
-                reset_spectral_weapon(mon);
-        }
+        // Spectral weapons never do anything on their own. They just attack
+        // on command. A sad existence, really.
+        return;
     }
 
     // Change proxPlayer depending on invisibility and standing
@@ -352,24 +322,19 @@ void handle_behaviour(monster* mon)
         && (mon->foe == MHITNOT || mon->foe == MHITYOU)
         && !mon->berserk_or_insane()
         && mon->behaviour != BEH_WITHDRAW
-        && mon->type != MONS_BALLISTOMYCETE_SPORE
-        && mon->type != MONS_BALL_LIGHTNING
-        && mon->type != MONS_FOXFIRE
+        && !mons_self_destructs(*mon)
         && !mons_is_avatar(mon->type))
     {
         if (you.pet_target != MHITNOT)
             mon->foe = you.pet_target;
-        else if (mons_class_is_stationary(mon->type))
+        else
             set_nearest_monster_foe(mon);
     }
 
     // Instead, berserkers attack nearest monsters.
     if (mon->behaviour != BEH_SLEEP
         && (mon->has_ench(ENCH_INSANE)
-            || ((mon->berserk()
-                 || mon->type == MONS_BALLISTOMYCETE_SPORE
-                 || mon->type == MONS_BALL_LIGHTNING
-                 || mon->type == MONS_FOXFIRE)
+            || ((mon->berserk() || mons_self_destructs(*mon))
                 && (mon->foe == MHITNOT
                     || isFriendly && mon->foe == MHITYOU))))
     {
@@ -408,7 +373,7 @@ void handle_behaviour(monster* mon)
     // Friendly and good neutral monsters do not attack other friendly
     // and good neutral monsters.
     if (!mons_is_avatar(mon->type) && mon->foe != MHITNOT && mon->foe != MHITYOU
-        && wontAttack && menv[mon->foe].wont_attack())
+        && wontAttack && env.mons[mon->foe].wont_attack())
     {
         mon->foe = MHITNOT;
     }
@@ -417,7 +382,7 @@ void handle_behaviour(monster* mon)
     if (isNeutral
         && !mon->has_ench(ENCH_INSANE)
         && mon->foe != MHITNOT
-        && (mon->foe == MHITYOU || menv[mon->foe].neutral()))
+        && (mon->foe == MHITYOU || env.mons[mon->foe].neutral()))
     {
         mon->foe = MHITNOT;
     }
@@ -489,9 +454,7 @@ void handle_behaviour(monster* mon)
                     || !proxPlayer && !isFriendly
                     || isNeutral && !mon->has_ench(ENCH_INSANE)
                     || patrolling
-                    || mon->type == MONS_BALLISTOMYCETE_SPORE
-                    || mon->type == MONS_BALL_LIGHTNING
-                    || mon->type == MONS_FOXFIRE)
+                    || mons_self_destructs(*mon))
                 {
                     new_beh = BEH_WANDER;
                 }
@@ -592,13 +555,14 @@ void handle_behaviour(monster* mon)
                     // tracking foe's CURRENT position,
                     // but only for a few moves (smell and
                     // intuition only go so far).
-
-                  if (mon->pos() == mon->target)
+                    if (mon->pos() == mon->target)
                     {
                         if (mon->foe == MHITYOU)
                         {
-                            if (x_chance_in_y(50, you.stealth())
-                                || you.penance[GOD_ASHENZARI] && coinflip())
+                            if (in_bounds(you.pos())
+                                && (x_chance_in_y(50, you.stealth())
+                                    || you.penance[GOD_ASHENZARI]
+                                       && coinflip()))
                             {
                                 mon->target = you.pos();
                             }
@@ -608,7 +572,7 @@ void handle_behaviour(monster* mon)
                         else
                         {
                             if (coinflip())     // XXX: cheesy!
-                                mon->target = menv[mon->foe].pos();
+                                mon->target = env.mons[mon->foe].pos();
                             else
                                 mon->foe_memory = 0;
                         }
@@ -703,7 +667,7 @@ void handle_behaviour(monster* mon)
                     return;
             }
 
-            if (mon->strict_neutral() && mons_is_slime(*mon)
+            if (mon->good_neutral() && mons_is_slime(*mon)
                 && have_passive(passive_t::neutral_slimes))
             {
                 set_random_slime_target(mon);
@@ -713,7 +677,7 @@ void handle_behaviour(monster* mon)
             // Batty monsters don't automatically reseek so that
             // they'll flitter away, we'll reset them just before
             // they get movement in handle_monsters() instead. -- bwr
-            if (proxFoe && !mons_is_batty(*mon) || mons_foe_is_marked(*mon))
+            if ((proxFoe || mons_foe_is_marked(*mon)) && !mons_is_batty(*mon))
             {
                 new_beh = BEH_SEEK;
                 break;
@@ -722,6 +686,7 @@ void handle_behaviour(monster* mon)
             // Creatures not currently pursuing another foe are
             // alerted by a sentinel's mark
             if (mon->foe == MHITNOT && you.duration[DUR_SENTINEL_MARK]
+                && in_bounds(you.pos())
                 && (!isFriendly && !mons_is_avatar(mon->type) && !isNeutral
                     && !isPacified
                     || mon->has_ench(ENCH_INSANE)))
@@ -801,10 +766,10 @@ void handle_behaviour(monster* mon)
         case BEH_CORNERED:
 
             // If we were able to move since becoming cornered, resume fleeing
-            if (mon->pos() != mon->props["last_pos"].get_coord())
+            if (mon->pos() != mon->props[LAST_POS_KEY].get_coord())
             {
                 new_beh = BEH_FLEE;
-                mon->props.erase("last_pos");
+                mon->props.erase(LAST_POS_KEY);
             }
 
             // Foe gone out of LOS?
@@ -849,20 +814,20 @@ void handle_behaviour(monster* mon)
             {
                 // We're too far from the player. Idle around and wait for
                 // them to catch up.
-                if (!mon->props.exists("idle_point"))
+                if (!mon->props.exists(IDLE_POINT_KEY))
                 {
-                    mon->props["idle_point"] = mon->pos();
-                    mon->props["idle_deadline"] = you.elapsed_time + 200;
+                    mon->props[IDLE_POINT_KEY] = mon->pos();
+                    mon->props[IDLE_DEADLINE_KEY] = you.elapsed_time + 200;
                 }
 
                 coord_def target_rnd;
                 target_rnd.x = random_range(-2, 2);
                 target_rnd.y = random_range(-2, 2);
                 mon->target = clamp_in_bounds(
-                                    mon->props["idle_point"].get_coord()
+                                    mon->props[IDLE_POINT_KEY].get_coord()
                                     + target_rnd);
 
-                if (you.elapsed_time >= mon->props["idle_deadline"].get_int())
+                if (you.elapsed_time >= mon->props[IDLE_DEADLINE_KEY].get_int())
                     stop_retreat = true;
             }
             else
@@ -870,32 +835,32 @@ void handle_behaviour(monster* mon)
                 // Be more lenient about player distance if a monster is
                 // idling (to prevent it from repeatedly resetting idle
                 // time if its own wanderings bring it closer to the player)
-                if (mon->props.exists("idle_point")
+                if (mon->props.exists(IDLE_POINT_KEY)
                     && grid_distance(mon->pos(), you.pos()) < LOS_DEFAULT_RANGE)
                 {
-                    mon->props.erase("idle_point");
-                    mon->props.erase("idle_deadline");
+                    mon->props.erase(IDLE_POINT_KEY);
+                    mon->props.erase(IDLE_DEADLINE_KEY);
                     mon->target = mon->patrol_point;
                 }
 
-                if (mon->pos() == mon->props["last_pos"].get_coord())
+                if (mon->pos() == mon->props[LAST_POS_KEY].get_coord())
                 {
-                    if (!mon->props.exists("blocked_deadline"))
-                        mon->props["blocked_deadline"] = you.elapsed_time + 30;
+                    if (!mon->props.exists(BLOCKED_DEADLINE_KEY))
+                        mon->props[BLOCKED_DEADLINE_KEY] = you.elapsed_time + 30;
 
-                    if (!mon->props.exists("idle_deadline"))
-                        mon->props["idle_deadline"] = you.elapsed_time + 200;
+                    if (!mon->props.exists(IDLE_DEADLINE_KEY))
+                        mon->props[IDLE_DEADLINE_KEY] = you.elapsed_time + 200;
 
-                    if (you.elapsed_time >= mon->props["blocked_deadline"].get_int()
-                        || you.elapsed_time >= mon->props["idle_deadline"].get_int())
+                    if (you.elapsed_time >= mon->props[BLOCKED_DEADLINE_KEY].get_int()
+                        || you.elapsed_time >= mon->props[IDLE_DEADLINE_KEY].get_int())
                     {
                         stop_retreat = true;
                     }
                 }
                 else
                 {
-                    mon->props.erase("blocked_deadline");
-                    mon->props.erase("idle_deadline");
+                    mon->props.erase(BLOCKED_DEADLINE_KEY);
+                    mon->props.erase(IDLE_DEADLINE_KEY);
                 }
             }
 
@@ -903,13 +868,13 @@ void handle_behaviour(monster* mon)
             {
                 new_beh = BEH_SEEK;
                 new_foe = MHITYOU;
-                mon->props.erase("last_pos");
-                mon->props.erase("idle_point");
-                mon->props.erase("blocked_deadline");
-                mon->props.erase("idle_deadline");
+                mon->props.erase(LAST_POS_KEY);
+                mon->props.erase(IDLE_POINT_KEY);
+                mon->props.erase(BLOCKED_DEADLINE_KEY);
+                mon->props.erase(IDLE_DEADLINE_KEY);
             }
             else
-                mon->props["last_pos"] = mon->pos();
+                mon->props[LAST_POS_KEY] = mon->pos();
 
             break;
         }
@@ -946,6 +911,7 @@ static bool _mons_check_foe(monster* mon, const coord_def& p,
            && summon_can_attack(mon, p)
            && (friendly || !is_sanctuary(p))
            && !mons_is_firewood(*foe)
+           && !foe->props.exists(KIKU_WRETCH_KEY)
            || p == you.pos() && mon->has_ench(ENCH_INSANE);
 }
 
@@ -953,7 +919,7 @@ static bool _mons_check_foe(monster* mon, const coord_def& p,
 void set_nearest_monster_foe(monster* mon, bool near_player)
 {
     // These don't look for foes.
-    if (mon->good_neutral() || mon->strict_neutral()
+    if (mon->good_neutral()
         || mon->behaviour == BEH_WITHDRAW
         || mons_is_avatar(mon->type)
         || mon->has_ench(ENCH_HAUNTING))
@@ -1167,13 +1133,8 @@ void behaviour_event(monster* mon, mon_event_type event, const actor *src,
             break;
 
         // Avoid moving friendly explodey things out of BEH_WANDER.
-        if (mon->friendly()
-            && (mon->type == MONS_BALLISTOMYCETE_SPORE
-                || mon->type == MONS_BALL_LIGHTNING
-                || mon->type == MONS_FOXFIRE))
-        {
+        if (mon->friendly() && mons_self_destructs(*mon))
             break;
-        }
 
         // [ds] Neutral monsters don't react to your presence.
         // XXX: Neutral monsters are a tangled mess of arbitrary logic.
@@ -1241,9 +1202,6 @@ void behaviour_event(monster* mon, mon_event_type event, const actor *src,
         else if (mon->friendly() && !crawl_state.game_is_arena())
             mon->foe = MHITYOU;
 
-        if (you.see_cell(mon->pos()))
-            learned_something_new(HINT_FLEEING_MONSTER);
-
         break;
 
     case ME_CORNERED:
@@ -1278,7 +1236,7 @@ void behaviour_event(monster* mon, mon_event_type event, const actor *src,
         {
             // Save their current position so we know if they manage to move
             // on the following turn (and thus resume BEH_FLEE)
-            mon->props["last_pos"].get_coord() = mon->pos();
+            mon->props[LAST_POS_KEY].get_coord() = mon->pos();
             mon->behaviour = BEH_CORNERED;
         }
         else
@@ -1298,8 +1256,8 @@ void behaviour_event(monster* mon, mon_event_type event, const actor *src,
             mon->attitude = ATT_HOSTILE;
             // Non-hostile uniques might be removed from dungeon annotation
             // so we add them back.
-            if (mon->props.exists("no_annotate"))
-                mon->props["no_annotate"] = false;
+            if (mon->props.exists(NO_ANNOTATE_KEY))
+                mon->props[NO_ANNOTATE_KEY] = false;
             set_unique_annotation(mon);
             mons_att_changed(mon);
         }
@@ -1383,8 +1341,6 @@ beh_type attitude_creation_behavior(mon_attitude_type att)
         return BEH_NEUTRAL;
     case ATT_GOOD_NEUTRAL:
         return BEH_GOOD_NEUTRAL;
-    case ATT_STRICT_NEUTRAL:
-        return BEH_STRICT_NEUTRAL;
     case ATT_FRIENDLY:
         return BEH_FRIENDLY;
     default:
@@ -1392,7 +1348,7 @@ beh_type attitude_creation_behavior(mon_attitude_type att)
     }
 }
 
-// If you're invis and throw/zap whatever, alerts menv to your position.
+// If you're invis and throw/zap whatever, alerts env.mons to your position.
 void alert_nearby_monsters()
 {
     // Judging from the above comment, this function isn't
@@ -1433,7 +1389,7 @@ void shake_off_monsters(const actor* target)
 // types, this should be expanded along with it.
 static void _mons_indicate_level_exit(const monster* mon)
 {
-    const dungeon_feature_type feat = grd(mon->pos());
+    const dungeon_feature_type feat = env.grid(mon->pos());
     const bool is_shaft = (get_trap_type(mon->pos()) == TRAP_SHAFT);
 
     if (feat_is_gate(feat))
@@ -1484,23 +1440,30 @@ bool monster_can_hit_monster(monster* mons, const monster* targ)
     if (!targ->submerged() || mons->has_damage_type(DVORP_TENTACLE))
         return true;
 
-    if (grd(targ->pos()) != DNGN_SHALLOW_WATER)
+    if (env.grid(targ->pos()) != DNGN_SHALLOW_WATER)
         return false;
 
     const item_def *weapon = mons->weapon();
     return weapon && item_attack_skill(*weapon) == SK_POLEARMS;
 }
 
+static bool _mons_attacks_outside_los(const monster &mon)
+{
+    return !mon.is_summoned()
+        && !mon.has_ench(ENCH_FAKE_ABJURATION)
+        && !mon.has_ench(ENCH_PORTAL_PACIFIED)
+        && mon.god != GOD_YREDELEMNUL
+        && !mons_is_hepliaklqana_ancestor(mon.type)
+        && !mon.props.exists(ANIMATE_DEAD_KEY);
+}
+
 // Friendly summons can't attack out of the player's LOS, it's too abusable.
 bool summon_can_attack(const monster* mons)
 {
     return crawl_state.game_is_arena()
-           || !mons->friendly()
-           || !mons->is_summoned()
-              && !mons->has_ench(ENCH_FAKE_ABJURATION)
-              && !mons->has_ench(ENCH_PORTAL_PACIFIED)
-              && !mons_is_hepliaklqana_ancestor(mons->type)
-           || you.see_cell_no_trans(mons->pos());
+        || !mons->friendly()
+        || _mons_attacks_outside_los(*mons)
+        || you.see_cell_no_trans(mons->pos());
 }
 
 bool summon_can_attack(const monster* mons, const coord_def &p)
@@ -1510,23 +1473,11 @@ bool summon_can_attack(const monster* mons, const coord_def &p)
 
     // Spectral weapons only attack their target
     if (mons->type == MONS_SPECTRAL_WEAPON)
-    {
-        // FIXME: find a way to use check_target_spectral_weapon
-        //        without potential info leaks about visibility.
-        if (mons->props.exists(SW_TARGET_MID))
-        {
-            actor *target = actor_by_mid(mons->props[SW_TARGET_MID].get_int());
-            return target && target->pos() == p;
-        }
         return false;
-    }
 
     if (!mons->friendly()
-        || !mons->is_summoned()
-            && !mons->has_ench(ENCH_FAKE_ABJURATION)
-            && !mons_is_hepliaklqana_ancestor(mons->type)
-            && !mons->has_ench(ENCH_PORTAL_PACIFIED)
-            && mons->type != MONS_FOXFIRE)
+        // XXX: can we merge foxfire in?
+        || _mons_attacks_outside_los(*mons) && mons->type != MONS_FOXFIRE)
     {
         return true;
     }
@@ -1537,4 +1488,21 @@ bool summon_can_attack(const monster* mons, const coord_def &p)
 bool summon_can_attack(const monster* mons, const actor* targ)
 {
     return summon_can_attack(mons, targ->pos());
+}
+
+vector<monster *> find_allies_targeting(const actor &a)
+{
+    vector<monster *> result;
+    for (monster* m : monster_near_iterator(you.pos(), LOS_DEFAULT))
+        if (m->friendly() && m->foe == a.mindex())
+            result.push_back(m);
+    return result;
+}
+
+bool is_ally_target(const actor &a)
+{
+    for (monster* m : monster_near_iterator(you.pos(), LOS_DEFAULT))
+        if (m->friendly() && m->foe == a.mindex())
+            return true;
+    return false;
 }

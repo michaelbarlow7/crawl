@@ -15,6 +15,7 @@
 #include "dlua.h"
 #include "end.h"
 #include "english.h"
+#include "evoke.h"
 #include "fight.h"
 #include "hints.h"
 #include "initfile.h"
@@ -32,6 +33,7 @@
 #include "state.h"
 #include "state.h"
 #include "stringutil.h"
+#include "throw.h"
 #include "tutorial.h"
 #include "unwind.h"
 #include "version.h"
@@ -160,7 +162,14 @@ LUAWRAP(crawl_clear_messages,
 clear_messages(lua_isboolean(ls, 1) ? lua_toboolean(ls, 1) : false))
 /*** Redraw the screen.
  * @function redraw_screen */
-LUAWRAP(crawl_redraw_screen, redraw_screen())
+LUAFN(crawl_redraw_screen)
+{
+    UNUSED(ls);
+
+    redraw_screen();
+    update_screen();
+    return 0;
+}
 
 /*** Toggle autoclearing of `--- more ---` prompts.
  * @tparam boolean flag
@@ -283,36 +292,6 @@ static int crawl_yesno(lua_State *ls)
     return 1;
 }
 
-/*** Ask the player a yes/no/quit question.
- * Mostly like yesno(), but doesn't support as many
- * parameters in this Lua binding.
- * @tparam string prompt question for the user
- * @tparam boolean safe accept lowercase answers
- * @tparam[opt] string|nil safeanswer if a letter, this will be considered a
- * safe default
- * @tparam[optchain=false] boolean allow_all actually ask a yes/no/quit/all
- * question
- * @tparam[optchain=true] boolean clear_after clear the question after the user
- * answers
- * @function yesnoquit
- */
-static int crawl_yesnoquit(lua_State *ls)
-{
-    const char *prompt = luaL_checkstring(ls, 1);
-    const bool safe = lua_toboolean(ls, 2);
-    const int safeanswer = _lua_char(ls, 3);
-    const bool allow_all =
-        lua_isnone(ls, 4) ? false : lua_toboolean(ls, 4);
-    const bool clear_after =
-        lua_isnone(ls, 5) ? true : lua_toboolean(ls, 5);
-
-    // Skipping the other params until somebody needs them.
-
-    lua_pushnumber(ls, yesnoquit(prompt, safe, safeanswer, allow_all,
-                                 clear_after));
-    return 1;
-}
-
 static void crawl_sendkeys_proc(lua_State *ls, int argi)
 {
     if (lua_isstring(ls, argi))
@@ -402,6 +381,59 @@ static bool _check_can_do_command(lua_State *ls)
     }
 
     return true;
+}
+
+/****
+ * Handle any command that takes a target and no other parameters. This includes
+ * CMD_PRIMARY_ATTACK, and CMD_FIRE. If the target
+ * coordinates are out of bounds (the default), this enters interactive
+ * targeting.
+ *
+ * @tparam string command name
+ * @tparam[opt=0] number x coordinate
+ * @tparam[opt=0] number y coordinate
+ * @tparam[opt=false] boolean if true, aim at the target; if false, shoot past it
+ * @treturn boolean whether an action took place
+ * @function do_targeted_command
+ */
+static int crawl_do_targeted_command(lua_State *ls)
+{
+    if (!_check_can_do_command(ls))
+        return 0;
+
+    const string command = luaL_checkstring(ls, 1);
+
+    command_type cmd = name_to_command(command);
+    if (cmd == CMD_NO_CMD)
+    {
+        luaL_argerror(ls, 1, ("Invalid command: " + command).c_str());
+        return 0;
+    }
+
+    PLAYERCOORDS(c, 2, 3);
+    dist target;
+    target.target = c;
+    target.isEndpoint = lua_toboolean(ls, 4); // can be nil
+
+    switch (cmd)
+    {
+    case CMD_PRIMARY_ATTACK:
+        quiver::get_primary_action()->trigger(target);
+        break;
+    case CMD_FIRE:
+        quiver::get_secondary_action()->trigger(target);
+        break;
+    case CMD_FIRE_ITEM_NO_QUIVER:
+        // This pops up an inventory menu -- maybe support taking an item
+        // directly?
+        fire_item_no_quiver(&target);
+        break;
+    default:
+        luaL_argerror(ls, 1, ("Not a (supported) targeted command: " + command).c_str());
+        return 0;
+    }
+
+    PLUARET(boolean, you.turn_is_over);
 }
 
 /*** Process a string of input keys
@@ -670,8 +702,12 @@ static int crawl_take_note(lua_State *ls)
 }
 
 /*** Retrieve the message buffer.
+ *
+ * See also @{Hooks.c_message} for programmatically receiving messages
+ * as they are sent.
+ *
  * @tparam int num how many lines back to go
- * @treturn strong
+ * @treturn string
  * @function messages
  */
 static int crawl_messages(lua_State *ls)
@@ -898,7 +934,8 @@ static int crawl_split(lua_State *ls)
  *
  * @tparam string s1 the first string.
  * @tparam string s2 the second sring.
- * @treturn -1 if s1 < s2, 1 if s2 < s1, 0 if s1 == s2.
+ * @treturn number -1 if s1 < s2, 1 if s2 < s1, 0 if s1 == s2.
+ * @function string_compare
  */
 static int crawl_string_compare(lua_State *ls)
 {
@@ -1250,10 +1287,9 @@ static int crawl_get_command(lua_State *ls)
 }
 
 LUAWRAP(crawl_endgame, screen_end_game(luaL_checkstring(ls, 1)))
-LUAWRAP(crawl_tutorial_hunger, set_tutorial_hunger(luaL_safe_checkint(ls, 1)))
 LUAWRAP(crawl_tutorial_skill, set_tutorial_skill(luaL_checkstring(ls, 1), luaL_safe_checkint(ls, 2)))
 LUAWRAP(crawl_tutorial_hint, tutorial_init_hint(luaL_checkstring(ls, 1)))
-LUAWRAP(crawl_print_hint, print_hint(luaL_checkstring(ls, 1)))
+LUAWRAP(crawl_print_hint, print_hint(luaL_checkstring(ls, 1), luaL_optstring(ls, 2, ""), luaL_optstring(ls, 3, "")))
 
 /*** Lua error trace a call
  * Attempts to call-trace a lua function that is producing an error.
@@ -1399,6 +1435,30 @@ static int crawl_version(lua_State *ls)
     return 1;
 }
 
+LUAFN(crawl_hints_type)
+{
+    if (crawl_state.game_is_tutorial())
+        lua_pushstring(ls, "tutorial");
+    else if (!crawl_state.game_is_hints())
+        lua_pushstring(ls, "");
+    else
+        switch (Hints.hints_type)
+        {
+        case HINT_BERSERK_CHAR:
+            lua_pushstring(ls, "berserk");
+            break;
+        case HINT_RANGER_CHAR:
+            lua_pushstring(ls, "ranger");
+            break;
+        case HINT_MAGIC_CHAR:
+            lua_pushstring(ls, "magic");
+            break;
+        default:
+            die("invalid hints_type");
+        }
+    return 1;
+}
+
 static const struct luaL_reg crawl_clib[] =
 {
     { "mpr",                crawl_mpr },
@@ -1430,7 +1490,6 @@ static const struct luaL_reg crawl_clib[] =
     { "get_target",         crawl_get_target },
     { "getch",              crawl_getch },
     { "yesno",              crawl_yesno },
-    { "yesnoquit",          crawl_yesnoquit },
     { "kbhit",              crawl_kbhit },
     { "flush_input",        crawl_flush_input },
     { "sendkeys",           crawl_sendkeys },
@@ -1438,6 +1497,7 @@ static const struct luaL_reg crawl_clib[] =
     { "process_keys",       crawl_process_keys },
     { "set_sendkeys_errors", crawl_set_sendkeys_errors },
     { "do_commands",        crawl_do_commands },
+    { "do_targeted_command", crawl_do_targeted_command },
 #ifdef USE_SOUND
     { "playsound",          crawl_playsound },
 #endif
@@ -1471,6 +1531,7 @@ static const struct luaL_reg crawl_clib[] =
 #endif
     { "version",            crawl_version },
     { "weapon_check",       crawl_weapon_check},
+    { "hints_type",         crawl_hints_type },
     { nullptr, nullptr },
 };
 
@@ -1520,7 +1581,14 @@ LUAFN(_crawl_milestone)
  * @within dlua
  * @function redraw_view
  */
-LUAWRAP(_crawl_redraw_view, viewwindow())
+LUAFN(_crawl_redraw_view)
+{
+    UNUSED(ls);
+
+    viewwindow();
+    update_screen();
+    return 0;
+}
 
 /*** Redraw the player stats.
  * You probably want @{redraw_screen} unless you specifically want only the
@@ -1534,7 +1602,6 @@ LUAFN(_crawl_redraw_stats)
 
     you.wield_change         = true;
     you.redraw_title         = true;
-    you.redraw_quiver        = true;
     you.redraw_hit_points    = true;
     you.redraw_magic_points  = true;
     you.redraw_stats.init(true);
@@ -1542,8 +1609,11 @@ LUAFN(_crawl_redraw_stats)
     you.redraw_armour_class  = true;
     you.redraw_evasion       = true;
     you.redraw_status_lights = true;
+    quiver::set_needs_redraw();
+
 
     print_stats();
+    update_screen();
     return 0;
 }
 
@@ -1672,30 +1742,6 @@ LUAFN(_crawl_set_max_runes)
 
 LUAWRAP(_crawl_mark_game_won, crawl_state.mark_last_game_won())
 
-LUAFN(crawl_hints_type)
-{
-    if (crawl_state.game_is_tutorial())
-        lua_pushstring(ls, "tutorial");
-    else if (!crawl_state.game_is_hints())
-        lua_pushstring(ls, "");
-    else
-        switch (Hints.hints_type)
-        {
-        case HINT_BERSERK_CHAR:
-            lua_pushstring(ls, "berserk");
-            break;
-        case HINT_RANGER_CHAR:
-            lua_pushstring(ls, "ranger");
-            break;
-        case HINT_MAGIC_CHAR:
-            lua_pushstring(ls, "magic");
-            break;
-        default:
-            die("invalid hints_type");
-        }
-    return 1;
-}
-
 LUAFN(crawl_rng_wrap)
 {
     if (!lua_isstring(ls, 2))
@@ -1740,6 +1786,9 @@ LUAFN(crawl_rng_wrap)
     return lua_gettop(ls);
 }
 
+LUAWRAP(crawl_clear_message_store, clear_message_store())
+
+
 static const struct luaL_reg crawl_dlib[] =
 {
 { "args", _crawl_args },
@@ -1750,14 +1799,13 @@ static const struct luaL_reg crawl_dlib[] =
 { "millis", _crawl_millis },
 { "make_name", crawl_make_name },
 { "set_max_runes", _crawl_set_max_runes },
-{ "tutorial_hunger", crawl_tutorial_hunger },
 { "tutorial_skill",  crawl_tutorial_skill },
 { "tutorial_hint",   crawl_tutorial_hint },
 { "print_hint", crawl_print_hint },
 { "mark_game_won", _crawl_mark_game_won },
-{ "hints_type", crawl_hints_type },
 { "unavailable_god", _crawl_unavailable_god },
 { "rng_wrap", crawl_rng_wrap },
+{ "clear_message_store", crawl_clear_message_store },
 
 { nullptr, nullptr }
 };

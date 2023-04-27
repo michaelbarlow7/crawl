@@ -142,10 +142,10 @@ TAGS:    arrival no_rotate
 ORIENT:  northwest
 # the exit will be placed elsewhere 25% of the time
 SUBST:   { = {:30 .
-ITEM:    q:1 chunk, skeleton, corpse
+ITEM:    skeleton, corpse
 SUBST:   Y = A.
-KFEAT:   A = known shaft trap
-SUBST:   ` = df `:60
+KFEAT:   A = shaft trap
+SUBST:   ` = de `:60
 SUBST:   . = ' .:120
 SUBST:   ` = ''., V = Xx, U = Xxxx, x = X x:60
 KPROP:   X' = bloody
@@ -159,7 +159,7 @@ yVV...VVyyyy
 yV.YYY`VVyyyyyyyyyyyyyyyyyyyyyyy
 yV.YAY`.Vyyyyyyyyyyyyyyxxxxyxxxy
 yV.YYY`.UUyyyyxxxxxxyxxx..xxxxxy
-yVV.```` UUUyUU....xxx.........@
+yVV.````.UUUyUU....xxx.........@
 yyVVVVU.``.UUU................xy
 yyyyyyUU.`````......`.`.`.`...xy
      yyUUU..`.``...``........xxy
@@ -695,7 +695,7 @@ NAME:    elethiomel_arrival_shortcut
 TAGS:    arrival
 ORIENT:  float
 SHUFFLE: XY/AB
-KFEAT:   X = known permanent teleport trap
+KFEAT:   X = permanent teleport trap
 SUBST:   Y=x, A=., B=+
 MAP
    xxxx@xxxxxxx.@.x
@@ -1388,15 +1388,15 @@ xxxxx{''1''('1ww'[x
 xxxxx1'''1'''11ww'x
 xxxx?x''w.11''??1'x
 xxx??x''''''''2'1'x
-xxx?ww''11'''''?w'x
-xxxxww?''''''''''xx
-xxx?w?11?'22'2'''.x
-xxx?w11?''''w2''''x
+xxx?WW''11'''''?w'x
+xxxxWW?''''''''''xx
+xxx?W?11?'22'2'''.x
+xxx?W11?''''w2''''x
 xxxx???''1''???''xx
 xxxxx?''1??''??'xxx
 xxxx?x'''''2?''"xxx
-xxxx?x'''2''''""xxx
-xxxx?w''''2''"""xxx
+xxxxWx'''2''''""xxx
+xxxx?W''''2''"""xxx
 xxxxx'22w""""""xxxx
 xxxxxxx""2"""""xxxx
 xxxxxxx""2""22xxxxx
@@ -1543,7 +1543,7 @@ ENDMAP
 
 ##############################################################################
 NAME:    dpeg_arrival_arbitrary_a
-TAGS:    arrival
+TAGS:    arrival transparent
 ORIENT:  float
 SUBST:   ' : . x ':40, '=.x
 NSUBST:  . = 1:d / *:.
@@ -1551,7 +1551,7 @@ NSUBST:  { = 1:{ / *:.
 ITEM:    stone
 MAP
     xxxxxxxxxxxxxxxxx
-   xx''xx''''''xx''xx
+   xx''xx'''x''xx''xx
    x''..'..xxx.'x..'x
   xx'.{...xx'......'x
   x'.....x''..{...'xx
@@ -1567,7 +1567,7 @@ x'...'''x'.xx..'xxxxx
 x'...........xxxxxxxx
 xx'..{.xxx'....''xxxx
  xx'....xxxx''...''xx
-  xxxx'''x xxx''...'x
+  xxxx'''xxxxx''...'x
      xxxxxxxxxx..@..x
 ENDMAP
 
@@ -1746,7 +1746,7 @@ xx...vvvv..'xxxx..
 x'.vvvvvvv....xx..
 x..vvvvvv..xx'.x..
 xx..vv....xxxxBx..
-x{x'...xx{xxxx.b..
+x{x'...xx{xxxxbb..
 xxxxxxxxxxxxxxxxxx
 ENDMAP
 
@@ -2043,7 +2043,7 @@ NAME:    onia_arrival_mini_maze
 TAGS:    arrival
 WEIGHT:  5
 ORIENT:  float
-ITEM:    ration w:2 / nothing w:20 / stone
+ITEM:    nothing w:20 / stone
 SHUFFLE: Aa, Bb, Cc, Ee, Ff
 MONS:    w:30 nothing / w:10 plant / w:5 fungus / w:10 rat
 SUBST:   A=x, B=x, C=x, E=x, F=x, a=., b=., c=., e=., f=.
@@ -2069,7 +2069,7 @@ NAME:    onia_arrival_mini_maze_b
 TAGS:    arrival
 WEIGHT:  5
 ORIENT:  float
-ITEM:    ration w:2 / nothing w:50 / stone
+ITEM:    nothing w:50 / stone
 SHUFFLE: AB
 SUBST:   A : x , B = +., X = x+
 MONS:    w:30 nothing / w:10 plant / w:3 fungus / w:1 worm
@@ -2094,7 +2094,7 @@ ENDMAP
 NAME:    onia_arrival_handbag
 TAGS:    arrival
 ORIENT:  float
-MONS:    w:30 rat / ooze / ball python
+MONS:    w:30 rat / endoplasm / ball python
 SHUFFLE: {[
 SUBST:   [=.
 MAP
@@ -2238,7 +2238,6 @@ KMASK:   Z = no_monster_gen
 SHUFFLE: TTV
 WEIGHT:  5
 KMASK:   T = no_monster_gen
-KPROP:   wZ = no_submerge
 KPROP:   wZ = no_tele_into
 MAP
 xxxxxxxxxxxxxxxxxxxxxxx
@@ -2261,7 +2260,6 @@ KMASK:  w = no_monster_gen
 KMONS:  Z = electric eel
 KFEAT:  Z = w
 KMASK:  Z = no_monster_gen
-KPROP:  wZ = no_submerge
 KPROP:  wZ = no_tele_into
 WEIGHT: 5
 MAP
@@ -2340,20 +2338,20 @@ ENDMAP
 NAME:    onia_arrival_zoo_common
 TAGS:    arrival no_trap_gen
 ORIENT:  float
+KPROP:   12345 = no_tele_into
 : if crawl.one_chance_in(10) then
 SHUFFLE: 16
 MONS:    centaur / centaur warrior / yaktaur / yaktaur captain
 MONS:    rat / river rat / hell rat / quokka
-MONS:    worker ant / soldier ant / queen ant
+MONS:    imperial myrmidon / servant of whispers / ragged hierophant
 MONS:    worm / tyrant leech
 MONS:    komodo dragon / iguana / basilisk
 MONS:    ettin / frost giant / stone giant / fire giant
 : else
 SHUFFLE: 1234567
-MONS:    frilled lizard / leopard gecko / iguana / crocodile / komodo dragon
+MONS:    frilled lizard / iguana / snapping turtle / komodo dragon
 MONS:    hog / jackal / wolf / hound
-MONS:    giant cockroach / worker ant / butterfly / killer bee /\
-         redback
+MONS:    giant cockroach / scorpion / butterfly / killer bee / redback
 MONS:    swamp worm / lindwurm / worm
 MONS:    swamp drake / hydra / wyvern / rime drake
 MONS:    polar bear / black bear
@@ -2461,7 +2459,7 @@ ENDMAP
 
 ##############################################################
 # This map provides no space to run around/away, so there is
-# either some staircase or a known shaft.
+# either some staircase or a shaft.
 NAME:   minmay_arrival_hallway
 TAGS:   arrival no_monster_gen
 ORIENT: float
@@ -2469,7 +2467,7 @@ SUBST:  x : x:10 c:2 v:1
 SUBST:  a : ab
 NSUBST: a = 2:> / *:.
 NSUBST: b = 1:b / 1:b. / *:.
-KFEAT:  b = known shaft trap
+KFEAT:  b = shaft trap
 SUBST:  G : G T t
 MAP
 xxxxxxxxxxxxxxxxxxxxxxxx
@@ -2496,7 +2494,7 @@ TAGS:    arrival no_monster_gen
 WEIGHT:  3
 ORIENT:  southeast
 NSUBST:  V = 2:+ / 2=v+ / *:v
-NSUBST:  U = 2:+ / 2=v+ / *:v
+NSUBST:  U = 1:+ / 2=v+ / *:v
 SUBST:   ' = .W
 NSUBST:  { = 1:{ / *:.
 MAP
@@ -2515,7 +2513,7 @@ MAP
 'WwwUUUwwwV<>Vwwwx
 'WwwU<UwwwVVVVwwwx
 'WwwU>Uwwwwwwwwwwx
-'wwwUUUwwwwwwwwwwx
+'wwwU+Uwwwwwwwwwwx
 'wwwwWwwwwwwwwwwwx
 xxxxxxxxxxxxxxxxxx
 ENDMAP
@@ -2525,7 +2523,6 @@ ENDMAP
 NAME:    saegor_arrival_fortress
 TAGS:    arrival no_monster_gen no_pool_fixup
 ORIENT:  float
-MONS:    place:D:1 zombie
 KPROP:   W = no_tele_into
 NSUBST:  { = 1:{ / 1:> / *:.
 MAP
@@ -2536,13 +2533,13 @@ wc.....+.......+.....cw
 wcG...GccGc+cGccG...Gcw
 wccc+cccccc+cccccc+cccw
 wcWc.cctt.....ttcc.cWcw
-wttG.ctW...1...Wtc.Gttw
+wttG.ctW.......Wtc.Gttw
 wcWc.Gc.........cG.cWcw
 wccc.cc...WtW...cc.cccw
 @++..++...tGt...++..++@
 wccc.cc...WtW...cc.cccw
 wcWc.Gc.........cG.cWcw
-wttG.ctW...1...Wtc.Gttw
+wttG.ctW.......Wtc.Gttw
 wcWc.cctt.....ttcc.cWcw
 wccc+cccccc+cccccc+cccw
 wcG...GccGc+cGccG...Gcw
@@ -2596,7 +2593,7 @@ TILE:    ' = FLOOR_PEBBLE_BROWN / FLOOR_PEBBLE_DARKGRAY
 TILE:    t = DNGN_TREE_DEAD
 TILE:    G = DNGN_GRAVESTONE
 COLOUR:  ' = brown / darkgrey
-COLOUR:  t = darkgrey
+COLOUR:  t = brown
 SUBST:   t = t.
 : set_feature_name("granite_statue", "adventurer's gravestone")
 MAP
@@ -2656,6 +2653,7 @@ NAME:   sevenhm_arrival_forest_fort_small_1
 TAGS:   arrival no_monster_gen
 ORIENT: float
 WEIGHT: 1
+KPROP: 1 = no_tele_into
 NSUBST: { = { / T> , z = + / n+
 SUBST:  T = TTG
 : if crawl.one_chance_in(4) then
@@ -2663,7 +2661,7 @@ SUBST:  " : +, ' : . , - : ccc.
 : else
 SUBST:  "'- : c
 : end
-MONS:   bullfrog / spiny frog / yak / death yak w:1 / elephant
+MONS:   bullfrog / cane toad / yak / death yak w:1 / elephant
 MAP
           ccccccccc
        cccctccccctcccc
@@ -2685,6 +2683,7 @@ NAME:    sevenhm_arrival_forest_fort_small_2
 TAGS:    arrival no_pool_fixup no_monster_gen
 ORIENT:  float
 WEIGHT:  1
+KPROP: 1 = no_tele_into
 : if crawl.one_chance_in(4) then
 SUBST:   w : x, u : x, r : @
 : else
@@ -2830,7 +2829,7 @@ TAGS:   arrival no_monster_gen no_trap_gen
 ORIENT: float
 COLOUR: W# = lightgreen
 NSUBST: W = 6:% / 7:#
-KITEM:  % = nothing / q:1 river rat chunk / w:5 river rat skeleton
+KITEM:  % = nothing / w:5 river rat skeleton
 MARKER: # = lua:fog_machine { cloud_type = "foul pestilence", pow_max = 10, \
                               delay = 5, size = 5, excl_rad = 0 }
 KFEAT:  %# = W
@@ -2926,12 +2925,13 @@ NAME:   lightli_arrival_windingriver
 ORIENT: float
 TAGS:   arrival no_monster_gen
 KMONS:  P = plant
-SUBST:  p = Pw
+KPROP:  q = no_tele_into
+SUBST:  p = Pw, q = Pw
 MAP
 xxxxxxxxxxxxxxxxxxxxxxxx
-xpwppwppppppwppp.p.p...x
-xwwwwwwpppppwwppp..w...x
-xwwwwwwwpwpwwwwppwwwwp.x
+xqwqqwqqqqqqwqqp.p.p...x
+xwwwwwwqqqqqwwqpp..w...x
+xwwwwwwwqwqwwwwqpwwwwp.x
 xwwwwwwwwwwwwwwwwww..w.+
 xw.wwwwwwwwwwwwwww.....+
 xp..w..wwwww..www..p.t.x
@@ -3236,6 +3236,7 @@ ORIENT: float
 TAGS: arrival no_monster_gen
 MONS: withered plant, plant
 KMASK: 12YUT = no_item_gen
+KPROP: 12YUT = no_tele_into
 MAP
 ......@......
 .ncncn+ncncn.
@@ -3260,7 +3261,7 @@ TILE:   t = dngn_tree_dead, \
         G = dngn_gravestone
 : set_feature_name("granite_statue", "a gravestone")
 COLOUR: ? = darkgrey:20 / lightgrey, \
-        t = darkgrey
+        t = brown
 MAP
 .........
 ..?????..
@@ -3337,13 +3338,17 @@ KPROP:   . = bloody / w:30 nothing
 TILE:    c = wall_hall
 FTILE:   .{uvt+ = floor_marble
 COLOUR:  .c = white
-: -- specific to the 0.25 branch, this vault is fixed to give the deep dwarf
-: -- arrival scene. (In 0.25.0 there is a seed stability bug with this vault
-: -- that is fixed in a more general way in trunk.) This is an easter egg of
-: -- sorts in order to keep seed 10834663189915259185 stable in 0.25, so that
-: -- people can try out the seed in
-: -- https://crawl.kelbi.org/crawl/morgue/Yermak/morgue-Yermak-20200628-195118.txt
-: local ally = "dwarf"
+: local race = you.race()
+: local ally = you.monster()
+: -- do the roll unconditionally, for seed stability
+: local humanoid_ally = util.random_from({"dwarf", "human"})
+: -- The corpseless. Before the game starts, you.monster() is "program bug".
+: if (not crawl.game_started()) or race == "Vampire"
+:     or race == "Mummy" or race == "Ghoul" or race == "Octopode"
+:     or race == "Gargoyle" or race == "Vine Stalker"
+:     or race == "Djinni" or race == "Yak" or race == "Formicid" then
+:   ally = humanoid_ally
+: end
 :
 : local axis = util.random_from({"goblin", "gnoll", "kobold", "orc"})
 :
@@ -3391,34 +3396,36 @@ ENDMAP
 
 ##############################################################
 NAME:   heliophobic_arrival_ceremonial_halls
-TAGS:   arrival no_monster_gen no_trap_gen
+TAGS:   arrival no_monster_gen no_trap_gen transparent
 ORIENT: float
 TILE:   c = wall_marble
 FTILE:  '+{cG = floor_marble
 COLOUR: 'cG = white
 SUBST:  ' = .
 MAP
-.....ccc+ccc.....
-.....cG'''Gc.....
-..c..cc'c'cc..c..
-.ccc.cG'c'Gc.ccc.
-.ccc.cc'c'cc.ccc.
-..c..cG'c'Gc..c..
-.....cc'c'cc.....
-ccccccG'''Gcccccc
-cGcGcGc'''cGcGcGc
-c'''''''''''''''c
-+'ccc'''{'''ccc'+
-c'''''''''''''''c
-cGcGcGc'''cGcGcGc
-ccccccG'''Gcccccc
-.....cc'c'cc.....
-..c..cG'c'Gc..c..
-.ccc.cc'c'cc.ccc.
-.ccc.cG'c'Gc.ccc.
-..c..cc'c'cc..c..
-.....cG'''Gc.....
-.....ccc+ccc.....
+ ........@........
+ .....ccc+ccc.....
+ .....cG'''Gc.....
+ ..c..cc'c'cc..c..
+ .ccc.cG'c'Gc.ccc.
+ .ccc.cc'c'cc.ccc.
+ ..c..cG'c'Gc..c..
+ .....cc'c'cc.....
+ ccccccG'''Gcccccc
+ cGcGcGc'''cGcGcGc
+ c'''''''''''''''c
+@+'ccc'''{'''ccc'+@
+ c'''''''''''''''c
+ cGcGcGc'''cGcGcGc
+ ccccccG'''Gcccccc
+ .....cc'c'cc.....
+ ..c..cG'c'Gc..c..
+ .ccc.cc'c'cc.ccc.
+ .ccc.cG'c'Gc.ccc.
+ ..c..cc'c'cc..c..
+ .....cG'''Gc.....
+ .....ccc+ccc.....
+ ........@........
 ENDMAP
 
 ##############################################################
@@ -3491,4 +3498,317 @@ xx...x+   +xxx+   +x...xx
          x.....x
          xx...xx
           xxxxx
+ENDMAP
+
+##############################################################
+NAME:     amcnicky_arrival_blooded_trapdoor
+TAGS:     arrival no_monster_gen no_pool_fixup no_trap_gen
+ORIENT:   float
+SHUFFLE:  pqr
+SUBST:    s:xxxtw, p:x, q:x, r:@
+SUBST:    ' = '..
+KPROP:    ' = bloody
+MAP
+   xpppx
+   x'''x
+xxxx'>'xxxxxqqq
+x...'''.......q
+x.{........ss.q
+x.............x
+xxxxxxxxrrrrxxx
+ENDMAP
+
+NAME:     amcnicky_arrival_gap_in_the_tavern_cellar
+TAGS:     arrival no_monster_gen no_pool_fixup no_trap_gen
+ORIENT:   float
+SHUFFLE:  su
+SUBST:    c=cx, -=-.
+KPROP:    c-V = bloody
+SUBST:    c:x
+SUBST:    r:xxxxvvWl, s:@, u:x
+MAP
+    xxxxxxx
+    xT...Tx
+    x..{..x
+    x.....x
+    x..>..x
+    xT...Vxc
+    xxxxxx-cc
+    xxxxxcc-c
+   s....cc-cc
+   s.rr.-c-c
+   s.rr.--cc
+   s....ccc
+    uuuu
+ENDMAP
+
+NAME:     amcnicky_arrival_wind_blow
+TAGS:     arrival no_monster_gen no_trap_gen
+ORIENT:   float
+NSUBST:   _ = 4:p / 4=p:2 . / *=.
+: dgn.delayed_decay(_G, 'p', 'deep dwarf skeleton')
+MAP
+      xxxxx
+      x__{xxx
+     xx.__..x
+     x_.....xx  xxxx
+    xx_...__.x xx..@
+xxxxx._.xx...xxx__.@
+x.___._.xxx......xx@
+x....__xx xx._.__xx@
+x.xx___x   x..._...@
+x.xx._.xx  xxxxxx..@
+x.._._..xx      xxxx
+x____.._.x
+xxxxxxx..x
+      x@@x
+ENDMAP
+
+NAME:     amcnicky_arrival_abandoned_market
+TAGS:     arrival no_monster_gen no_trap_gen
+ORIENT:   float
+NSUBST:   _ = 4:q / 4=q:2 . / *=.
+: dgn.delayed_decay(_G, 'q', 'deep dwarf skeleton')
+NSUBST:   - = 6=p / 6=p. / 6=px / *=.x
+SUBST:    r = x.
+KFEAT:    p = abandoned_shop
+MAP
+xxxxxxxxxxxxxxxxxxxxx
+xxxxx--xx--xx--xx---x
+xxxxx....._......_.-x
+x{_._.._.._.._._...xx
+xx_.._..........._.xx
+xxx.....__...._....xx
+xxxxx......_.......-x
+xxxxxxxppprrrrrr.._-x
+      xxxxrr_--.._.xx
+          rr.--_...xx
+          rr..__.._-x
+           x.xx..._.@
+           x_xx_._..@
+           x__......@
+           x....___-x
+           x--xxx--xx
+           xxxxxxxxxx
+ENDMAP
+
+##############################################################
+NAME:    dreamdust_arrival_beginning_and_end
+TAGS:    arrival no_monster_gen transparent
+TAGS:    no_rotate no_vmirror
+ORIENT:  float
+WEIGHT:  5
+COLOUR:  x = lightmagenta
+TILE:    x = wall_zot_lightmagenta
+FTILE:   .xgz{ = floor_rough_magenta
+KFEAT:   z = granite_statue
+TILE:    z = dngn_statue_orb
+KFEAT:   g = granite_statue
+TILE:    g = dngn_statue_orb_guardian
+MAP
+ xxxxxxxxxxx
+xxx.......xxx
+xx.........xx
+x.....g.....x
+@..g..z..g..@
+x...........x
+xx....{....xx
+xxx.......xxx
+ xxxxxxxxxxx
+ENDMAP
+
+NAME:    dreamdust_arrival_sigmund_warning
+TAGS:    arrival no_monster_gen transparent
+ORIENT:  float
+WEIGHT:  5
+TILE:    G = dngn_statue_sigmund
+: set_feature_name("granite_statue", "a statue of a dreadful foe")
+# Bunch of player species
+KITEM:   ? = palentonga skeleton / deep elf skeleton / demigod skeleton / \
+             demonspawn skeleton / draconian skeleton / felid skeleton / \
+             formicid skeleton / ghoul skeleton / gnoll skeleton / \
+             orc skeleton / human skeleton / kobold skeleton / \
+             merfolk skeleton / minotaur skeleton / naga skeleton / \
+             octopode skeleton / ogre skeleton / spriggan skeleton / \
+             tengu skeleton / troll skeleton
+MAP
+   vvv
+vvvv>vvvv
+vY.???.Yv
+v..?G?..v
+v..???..v
+v.l...l.v
+v.l.{.l.v
+v.l...l.v
+v.l...l.v
+v.l...l.v
+v.......v
+vvv...vvv
+ENDMAP
+
+##############################################################################
+# Most transpoter vaults are dangerous, especially for new players. Here's a
+# no-stress scenario in which they can try out transporters.
+NAME:    spicycebolla_arrival_transporter_tutorial
+TAGS:    arrival no_monster_gen no_pool_fixup
+ORIENT:  float
+SUBST:   a = wW, G : GATUVYt
+SHUFFLE: -!
+SUBST:   - : !:40 W
+COLOUR:  . : blue
+FTILE:   .GATUVYt>{EFJK : floor_pebble_blue
+MARKER:  E = lua:transp_loc("tut_entry")
+MARKER:  F = lua:transp_dest_loc("tut_entry")
+MARKER:  J = lua:transp_loc("tut_hatch")
+MARKER:  K = lua:transp_dest_loc("tut_hatch")
+MAP
+ aaaa@aaa
+awww!wwwwa
+www!wwwwwwa
+wwaW!Wawwww
+waW...Wawwa
+wW.E>K.Wwwwa
+waW.G.Wawwww
+wwaWWWawwwwa
+awwwwwwwwwwwa
+ awwwwaWWWaww
+ wwwwaW.G.Waw
+ awwwW.F{J.Ww
+  awwaW...Waw
+  wwwwaW-Waww
+  awwwwww-www
+   awwww-wwwa
+    aaa@aaaa
+ENDMAP
+
+##############################################################
+NAME:    spicycebolla_arrival_xxxplode
+TAGS:    arrival transparent
+ORIENT:  float
+SUBST:   X : tXXXX
+SHUFFLE: xX
+SUBST:   X:xX, X:.mw, x:xxvc, t:tttgw
+TILE:    t = dngn_tree_dead
+COLOUR:  t = darkgrey / brown
+: set_feature_name("tree", "dead tree")
+MAP
+    X           X
+   xxXxx  X  xxXxx
+  @xxxXxx . xxXxxx@
+ xx.xxxXx . xXxxx.xx
+Xxxx.xxXxx.xxXxx.xxxX
+ Xxxx.xxXx.xXxx.xxxX
+ xXxxx.xXx.xXx.xxxXx
+ xxXXxx.xx.xx.xxXXxx
+  xxxXXx.X.X.xXXxxx
+    xxxxX.X.Xxxxx
+ X.......X{X.......X
+    xxxxX.X.Xxxxx
+  xxxXXx.X.X.xXXxxx
+ xxXXxx.xx.xx.xxXXxx
+ xXxxx.xXx.xXx.xxxXx
+ Xxxx.xxXx.xXxx.xxxX
+Xxxx.xxXxx.xxXxx.xxxX
+ xx.xxxXx . xXxxx.xx
+  @xxxXxx . xxXxxx@
+   xxXxx  X  xxXxx
+    X           X
+ENDMAP
+
+##############################################################
+# Another transporter tutorial. This teaches that using a transporter can be
+# risky: the 'porter takes you from pretty safe terrain to a wide open space.
+NAME:    spicycebolla_arrival_risky_transporter
+TAGS:    arrival transparent
+ORIENT:  float
+# the actual transporters
+SHUFFLE: JKF
+MARKER:  E = lua:transp_loc("tut_risky")
+MARKER:  F = lua:transp_dest_loc("tut_risky")
+# minor cosmetic variations
+SHUFFLE: NO
+SUBST:   N:x, O:.
+SUBST:   x : xxxxxxccvb
+MAP
+ @@@.N.OO@
+@...NNOO..
+@...NxO...
+@..FxxK...
+.xxxmxmxxx
+xxxxxmmxx.
+...JmmEx.x
+...OxNx{x@
+..OONx.x.x
+@OO.x.x@x
+ENDMAP
+
+NAME:   spicycebolla_arrival_clurvy
+TAGS:   arrival transparent
+ORIENT: float
+MONS:   plant / bush w:2, fungus, withered plant, butterfly
+SUBST:  ' = .p
+SUBST:  t = t:30 1:15 .:5
+SUBST:  p = 1:30 .:10
+: if crawl.one_chance_in(5) then
+NSUBST: . = 3:A / .
+SUBST:  t = ttG
+TILE:   G = dngn_crumbled_column
+COLOUR: G = white
+: set_feature_name("granite_statue", "broken pillar")
+: end
+: if crawl.one_chance_in(5) then
+NSUBST: . = 1:J / 3:K / 1:V / .
+: end
+: if crawl.one_chance_in(5) then
+NSUBST: 1 = 4:4 / 1, . = 5:U / .
+: end
+: if crawl.one_chance_in(5) then
+COLOUR: t = yellow w:5 / red w:5 / brown
+SUBST:  1 = 1222
+: elseif crawl.one_chance_in(5) then
+SUBST:  1 = 3, U = VVVJK
+KFEAT:  t = petrified_tree
+: end
+KFEAT:  J = abandoned_shop / shaft trap / granite_statue
+KFEAT:  K = web trap
+KITEM:  K = skeleton / corpse / nothing
+MAP
+   ..p.. ..p..
+ ...ptp...ptp..
+...tttp'.'ptpp..
+..pttp...pt'...
+..'ptp..'.p.'p..
+ ...p......{ptp.
+  ....'...ppttp.
+    .'...pttttp.
+     ...'ppttp..
+      ...'p'pp..
+       ...ptp..
+        ...pp..
+         ..p..
+         ....
+ENDMAP
+
+NAME:    spicycebolla_arrival_ecumenical
+TAGS:    arrival uniq_ecumenical_altar transparent
+KMASK:   -_Tt)n = opaque
+ORIENT:  float
+KFEAT:   _ = altar_ecumenical
+RTILE:   c = wall_hall
+FTILE:   -.ptT{)n+ = floor_hall
+SHUFFLE: ptT / pTt / tGG / tGT
+KMONS:   p = bush
+MAP
+  ccccccccc
+ ccnnnTnnncc
+ cnt-T_T-tnc
+ cn-------nc
+ cnt--)--tnc
+ cnnnnnnnnnc
+ cn...{...nc
+ cn.......nc
+ cnT.p.p.Tnc
+ ccn.n.n.ncc
+''cc+c+c+cc''
+'''''''''''''
 ENDMAP

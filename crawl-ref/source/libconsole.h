@@ -17,6 +17,15 @@ void clear_to_end_of_line();
 void gotoxy_sys(int x, int y);
 void textcolour(int c);
 void textbackground(int c);
+COLOURS default_hover_colour();
+struct lib_display_info
+{
+    lib_display_info();
+    string type;
+    string term;
+    int fg_colors;
+    int bg_colors;
+};
 void cprintf(const char *format, ...);
 
 int wherex();
@@ -54,13 +63,13 @@ struct save_cursor_pos
         : region(get_cursor_region()), pos(cgetpos(region))
     {
 #ifndef TARGET_OS_WINDOWS
-        //ASSERTM(valid_cursor_pos(pos.x, pos.y, region),
-        //    "invalid cursor position %d,%d in region %d", pos.x, pos.y, region);
+        ASSERTM(valid_cursor_pos(pos.x, pos.y, region),
+            "invalid cursor position %d,%d in region %d", pos.x, pos.y, region);
 #endif
     };
     ~save_cursor_pos()
     {
-        //cgotoxy(pos.x, pos.y, region);
+        cgotoxy(pos.x, pos.y, region);
     };
 
 private:

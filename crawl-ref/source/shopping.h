@@ -6,6 +6,11 @@
 #pragma once
 
 #include <unordered_set>
+#include <vector>
+
+#include "tag-version.h"
+
+using std::vector;
 
 struct shop_struct;
 
@@ -126,6 +131,8 @@ private:
 
     void fill_out_menu(Menu& shopmenu);
 
+public:
+    // what is this nonsense
     static       bool        thing_is_item(const CrawlHashTable& thing);
     static const item_def&   get_thing_item(const CrawlHashTable& thing);
     static       string get_thing_desc(const CrawlHashTable& thing);

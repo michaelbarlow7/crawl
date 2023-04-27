@@ -1,5 +1,11 @@
 #pragma once
 
+#include <vector>
+
+#include "tag-version.h"
+
+using std::vector;
+
 /* Don't change the order of any enums in this file unless you are breaking
  * save compatibility. See ../docs/develop/save_compatibility.txt for
  * more details, including how to schedule both the current and future
@@ -43,6 +49,9 @@ enum armour_type
     ARM_KITE_SHIELD,
     ARM_TOWER_SHIELD,
     ARM_LAST_SHIELD = ARM_TOWER_SHIELD,
+#if TAG_MAJOR_VERSION > 34
+    ARM_ORB,
+#endif
 
 #if TAG_MAJOR_VERSION == 34
     ARM_CRYSTAL_PLATE_ARMOUR,
@@ -92,8 +101,10 @@ enum armour_type
     ARM_QUICKSILVER_DRAGON_ARMOUR,
 #endif
 
+#if TAG_MAJOR_VERSION == 34
     ARM_CENTAUR_BARDING,
-    ARM_NAGA_BARDING,
+#endif
+    ARM_BARDING,
 
 #if TAG_MAJOR_VERSION == 34
     ARM_SHADOW_DRAGON_HIDE,
@@ -101,6 +112,7 @@ enum armour_type
     ARM_QUICKSILVER_DRAGON_HIDE,
     ARM_QUICKSILVER_DRAGON_ARMOUR,
     ARM_SCARF,
+    ARM_ORB,
 #endif
 
     NUM_ARMOURS
@@ -114,7 +126,6 @@ enum armour_property_type
 
 const int SP_FORBID_EGO   = -1;
 const int SP_FORBID_BRAND = -1;
-const int SP_UNKNOWN_BRAND = 31; // seen_weapon/armour is a 32-bit bitfield
 
 // Be sure to update _debug_acquirement_stats and _str_to_ego to match.
 enum brand_type // item_def.special
@@ -159,6 +170,7 @@ enum brand_type // item_def.special
 #endif
     SPWPN_PENETRATION,
     SPWPN_REAPING,
+    SPWPN_SPECTRAL,
 
 // From this point on save compat is irrelevant.
     NUM_REAL_SPECIAL_WEAPONS,
@@ -167,10 +179,11 @@ enum brand_type // item_def.special
 #if TAG_MAJOR_VERSION > 34
     SPWPN_CONFUSE, // Confusing Touch only for the moment
 #endif
+    SPWPN_WEAKNESS,
+    SPWPN_VULNERABILITY,
     SPWPN_DEBUG_RANDART,
     NUM_SPECIAL_WEAPONS,
 };
-COMPILE_CHECK(NUM_SPECIAL_WEAPONS <= SP_UNKNOWN_BRAND);
 
 enum corpse_type
 {
@@ -198,8 +211,10 @@ enum jewellery_type
     RING_SLAYING,
     RING_SEE_INVISIBLE,
     RING_RESIST_CORROSION,
+#if TAG_MAJOR_VERSION == 34
     RING_ATTENTION,
     RING_TELEPORTATION,
+#endif
     RING_EVASION,
 #if TAG_MAJOR_VERSION == 34
     RING_SUSTAIN_ATTRIBUTES,
@@ -211,7 +226,7 @@ enum jewellery_type
     RING_MAGICAL_POWER,
     RING_FLIGHT,
     RING_LIFE_PROTECTION,
-    RING_PROTECTION_FROM_MAGIC,
+    RING_WILLPOWER,
     RING_FIRE,
     RING_ICE,
 #if TAG_MAJOR_VERSION == 34
@@ -240,8 +255,8 @@ enum jewellery_type
     AMU_THE_GOURMAND,
     AMU_CONSERVATION,
     AMU_CONTROLLED_FLIGHT,
-#endif
     AMU_INACCURACY,
+#endif
     AMU_NOTHING,
     AMU_GUARDIAN_SPIRIT,
     AMU_FAITH,
@@ -303,9 +318,10 @@ enum misc_item_type
     MISC_PHANTOM_MIRROR,
 #if TAG_MAJOR_VERSION == 34
     MISC_DECK_OF_ODDITIES,
-    MISC_XOMS_CHESSBOARD,
 #endif
+    MISC_XOMS_CHESSBOARD,
     MISC_TIN_OF_TREMORSTONES,
+    MISC_CONDENSER_VANE,
 
     NUM_MISCELLANY,
     MISC_DECK_UNKNOWN = NUM_MISCELLANY,
@@ -330,13 +346,13 @@ const vector<misc_item_type> misc_types =
     MISC_SACK_OF_SPIDERS,
 #endif
     MISC_PHANTOM_MIRROR,
-#if TAG_MAJOR_VERSION == 34
     MISC_XOMS_CHESSBOARD,
-#endif
     MISC_ZIGGURAT,
 #if TAG_MAJOR_VERSION == 34
-    MISC_BOTTLED_EFREET, MISC_BUGGY_EBONY_CASKET
+    MISC_BOTTLED_EFREET, MISC_BUGGY_EBONY_CASKET,
 #endif
+    MISC_TIN_OF_TREMORSTONES,
+    MISC_CONDENSER_VANE,
 };
 
 enum missile_type
@@ -395,13 +411,15 @@ enum scroll_type
     SCR_TELEPORTATION,
     SCR_FEAR,
     SCR_NOISE,
+#if TAG_MAJOR_VERSION == 34
     SCR_REMOVE_CURSE,
+#endif
     SCR_SUMMONING,
     SCR_ENCHANT_WEAPON,
     SCR_ENCHANT_ARMOUR,
     SCR_TORMENT,
-    SCR_RANDOM_USELESSNESS,
 #if TAG_MAJOR_VERSION == 34
+    SCR_RANDOM_USELESSNESS,
     SCR_CURSE_WEAPON,
     SCR_CURSE_ARMOUR,
 #endif
@@ -417,14 +435,16 @@ enum scroll_type
 #if TAG_MAJOR_VERSION == 34
     SCR_RECHARGING,
     SCR_ENCHANT_WEAPON_III,
-#endif
     SCR_HOLY_WORD,
+#endif
     SCR_VULNERABILITY,
     SCR_SILENCE,
     SCR_AMNESIA,
 #if TAG_MAJOR_VERSION == 34
     SCR_CURSE_JEWELLERY,
 #endif
+    SCR_POISON,
+    SCR_BUTTERFLIES,
     NUM_SCROLLS
 };
 
@@ -433,7 +453,9 @@ enum special_armour_type
 {
     SPARM_FORBID_EGO = -1,
     SPARM_NORMAL,
+#if TAG_MAJOR_VERSION == 34
     SPARM_RUNNING,
+#endif
     SPARM_FIRE_RESISTANCE,
     SPARM_COLD_RESISTANCE,
     SPARM_POISON_RESISTANCE,
@@ -444,7 +466,7 @@ enum special_armour_type
     SPARM_INTELLIGENCE,
     SPARM_PONDEROUSNESS,
     SPARM_FLYING,
-    SPARM_MAGIC_RESISTANCE,
+    SPARM_WILLPOWER,
     SPARM_PROTECTION,
     SPARM_STEALTH,
     SPARM_RESISTANCE,
@@ -453,7 +475,7 @@ enum special_armour_type
     SPARM_PRESERVATION,
     SPARM_REFLECTION,
     SPARM_SPIRIT_SHIELD,
-    SPARM_ARCHERY,
+    SPARM_HURLING,
 #if TAG_MAJOR_VERSION == 34
     SPARM_JUMPING,
 #endif
@@ -462,11 +484,17 @@ enum special_armour_type
     SPARM_CLOUD_IMMUNE,
 #endif
     SPARM_HARM,
+    SPARM_SHADOWS,
+    SPARM_RAMPAGING,
+    SPARM_INFUSION,
+    SPARM_LIGHT,
+    SPARM_RAGE,
+    SPARM_MAYHEM,
+    SPARM_GUILE,
+    SPARM_ENERGY,
     NUM_REAL_SPECIAL_ARMOURS,
     NUM_SPECIAL_ARMOURS,
 };
-// We have space for 32 brands in the bitfield.
-COMPILE_CHECK(NUM_SPECIAL_ARMOURS <= SP_UNKNOWN_BRAND);
 
 // Be sure to update _str_to_ego to match.
 enum special_missile_type // to separate from weapons in general {dlb}
@@ -503,7 +531,7 @@ enum special_missile_type // to separate from weapons in general {dlb}
     NUM_SPECIAL_MISSILES = NUM_REAL_SPECIAL_MISSILES,
 };
 
-enum special_ring_type // jewellery mitm[].special values
+enum special_ring_type // jewellery env.item[].special values
 {
     SPRING_RANDART = 200,
     SPRING_UNRANDART = 201,
@@ -511,20 +539,22 @@ enum special_ring_type // jewellery mitm[].special values
 
 enum stave_type
 {
-    STAFF_WIZARDRY,
 #if TAG_MAJOR_VERSION == 34
+    STAFF_WIZARDRY,
     STAFF_POWER,
 #endif
     STAFF_FIRE,
     STAFF_COLD,
     STAFF_POISON,
+#if TAG_MAJOR_VERSION == 34
     STAFF_ENERGY,
+#endif
     STAFF_DEATH,
     STAFF_CONJURATION,
 #if TAG_MAJOR_VERSION == 34
     STAFF_ENCHANTMENT,
-#endif
     STAFF_SUMMONING,
+#endif
     STAFF_AIR,
     STAFF_EARTH,
 #if TAG_MAJOR_VERSION == 34
@@ -605,8 +635,7 @@ enum weapon_type
     WPN_LONGBOW,
 
 #if TAG_MAJOR_VERSION > 34
-    WPN_HUNTING_SLING,
-    WPN_FUSTIBALUS,
+    WPN_SLING,
 #endif
 
     WPN_DEMON_WHIP,
@@ -618,14 +647,16 @@ enum weapon_type
     WPN_TRIPLE_SWORD,
 
     WPN_DEMON_TRIDENT,
+#if TAG_MAJOR_VERSION == 34
     WPN_SCYTHE,
+#endif
 
     WPN_STAFF,          // Just used for the weapon stats for magical staves.
     WPN_QUARTERSTAFF,
     WPN_LAJATANG,
 
 #if TAG_MAJOR_VERSION == 34
-    WPN_HUNTING_SLING,
+    WPN_SLING,
 
     WPN_BLESSED_FALCHION,
     WPN_BLESSED_LONG_SWORD,
@@ -655,9 +686,6 @@ enum weapon_type
     WPN_UNKNOWN,
     WPN_RANDOM,
     WPN_VIABLE,
-
-// thrown weapons (for hunter weapon selection) - rocks, javelins, boomerangs
-    WPN_THROWN,
 };
 
 enum weapon_property_type
@@ -728,27 +756,30 @@ enum wand_type
     WAND_LIGHTNING_REMOVED,
 #endif
     WAND_POLYMORPH,
-    WAND_ENSLAVEMENT,
+    WAND_CHARMING,
     WAND_ACID,
-    WAND_RANDOM_EFFECTS,
-    WAND_DISINTEGRATION,
-    WAND_CLOUDS,
 #if TAG_MAJOR_VERSION == 34
+    WAND_RANDOM_EFFECTS_REMOVED,
+#endif
+    WAND_MINDBURST,
+#if TAG_MAJOR_VERSION == 34
+    WAND_CLOUDS_REMOVED,
     WAND_SCATTERSHOT_REMOVED,
 #endif
+    WAND_LIGHT,
+    WAND_QUICKSILVER,
+    WAND_ROOTS,
     NUM_WANDS
 };
 
+#if TAG_MAJOR_VERSION == 34
 enum food_type
 {
     FOOD_RATION,
-#if TAG_MAJOR_VERSION == 34
     FOOD_BREAD_RATION,
     FOOD_PEAR,
     FOOD_APPLE,
     FOOD_CHOKO,
-#endif
-#if TAG_MAJOR_VERSION == 34
     FOOD_ROYAL_JELLY,   // was: royal jelly
     FOOD_UNUSED, // was: royal jelly and/or pizza
     FOOD_FRUIT,  // was: snozzcumber
@@ -765,10 +796,17 @@ enum food_type
     FOOD_BEEF_JERKY,
     FOOD_CHEESE,
     FOOD_SAUSAGE,
-#endif
     FOOD_CHUNK,
-#if TAG_MAJOR_VERSION == 34
     FOOD_AMBROSIA,
-#endif
     NUM_FOODS
+};
+#endif
+
+enum item_set_type
+{
+    ITEM_SET_HEX_WANDS,
+    ITEM_SET_BEAM_WANDS,
+    ITEM_SET_BLAST_WANDS,
+    ITEM_SET_CONCEAL_SCROLLS,
+    NUM_ITEM_SET_TYPES
 };

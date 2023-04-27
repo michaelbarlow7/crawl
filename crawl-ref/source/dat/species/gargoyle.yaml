@@ -5,7 +5,7 @@ short_name: "Gr"
 difficulty: Simple
 difficulty_priority: 70
 species_flags:
-  - hairless
+  - SPF_NO_HAIR
 aptitudes:
   xp: 0
   hp: -2
@@ -16,7 +16,6 @@ aptitudes:
   long_blades: -1
   axes: -1
   polearms: -1
-  slings: -1
   throwing: -1
   armour: 1
   dodging: -2
@@ -25,7 +24,6 @@ aptitudes:
   spellcasting: -1
   conjurations: 1
   hexes: -1
-  charms: -1
   summoning: -1
   necromancy: -2
   translocations: -1
@@ -43,15 +41,15 @@ levelup_stats:
   - int
 mutations:
   1:
-    MUT_ROT_IMMUNITY: 1
     MUT_NEGATIVE_ENERGY_RESISTANCE: 1
     MUT_PETRIFICATION_RESISTANCE: 1
     MUT_SHOCK_RESISTANCE: 1
-    MUT_UNBREATHING: 1
+    MUT_TORMENT_RESISTANCE: 1
   14:
     MUT_BIG_WINGS: 1
 fake_mutations:
-  - long: You are resistant to torment.
+  - long: You are immune to sickness and miasma.
+  - short: sickness immunity
 recommended_jobs:
   - JOB_FIGHTER
   - JOB_GLADIATOR
@@ -64,8 +62,3 @@ recommended_jobs:
 recommended_weapons:
   - SK_MACES_FLAILS
   - SK_STAVES
-  - SK_BOWS
-  - SK_CROSSBOWS
-# start TAG_MAJOR_VERSION == 34
-create_enum: false
-# end TAG_MAJOR_VERSION

@@ -10,7 +10,9 @@
 #include "mon-death.h"
 #include "mon-pick.h"
 #include "mon-place.h"
+#include "mpr.h"
 #include "stringutil.h"
+#include "tag-version.h"
 
 #define MONSLIST_METATABLE "crawldgn.monster_list"
 
@@ -181,7 +183,7 @@ static int dgn_mons_from_mid(lua_State *ls)
 
     monster* mons = monster_by_mid(mid);
 
-    if (mons->type != MONS_NO_MONSTER)
+    if (mons && mons->type != MONS_NO_MONSTER)
         push_monster(ls, mons);
     else
         lua_pushnil(ls);

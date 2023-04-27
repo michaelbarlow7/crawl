@@ -1,5 +1,9 @@
 #pragma once
 
+#include <cstdint>
+
+#include "enum.h"
+
 #define BIT(x) ((uint64_t)1<<(x))
 
 /// Properties of the monster class (other than resists/vulnerabilities).
@@ -46,13 +50,14 @@ enum monclass_flag_type : uint64_t
     /// monster can split
     M_SPLITS            = BIT(12),
 
-                        //BIT(13), // was M_GLOWS
+    /// monster dies a few turns after being hit
+    M_FRAGILE           = BIT(13),
 
     /// monster is stationary
     M_STATIONARY        = BIT(14),
 
-    /// monster can smell blood
-    M_BLOOD_SCENT       = BIT(15),
+    /// monster is immune to webs
+    M_WEB_IMMUNE        = BIT(15),
 
     /// susceptible to cold; drainable by vampires, splashes blood when hit
     M_COLD_BLOOD        = BIT(16),
@@ -131,8 +136,7 @@ enum monclass_flag_type : uint64_t
     // has a double-sized tile
     M_TALL_TILE         = BIT(42),
 
-    /// can sense vibrations in web traps
-    M_WEB_SENSE         = BIT(43),
+                        //BIT(43), // was M_WEB_SENSE
 
     /// tries to maintain LOS/2 range from its target
     M_MAINTAIN_RANGE    = BIT(44),
@@ -146,10 +150,9 @@ enum monclass_flag_type : uint64_t
     /// derived undead can't be randomly generated
     M_NO_GEN_DERIVED    = BIT(47),
 
-                        //BIT(48),
+                        //BIT(48), // was M_REQUIRE_BAND
 
-    /// hybridized monster composed of other monster parts
-    M_HYBRID            = BIT(49),
+                        //BIT(49), // was M_HYBRID
 
                         //BIT(50),
 
@@ -172,6 +175,11 @@ enum monclass_flag_type : uint64_t
 
     /// uses they/them pronouns
     M_GENDER_NEUTRAL    = BIT(57),
+
+    /// is surrounded by a ring of clouds. Only one can be active at a time!
+    M_THUNDER_RING      = BIT(58),
+    M_FIRE_RING         = BIT(59),
+    M_MIASMA_RING       = BIT(60),
 };
 DEF_BITFIELD(monclass_flags_t, monclass_flag_type);
 
@@ -213,9 +221,8 @@ enum monster_flag_type : uint64_t
     /// Consider this monster to have MH_UNDEAD holiness, regardless
     /// of its actual type
     MF_FAKE_UNDEAD        = BIT(13),
-    /// An undead monster soul enslaved by
-    /// Yredelemnul's power
-    MF_ENSLAVED_SOUL      = BIT(14),
+
+    MF_PENDING_REVIVAL    = BIT(14),
 
     /// mname is a suffix.
     MF_NAME_SUFFIX        = BIT(15),
@@ -265,8 +272,8 @@ enum monster_flag_type : uint64_t
     MF_SENSED             = BIT(33),
     /// mname should not be used for corpses
     MF_NAME_NOCORPSE      = BIT(34),
-    /// known to have a ranged attack
-    MF_SEEN_RANGED        = BIT(35),
+
+    // MF_SEEN_RANGED     = BIT(35), // was known to have a ranged attack
 
     /// this monster has been polymorphed.
     MF_POLYMORPHED        = BIT(36),

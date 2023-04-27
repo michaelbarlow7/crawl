@@ -3,6 +3,7 @@
  * @brief Wizard mode command handling.
 **/
 #include "AppHdr.h"
+#include "options.h"
 
 #ifdef WIZARD
 
@@ -33,6 +34,7 @@
 #include "spl-transloc.h" // wizard_blink
 #include "stairs.h" // down_stairs
 #include "state.h"
+#include "traps.h" // do_trap_effects
 #include "wizard-option-type.h"
 #include "wiz-dgn.h"
 #include "wiz-dump.h"
@@ -74,14 +76,13 @@ static void _do_wizard_command(int wiz_command)
         break;
 
     case 'c': wizard_draw_card(); break;
-    case 'C': wizard_uncurse_item(); break;
     case CONTROL('C'): die("Intentional crash");
 
     case 'd': wizard_level_travel(true); break;
     case 'D': wizard_detect_creatures(); break;
     case CONTROL('D'): wizard_edit_durations(); break;
 
-    case 'e': wizard_set_hunger_state(); break;
+    case 'e': do_trap_effects(); break;
     case 'E': wizard_freeze_time(); break;
     case CONTROL('E'): debug_dump_levgen(); break;
 
@@ -121,7 +122,7 @@ static void _do_wizard_command(int wiz_command)
     case 'm': wizard_create_spec_monster_name(); break;
     // case CONTROL('M'): break; // XXX do not use, menu command
 
-    // case 'n': break;
+    case 'n': wizard_set_zot_clock(); break;
     // case 'N': break;
     // case CONTROL('N'): break;
 
@@ -138,7 +139,7 @@ static void _do_wizard_command(int wiz_command)
     case CONTROL('Q'): wizard_toggle_dprf(); break;
 
     case 'r': wizard_change_species(); break;
-    case 'R': wizard_spawn_control(); break;
+    case 'R':
     case CONTROL('R'): wizard_recreate_level(); break;
 
     case 's':
@@ -270,7 +271,11 @@ void handle_wizard_command()
         mprf(MSGCH_WARN, "Re-activating wizard mode.");
         you.wizard = true;
         you.suppress_wizard = false;
+#ifdef USE_TILE_LOCAL
+        tiles.layout_statcol();
+#endif
         redraw_screen();
+        update_screen();
         if (crawl_state.cmd_repeat_start)
         {
             crawl_state.cancel_cmd_repeat("Can't repeat re-activating wizard "
@@ -302,7 +307,11 @@ void handle_wizard_command()
 
         you.wizard = true;
         save_game(false);
+#ifdef USE_TILE_LOCAL
+        tiles.layout_statcol();
+#endif
         redraw_screen();
+        update_screen();
 
         if (crawl_state.cmd_repeat_start)
         {
@@ -367,6 +376,8 @@ void enter_explore_mode()
     else if (!you.explore)
     {
         mprf(MSGCH_WARN, "WARNING: ABOUT TO ENTER EXPLORE MODE!");
+        mpr("In explore mode, death is optional.");
+        mpr("Once you set a character to explore mode, you can't switch back.");
 
 #ifndef SCORE_WIZARD_CHARACTERS
         mprf(MSGCH_WARN, "If you continue, your game will not be scored!");
@@ -387,6 +398,7 @@ void enter_explore_mode()
         you.explore = true;
         save_game(false);
         redraw_screen();
+        update_screen();
 
         if (crawl_state.cmd_repeat_start)
         {
@@ -419,29 +431,23 @@ int list_wizard_commands(bool do_redraw_screen)
                        "<w>#</w>      load character from a dump file\n"
                        "<w>&</w>      list all divine followers\n"
                        "<w>=</w>      show info about skill points\n"
+                       "<w>n</w>      set Zot clock to a value\n"
                        "\n"
-                       "<yellow>Create level features</yellow>\n"
-                       "<w>L</w>      place a vault by name\n"
+                       "<yellow>Dungeon features</yellow>\n"
                        "<w>T</w>      make a trap\n"
                        "<w>,</w>/<w>.</w>    create up/down staircase\n"
                        "<w>(</w>      turn cell into feature\n"
                        "<w>\\</w>      make a shop\n"
-                       "<w>K</w> mark all vaults as unused\n"
                        "\n"
-                       "<yellow>Other level related commands</yellow>\n"
+                       "<yellow>Builder debugging</yellow>\n"
+                       "<w>L</w>      place a vault by name\n"
+                       "<w>P</w>      create a level based on a vault\n"
+                       "<w>R</w> regenerate current level\n"
                        "<w>Ctrl-A</w> generate new Abyss area\n"
-                       "<w>b</w>      controlled blink\n"
-                       "<w>B</w>      controlled teleport\n"
-                       "<w>Ctrl-B</w> banish yourself to the Abyss\n"
-                       "<w>R</w>      change monster spawn rate\n"
-                       "<w>Ctrl-S</w> change Abyss speed\n"
-                       "<w>u</w>/<w>d</w>    shift up/down one level\n"
-                       "<w>~</w>      go to a specific level\n"
+                       "<w>K</w>      mark all vaults as unused\n"
                        "<w>:</w>      find branches and overflow\n"
                        "       temples in the dungeon\n"
                        "<w>;</w>      list known levels and counters\n"
-                       "<w>{</w>      magic mapping\n"
-                       "<w>Ctrl-W</w> change Shoals' tide speed\n"
                        "<w>Ctrl-E</w> dump level builder information\n"
 #ifdef DEBUG
                        // might be present in any save, but only generated
@@ -449,8 +455,17 @@ int list_wizard_commands(bool do_redraw_screen)
                        // to not confuse non-devs. The command will still work.
                        "<w>Ctrl-L</w> show builder logs for level\n"
 #endif
-                       "<w>Ctrl-R</w> regenerate current level\n"
-                       "<w>P</w>      create a level based on a vault\n",
+                       "\n"
+                       "<yellow>Other level related commands</yellow>\n"
+                       "<w>{</w>      magic mapping\n"
+                       "<w>b</w>      controlled blink\n"
+                       "<w>B</w>      controlled teleport\n"
+                       "<w>~</w>      go to a specific level\n"
+                       "<w>u</w>/<w>d</w>    shift up/down one level\n"
+                       "<w>e</w>      trigger explore traps\n"
+                       "<w>Ctrl-B</w> banish yourself to the Abyss\n"
+                       "<w>Ctrl-S</w> change Abyss speed\n"
+                       "<w>Ctrl-W</w> change Shoals' tide speed\n",
                        true);
 
     cols.add_formatted(1,
@@ -460,7 +475,6 @@ int list_wizard_commands(bool do_redraw_screen)
                        "<w>Ctrl-G</w> save/load ghost (bones file)\n"
 #endif
                        "<w>h</w>/<w>H</w>    heal yourself (super-Heal)\n"
-                       "<w>e</w>      set hunger state\n"
                        "<w>X</w>      make Xom do something now\n"
                        "<w>z</w>      cast spell by number/name\n"
                        "<w>!</w>      memorise spell\n"
@@ -478,7 +492,6 @@ int list_wizard_commands(bool do_redraw_screen)
                        "\n"
                        "<yellow>Item related commands</yellow>\n"
                        "<w>a</w>      acquirement\n"
-                       "<w>C</w>      (un)curse item\n"
                        "<w>i</w>/<w>I</w>    identify/unidentify inventory\n"
                        "<w>y</w>/<w>Y</w>    id/unid item types+level items\n"
                        "<w>o</w>/<w>%</w>    create an object\n"
@@ -516,7 +529,10 @@ int list_wizard_commands(bool do_redraw_screen)
 
     int key = show_keyhelp_menu(cols.formatted_lines());
     if (do_redraw_screen)
+    {
         redraw_screen();
+        update_screen();
+    }
     return key;
 }
 #endif // defined(WIZARD)

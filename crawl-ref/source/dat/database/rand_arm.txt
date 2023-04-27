@@ -75,8 +75,6 @@ Salamander
 
 Serpent
 
-Tortoise
-
 Turtle
 
 # fish
@@ -135,8 +133,6 @@ Dolphin
 Echidna
 
 Elephant
-
-Hare
 
 Hart
 
@@ -482,8 +478,6 @@ Love and Death
 
 Mezcal
 
-Old and Reckless
-
 Pathos
 
 Philately
@@ -519,6 +513,8 @@ the Earth
 the Eternal Fruit
 
 the Loofah
+
+the Old and Reckless
 
 the Onion
 

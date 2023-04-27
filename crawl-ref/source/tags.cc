@@ -13,6 +13,8 @@
 
 #include "AppHdr.h"
 
+#include "feature.h"
+#include "mpr.h"
 #include "tags.h"
 
 #include <algorithm>
@@ -33,22 +35,23 @@
 #include "artefact.h"
 #include "art-enum.h"
 #include "branch.h"
-#if TAG_MAJOR_VERSION == 34
- #include "decks.h"
- #include "food.h"
- #include "hunger-state-t.h"
-#endif
+#include "chardump.h"
 #include "colour.h"
 #include "coordit.h"
+#if TAG_MAJOR_VERSION == 34
+ #include "decks.h"
+#endif
 #include "dbg-scan.h"
 #include "dbg-util.h"
 #include "describe.h"
 #include "dgn-overview.h"
 #include "dungeon.h"
 #include "end.h"
+#include "tile-env.h"
 #include "errors.h"
 #include "ghost.h"
 #include "god-abil.h" // just for the Ru sac penalty key
+#include "god-passive.h"
 #include "god-companions.h"
 #include "item-name.h"
 #include "item-prop.h"
@@ -65,16 +68,20 @@
  #include "mon-tentacle.h"
  #include "mon-util.h"
 #endif
+#include "mutation.h"
 #include "place.h"
 #include "player-stats.h"
+#include "player-save-info.h"
 #include "prompt.h" // index_to_letter
 #include "religion.h"
 #include "skills.h"
 #include "species.h"
+#include "spl-damage.h" // vortex_power_key
 #include "spl-wpnench.h"
 #include "state.h"
 #include "stringutil.h"
 #include "syscalls.h"
+#include "tag-version.h"
 #include "terrain.h"
 #include "rltiles/tiledef-dngn.h"
 #include "rltiles/tiledef-player.h"
@@ -684,6 +691,8 @@ coord_def unmarshallCoord(reader &th)
 }
 
 #if TAG_MAJOR_VERSION == 34
+static species_type final_species_cleanup = NUM_SPECIES;
+
 // Between TAG_MINOR_OPTIONAL_PARTS and TAG_MINOR_FIXED_CONSTRICTION
 // we neglected to marshall the constricting[] map of monsters. Fix
 // those up.
@@ -691,7 +700,7 @@ static void _fix_missing_constrictions()
 {
     for (int i = -1; i < MAX_MONSTERS; ++i)
     {
-        const actor* m = i < 0 ? (actor*)&you : (actor*)&menv[i];
+        const actor* m = i < 0 ? (actor*)&you : (actor*)&env.mons[i];
         if (!m->alive())
             continue;
         if (!m->constricted_by)
@@ -927,6 +936,8 @@ static monster_type _fixup_monster_type(reader &th, monster_type x)
         AXED(MONS_SHADOW_IMP); // midge
         AXED(MONS_AGNES);      // Jozef
     }
+#else
+    UNUSED(th);
 #endif
 
     return x;
@@ -1028,6 +1039,22 @@ static dungeon_feature_type rewrite_feature(dungeon_feature_type x,
 
     if (x == DNGN_ENTER_LABYRINTH)
         x = DNGN_ENTER_GAUNTLET;
+
+    if (minor_version < TAG_MINOR_NEW_TREES && x == DNGN_TREE)
+    {
+        if (you.where_are_you == BRANCH_SWAMP)
+            x = DNGN_MANGROVE;
+        else if (you.where_are_you == BRANCH_ABYSS
+                || you.where_are_you == BRANCH_PANDEMONIUM)
+        {
+            x = DNGN_DEMONIC_TREE;
+        }
+    }
+    if (minor_version < TAG_MINOR_SPLIT_HELL_GATE && x == DNGN_ENTER_HELL
+        && player_in_hell())
+    {
+        x = branches[you.where_are_you].exit_stairs;
+    }
 #else
     UNUSED(minor_version);
 #endif
@@ -1084,9 +1111,9 @@ static void _ensure_entry(branch_type br)
         if (orig_terrain(*ri) == DNGN_STONE_STAIRS_UP_I)
         {
             for (distance_iterator di(*ri); di; ++di)
-                if (in_bounds(*di) && grd(*di) == DNGN_FLOOR)
+                if (in_bounds(*di) && env.grid(*di) == DNGN_FLOOR)
                 {
-                    grd(*di) = entry; // No need to update LOS, etc.
+                    env.grid(*di) = entry; // No need to update LOS, etc.
                     // Announce the repair even in non-debug builds.
                     mprf(MSGCH_ERROR, "Placing missing branch entry: %s.",
                          dungeon_feature_name(entry));
@@ -1095,6 +1122,34 @@ static void _ensure_entry(branch_type br)
             die("no floor to place a branch entrance");
         }
     die("no upstairs on %s???", level_id::current().describe().c_str());
+}
+
+static void _ensure_exit(branch_type br)
+{
+    dungeon_feature_type exit = branches[br].exit_stairs;
+
+    for (rectangle_iterator ri(1); ri; ++ri)
+        if (orig_terrain(*ri) == exit)
+            return;
+
+    // Find primary downstairs.
+    for (rectangle_iterator ri(1); ri; ++ri)
+        if (orig_terrain(*ri) == DNGN_STONE_STAIRS_DOWN_I)
+        {
+            for (distance_iterator di(*ri); di; ++di)
+                if (in_bounds(*di)
+                    && (env.grid(*di) == DNGN_FLOOR
+                        || env.grid(*di) == DNGN_SHALLOW_WATER))
+                {
+                    env.grid(*di) = exit; // No need to update LOS, etc.
+                    // Announce the repair even in non-debug builds.
+                    mprf(MSGCH_ERROR, "Placing missing branch exit: %s.",
+                         dungeon_feature_name(exit));
+                    return;
+                }
+            die("no floor to place a branch exit");
+        }
+    die("no downstairs on %s???", level_id::current().describe().c_str());
 }
 
 static void _add_missing_branches()
@@ -1106,17 +1161,19 @@ static void _add_missing_branches()
         _ensure_entry(BRANCH_VAULTS);
     if (brentry[BRANCH_ZOT] == lc)
         _ensure_entry(BRANCH_ZOT);
-    if (lc == level_id(BRANCH_DEPTHS, 2) || lc == level_id(BRANCH_DUNGEON, 21))
+    // TODO: centralize these numbers
+    // crosscheck with check_map_validity when changing
+    if (lc == level_id(BRANCH_DEPTHS, 1) || lc == level_id(BRANCH_DUNGEON, 21))
         _ensure_entry(BRANCH_VESTIBULE);
-    if (lc == level_id(BRANCH_DEPTHS, 3) || lc == level_id(BRANCH_DUNGEON, 24))
+    if (lc == level_id(BRANCH_DEPTHS, 2) || lc == level_id(BRANCH_DUNGEON, 24))
         _ensure_entry(BRANCH_PANDEMONIUM);
-    if (lc == level_id(BRANCH_DEPTHS, 4) || lc == level_id(BRANCH_DUNGEON, 25))
+    if (lc == level_id(BRANCH_DEPTHS, 3) || lc == level_id(BRANCH_DUNGEON, 25))
         _ensure_entry(BRANCH_ABYSS);
     if (player_in_branch(BRANCH_VESTIBULE))
     {
         for (rectangle_iterator ri(0); ri; ++ri)
         {
-            if (grd(*ri) == DNGN_STONE_ARCH)
+            if (env.grid(*ri) == DNGN_STONE_ARCH)
             {
                 map_marker *marker = env.markers.find(*ri, MAT_FEATURE);
                 if (marker)
@@ -1133,7 +1190,7 @@ static void _add_missing_branches()
                     case DNGN_ENTER_DIS:
                     case DNGN_ENTER_GEHENNA:
                     case DNGN_ENTER_TARTARUS:
-                        grd(*ri) = featm->feat;
+                        env.grid(*ri) = featm->feat;
                         dprf("opened %s", dungeon_feature_name(featm->feat));
                         env.markers.remove(marker);
                         break;
@@ -1202,9 +1259,9 @@ static void _shunt_monsters_out_of_walls()
 {
     for (int i = 0; i < MAX_MONSTERS; ++i)
     {
-        monster &m(menv[i]);
+        monster &m(env.mons[i]);
         if (m.alive() && in_bounds(m.pos()) && cell_is_solid(m.pos())
-            && (grd(m.pos()) != DNGN_MALIGN_GATEWAY
+            && (env.grid(m.pos()) != DNGN_MALIGN_GATEWAY
                 || mons_genus(m.type) != MONS_ELDRITCH_TENTACLE))
         {
             for (distance_iterator di(m.pos()); di; ++di)
@@ -1216,7 +1273,7 @@ static void _shunt_monsters_out_of_walls()
 #endif
                     mprf(MSGCH_ERROR, "Error: monster %s in %s at (%d,%d)",
                          m.name(DESC_PLAIN, true).c_str(),
-                         dungeon_feature_name(grd(m.pos())),
+                         dungeon_feature_name(env.grid(m.pos())),
                          m.pos().x, m.pos().y);
                     env.mgrid(m.pos()) = NON_MONSTER;
                     m.position = *di;
@@ -1268,7 +1325,6 @@ void tag_read(reader &inf, tag_type tag_id)
         // disabled. Doing this here rather in _tag_read_you() because
         // you.can_currently_train() requires the player's equipment be loaded.
         init_can_currently_train();
-        check_selected_skills();
         break;
     case TAG_LEVEL:
         _tag_read_level(th);
@@ -1276,13 +1332,22 @@ void tag_read(reader &inf, tag_type tag_id)
         _tag_read_level_items(th);
         // We have to do this here because _tag_read_level_monsters()
         // might kill an elsewhere Ilsuiw follower, which ends up calling
-        // terrain.cc:_dgn_check_terrain_items, which checks mitm.
+        // terrain.cc:_dgn_check_terrain_items, which checks env.item.
         link_items();
         EAT_CANARY;
         _tag_read_level_monsters(th);
         EAT_CANARY;
 #if TAG_MAJOR_VERSION == 34
         _add_missing_branches();
+
+        // If an eleionoma destroyed the Swamp exit due to the bug fixed in
+        // 0d5cf04, put the branch exit on the closest floor or shallow water
+        // square we can find near the first down stairs.
+        if (you.where_are_you == BRANCH_SWAMP
+            && you.depth == 1)
+        {
+            _ensure_exit(BRANCH_SWAMP);
+        }
 #endif
         _shunt_monsters_out_of_walls();
         // The Abyss needs to visit other levels during level gen, before
@@ -1304,7 +1369,7 @@ void tag_read(reader &inf, tag_type tag_id)
                          == "gammafunk_gauntlet_branching")
             {
                 auto exit = DNGN_EXIT_GAUNTLET;
-                grd(you.pos()) = exit;
+                env.grid(you.pos()) = exit;
                 // Announce the repair even in non-debug builds.
                 mprf(MSGCH_ERROR, "Placing emergency exit: %s.",
                      dungeon_feature_name(exit));
@@ -1362,7 +1427,7 @@ static void _tag_construct_char(writer &th)
     if (crawl_state.game_is_tutorial())
         marshallString2(th, crawl_state.map);
 
-    marshallString2(th, species_name(you.species));
+    marshallString2(th, species::name(you.species));
     marshallString2(th, you.religion ? god_name(you.religion) : "");
 
     // separate from the tutorial so we don't have to bump TAG_CHR_FORMAT
@@ -1394,11 +1459,9 @@ static void _tag_construct_you(writer &th)
     marshallByte(th, you.berserk_penalty);
     marshallInt(th, you.abyss_speed);
 
-    marshallInt(th, you.disease);
     ASSERT(you.hp > 0 || you.pending_revival);
     marshallShort(th, you.pending_revival ? 0 : you.hp);
 
-    marshallShort(th, you.hunger);
     marshallBoolean(th, you.fishtail);
     marshallBoolean(th, you.vampire_alive);
     _marshall_as_int(th, you.form);
@@ -1481,9 +1544,9 @@ static void _tag_construct_you(writer &th)
         marshallByte(th, you.train_alt[j]);
         marshallInt(th, you.training[j]);
         marshallInt(th, you.skill_points[j]);
-        marshallInt(th, you.ct_skill_points[j]);
         marshallByte(th, you.skill_order[j]);   // skills ordering
         marshallInt(th, you.training_targets[j]);
+        marshallInt(th, you.skill_manual_points[j]);
     }
 
     marshallBoolean(th, you.auto_training);
@@ -1497,11 +1560,6 @@ static void _tag_construct_you(writer &th)
 
     marshallByte(th, you.skill_menu_do);
     marshallByte(th, you.skill_menu_view);
-
-    marshallInt(th, you.transfer_from_skill);
-    marshallInt(th, you.transfer_to_skill);
-    marshallInt(th, you.transfer_skill_points);
-    marshallInt(th, you.transfer_total_skill_points);
 
     CANARY;
 
@@ -1623,7 +1681,7 @@ static void _tag_construct_you(writer &th)
 
     marshallByte(th, you.piety_hysteresis);
 
-    you.m_quiver.save(th);
+    you.quiver_action.save(QUIVER_MAIN_SAVE_KEY);
 
     CANARY;
 
@@ -1831,7 +1889,7 @@ static void _tag_construct_you_dungeon(writer &th)
     vector<LevelXPInfo> xp_info_list = you.get_all_xp_info();
     // How many different levels do we have info on?
     marshallShort(th, xp_info_list.size());
-    for (const auto info: xp_info_list)
+    for (const LevelXPInfo &info : xp_info_list)
         marshallLevelXPInfo(th, info);
 
     _marshall_iterator(th, you.uniq_map_tags.begin(), you.uniq_map_tags.end(),
@@ -2234,23 +2292,26 @@ static const char* old_gods[]=
     "Ashenzari",
 };
 
-void tag_read_char(reader &th, uint8_t /*format*/, uint8_t major, uint8_t minor)
+player_save_info tag_read_char_info(reader &th, uint8_t /*format*/,
+                                    uint8_t major, uint8_t minor)
 {
-    // Important: values out of bounds are good here, the save browser needs to
+    player_save_info r;
+    // Important: the beginning of this chunk is read in
+    // files.cc:_read_char_chunk, which handles loading save version info.
+    // Values out of bounds are good here, the save browser needs to
     // be forward-compatible. We validate them only on an actual restore.
-    you.your_name         = unmarshallString2(th);
-    you.prev_save_version = unmarshallString2(th);
-    dprf("Saved character %s, version: %s", you.your_name.c_str(),
-                                            you.prev_save_version.c_str());
+    r.name = unmarshallString2(th);
+    r.prev_save_version = unmarshallString2(th);
+    dprf("Saved character %s, version: %s", r.name.c_str(),
+                                            r.prev_save_version.c_str());
 
-    you.species           = static_cast<species_type>(unmarshallUByte(th));
-    you.char_class        = static_cast<job_type>(unmarshallUByte(th));
-    you.experience_level  = unmarshallByte(th);
-    you.chr_class_name    = unmarshallString2(th);
-    you.religion          = static_cast<god_type>(unmarshallUByte(th));
-    you.jiyva_second_name = unmarshallString2(th);
-
-    you.wizard            = unmarshallBoolean(th);
+    r.species = static_cast<species_type>(unmarshallUByte(th));
+    r.job = static_cast<job_type>(unmarshallUByte(th));
+    r.experience_level = unmarshallByte(th);
+    r.class_name = unmarshallString2(th);
+    r.religion = static_cast<god_type>(unmarshallUByte(th));
+    r.jiyva_second_name = unmarshallString2(th);
+    r.wizard = unmarshallBoolean(th);
 
     // this was mistakenly inserted in the middle for a few tag versions - this
     // just makes sure that games generated in that time period are still
@@ -2258,42 +2319,44 @@ void tag_read_char(reader &th, uint8_t /*format*/, uint8_t major, uint8_t minor)
 #if TAG_CHR_FORMAT == 0
     // TAG_MINOR_EXPLORE_MODE and TAG_MINOR_FIX_EXPLORE_MODE
     if (major == 34 && (minor >= 121 && minor < 130))
-        you.explore = unmarshallBoolean(th);
+        r.explore = unmarshallBoolean(th);
 #endif
 
-    crawl_state.type = (game_type) unmarshallUByte(th);
+    r.saved_game_type = static_cast<game_type>(unmarshallUByte(th));
     // normalize invalid game types so they can be treated uniformly elsewhere
-    if (crawl_state.type > NUM_GAME_TYPE)
-        crawl_state.type = NUM_GAME_TYPE;
+    if (r.saved_game_type > NUM_GAME_TYPE)
+        r.saved_game_type = NUM_GAME_TYPE;
 
-    // prevent an ASSERT in game_is_tutorial on game types from the future
-    if (crawl_state.game_is_valid_type() && crawl_state.game_is_tutorial())
-        crawl_state.map = unmarshallString2(th);
-    else
-        crawl_state.map = "";
+    if (r.saved_game_type == GAME_TYPE_TUTORIAL)
+        r.map = unmarshallString2(th);
 
     if (major > 32 || major == 32 && minor > 26)
     {
-        you.chr_species_name = unmarshallString2(th);
-        you.chr_god_name     = unmarshallString2(th);
+        r.species_name = unmarshallString2(th);
+        r.god_name = unmarshallString2(th);
     }
     else
     {
-        if (you.species >= 0 && you.species < (int)ARRAYSZ(old_species))
-            you.chr_species_name = old_species[you.species];
-        else
-            you.chr_species_name = "Yak";
-        if (you.religion >= 0 && you.religion < (int)ARRAYSZ(old_gods))
-            you.chr_god_name = old_gods[you.religion];
-        else
-            you.chr_god_name = "Marduk";
+        if (r.species >= 0 && r.species < (int)ARRAYSZ(old_species))
+            r.species_name = old_species[you.species];
+
+        if (r.religion >= 0 && r.religion < (int)ARRAYSZ(old_gods))
+            r.god_name = old_gods[you.religion];
     }
 
     if (major > 34 || major == 34 && minor >= 29)
-        crawl_state.map = unmarshallString2(th);
+        r.map = unmarshallString2(th);
 
     if (major > 34 || major == 34 && minor >= 130)
-        you.explore = unmarshallBoolean(th);
+        r.explore = unmarshallBoolean(th);
+
+    return r;
+}
+
+void tag_read_char(reader &th, uint8_t format, uint8_t major, uint8_t minor)
+{
+    player_save_info s = tag_read_char_info(th, format, major, minor);
+    you.init_from_save_info(s);
 }
 
 #if TAG_MAJOR_VERSION == 34
@@ -2311,7 +2374,12 @@ static void _cap_mutation_at(mutation_type mut, int cap)
         you.innate_mutation[mut] = cap;
 }
 
-static spell_type _fixup_positional_player_spell(spell_type s)
+static void _clear_mutation(mutation_type mut)
+{
+    _cap_mutation_at(mut, 0);
+}
+
+static spell_type _fixup_removed_spells(spell_type s)
 {
     switch (s)
     {
@@ -2322,6 +2390,8 @@ static spell_type _fixup_positional_player_spell(spell_type s)
         case SPELL_BOLT_OF_DRAINING:
         case SPELL_THROW_FLAME:
         case SPELL_THROW_FROST:
+        case SPELL_RING_OF_FLAMES:
+        case SPELL_HASTE:
             return SPELL_NO_SPELL;
 
         case SPELL_FLAME_TONGUE:
@@ -2368,13 +2438,16 @@ static void _fixup_library_spells(FixedBitVector<NUM_SPELLS>& lib)
 {
     for (int i = 0; i < NUM_SPELLS; ++i)
     {
-        spell_type newspell = _fixup_positional_player_spell((spell_type) i);
+        spell_type newspell = _fixup_removed_spells((spell_type) i);
 
         if (newspell == SPELL_NO_SPELL)
             lib.set(i, false);
         else if (newspell != (spell_type) i)
         {
-            lib.set(newspell, lib[i]);
+            // Only give the fixup if they had the spell, don't remove
+            // replacements
+            if (lib[i])
+                lib.set(newspell, lib[i]);
             lib.set(i, false);
         }
     }
@@ -2431,7 +2504,7 @@ FixedVector<spell_type, MAX_KNOWN_SPELLS> unmarshall_player_spells(reader &th)
     {
         spells[i] = unmarshallSpellType(th);
 #if TAG_MAJOR_VERSION == 34
-        spells[i] = _fixup_positional_player_spell(spells[i]);
+        spells[i] = _fixup_removed_spells(spells[i]);
 #endif
         if (spell_removed(spells[i]))
             spells[i] = SPELL_NO_SPELL;
@@ -2467,15 +2540,34 @@ void remove_removed_library_spells(FixedBitVector<NUM_SPELLS>& lib)
         lib.set(i, lib[i] && !spell_removed(static_cast<spell_type>(i)));
 }
 
+
+static void _fixup_species_mutations(mutation_type mut)
+{
+    // this is *not safe* to use with any mutations where there could be a
+    // physiology conflict, or with mutations where there could be random
+    // upgrades on top of the innate levels (e.g. MUT_ROLL).
+    int total = 0;
+    // Don't perma_mutate since that gives messages.
+    for (const auto& lum : get_species_def(you.species).level_up_mutations)
+        if (lum.xp_level <= you.experience_level && lum.mut == mut)
+            total += lum.mut_level;
+
+    you.innate_mutation[mut] = you.mutation[mut] = total;
+}
+
 static void _tag_read_you(reader &th)
 {
     int count;
+    UNUSED(_fixup_species_mutations); // prevent a tag upgrade warning
 
-    ASSERT(species_type_valid(you.species));
+    // these `you` values come from the "chr" chunk, but aren't validated during
+    // the reading of that chunk. Let's make sure they actually make sense...
+    ASSERT(species::is_valid(you.species));
     ASSERT(job_type_valid(you.char_class));
     ASSERT_RANGE(you.experience_level, 1, 28);
     ASSERT(you.religion < NUM_GODS);
     ASSERT_RANGE(crawl_state.type, GAME_TYPE_UNSPECIFIED + 1, NUM_GAME_TYPE);
+    // now start reading the chunk proper
     you.last_mid          = unmarshallInt(th);
     you.piety             = unmarshallUByte(th);
     ASSERT(you.piety <= MAX_PIETY);
@@ -2523,15 +2615,23 @@ static void _tag_read_you(reader &th)
 
     you.abyss_speed = unmarshallInt(th);
 
-    you.disease         = unmarshallInt(th);
+#if TAG_MAJOR_VERSION == 34
+    // was you.disease
+    if (th.getMinorVersion() < TAG_MINOR_DISEASE)
+        unmarshallInt(th);
+#endif
     you.hp              = unmarshallShort(th);
-    you.hunger          = unmarshallShort(th);
+#if TAG_MAJOR_VERSION == 34
+    // was you.hunger
+    if (th.getMinorVersion() < TAG_MINOR_LOAF_BUST)
+        unmarshallShort(th);
+#endif
     you.fishtail        = unmarshallBoolean(th);
 #if TAG_MAJOR_VERSION == 34
     if (th.getMinorVersion() >= TAG_MINOR_VAMPIRE_NO_EAT)
         you.vampire_alive = unmarshallBoolean(th);
     else
-        you.vampire_alive = calc_hunger_state() > HS_STARVING;
+        you.vampire_alive = true;
 #else
     you.vampire_alive   = unmarshallBoolean(th);
 #endif
@@ -2704,14 +2804,11 @@ static void _tag_read_you(reader &th)
     if (th.getMinorVersion() >= TAG_MINOR_GOLDIFY_BOOKS)
     {
 #endif
-    _unmarshallFixedBitVector<NUM_SPELLS>(th, you.spell_library);
-    _unmarshallFixedBitVector<NUM_SPELLS>(th, you.hidden_spells);
+        _unmarshallFixedBitVector<NUM_SPELLS>(th, you.spell_library);
+        _unmarshallFixedBitVector<NUM_SPELLS>(th, you.hidden_spells);
 #if TAG_MAJOR_VERSION == 34
-        if (th.getMinorVersion() < TAG_MINOR_POSITIONAL_MAGIC)
-        {
-            _fixup_library_spells(you.spell_library);
-            _fixup_library_spells(you.hidden_spells);
-        }
+        _fixup_library_spells(you.spell_library);
+        _fixup_library_spells(you.hidden_spells);
     }
 #endif
 
@@ -2725,10 +2822,6 @@ static void _tag_read_you(reader &th)
 
     count = unmarshallByte(th);
     ASSERT(count == (int)you.ability_letter_table.size());
-#if TAG_MAJOR_VERSION == 34
-    bool found_fly = false;
-    bool found_stop_flying = false;
-#endif
     for (int i = 0; i < count; i++)
     {
         int a = unmarshallShort(th);
@@ -2752,20 +2845,12 @@ static void _tag_read_you(reader &th)
             || a == ABIL_WISP_BLINK // was ABIL_FLY_II
                && th.getMinorVersion() < TAG_MINOR_0_12)
         {
-            if (found_fly)
-                a = ABIL_NON_ABILITY;
-            else
-                a = ABIL_FLY;
-            found_fly = true;
+            a = ABIL_NON_ABILITY;
         }
         if (a == ABIL_EVOKE_STOP_LEVITATING
             || a == ABIL_STOP_FLYING)
         {
-            if (found_stop_flying)
-                a = ABIL_NON_ABILITY;
-            else
-                a = ABIL_STOP_FLYING;
-            found_stop_flying = true;
+            a = ABIL_NON_ABILITY;
         }
 
         if (th.getMinorVersion() < TAG_MINOR_NO_JUMP)
@@ -2818,7 +2903,10 @@ static void _tag_read_you(reader &th)
 #endif
         you.training[j] = unmarshallInt(th);
         you.skill_points[j]    = unmarshallInt(th);
-        you.ct_skill_points[j] = unmarshallInt(th);
+#if TAG_MAJOR_VERSION == 34
+        if (th.getMinorVersion() < TAG_MINOR_REMOVE_CT_SKILLS)
+            unmarshallInt(th);
+#endif
         you.skill_order[j]     = unmarshallByte(th);
 #if TAG_MAJOR_VERSION == 34
         if (th.getMinorVersion() >= TAG_MINOR_TRAINING_TARGETS)
@@ -2829,6 +2917,15 @@ static void _tag_read_you(reader &th)
         }
         else
             you.training_targets[j] = 0;
+
+        if (th.getMinorVersion() >= TAG_MINOR_GOLDIFY_MANUALS)
+        {
+#endif
+            you.skill_manual_points[j] = unmarshallInt(th);
+#if TAG_MAJOR_VERSION == 34
+        }
+        else
+            you.skill_manual_points[j] = 0;
 #endif
     }
 
@@ -2844,16 +2941,43 @@ static void _tag_read_you(reader &th)
 
     you.skill_menu_do = static_cast<skill_menu_state>(unmarshallByte(th));
     you.skill_menu_view = static_cast<skill_menu_state>(unmarshallByte(th));
-    you.transfer_from_skill = static_cast<skill_type>(unmarshallInt(th));
-    ASSERT(you.transfer_from_skill == SK_NONE || you.transfer_from_skill < NUM_SKILLS);
-    you.transfer_to_skill = static_cast<skill_type>(unmarshallInt(th));
-    ASSERT(you.transfer_to_skill == SK_NONE || you.transfer_to_skill < NUM_SKILLS);
-    you.transfer_skill_points = unmarshallInt(th);
-    you.transfer_total_skill_points = unmarshallInt(th);
+#if TAG_MAJOR_VERSION == 34
+    if (you.skill_menu_view == SKM_VIEW_TRANSFER)
+        you.skill_menu_view = SKM_NONE;
+    // Was Ashenzari skill transfer information
+    // Four ints to discard
+    if (th.getMinorVersion() < TAG_MINOR_NEW_ASHENZARI)
+        for (int j = 0; j < 4; ++j)
+            unmarshallInt(th);
+#endif
 
     // Set up you.skill_cost_level.
     you.skill_cost_level = 0;
     check_skill_cost_change();
+
+#if TAG_MAJOR_VERSION == 34
+    if (th.getMinorVersion() < TAG_MINOR_MERGE_RANGED)
+    {
+        // should be a check for MUT_DISTRIBUTED_SKILL_TRAINING but
+        // I don't remember if muts have been unmarshalled here.
+        if (you.species != SP_GNOLL)
+        {
+            you.skill_points[SK_RANGED_WEAPONS] += you.skill_points[SK_CROSSBOWS]
+                                                 + you.skill_points[SK_SLINGS];
+        }
+        you.train[SK_RANGED_WEAPONS] = max(you.train[SK_RANGED_WEAPONS],
+                                           max(you.train[SK_CROSSBOWS],
+                                               you.train[SK_SLINGS]));
+        you.train_alt[SK_RANGED_WEAPONS] = max(you.train_alt[SK_RANGED_WEAPONS],
+                                               max(you.train_alt[SK_CROSSBOWS],
+                                                   you.train_alt[SK_SLINGS]));
+        you.training_targets[SK_RANGED_WEAPONS] = max(you.training_targets[SK_RANGED_WEAPONS],
+                                                      max(you.training_targets[SK_CROSSBOWS],
+                                                          you.training_targets[SK_SLINGS]));
+        // fixup_skills is called at the end of loading a character, in
+        // _post_init
+    }
+#endif
 
     EAT_CANARY;
 
@@ -2931,7 +3055,6 @@ static void _tag_read_you(reader &th)
             }
         }
     }
-
 #endif
 
 #if TAG_MAJOR_VERSION == 34
@@ -3065,11 +3188,12 @@ static void _tag_read_you(reader &th)
     }
     you.mutation[MUT_FAST] = you.innate_mutation[MUT_FAST];
     you.mutation[MUT_SLOW] = you.innate_mutation[MUT_SLOW];
-    you.mutation[MUT_BREATHE_FLAMES] = 0;
     if (you.species != SP_NAGA)
-        you.mutation[MUT_SPIT_POISON] = 0;
+        _clear_mutation(MUT_SPIT_POISON);
 #endif
 
+    // TODO: this code looks really out of context, it should at least have
+    // an ASSERT identifying count, but I'm not 100% sure what that would be
     for (int j = count; j < NUM_MUTATIONS; ++j)
         you.mutation[j] = you.innate_mutation[j] = you.sacrifices[j];
 
@@ -3079,33 +3203,15 @@ static void _tag_read_you(reader &th)
         // was, so when TAG_MINOR_NO_POTION_HEAL was added
         // these were all moved to only apply to previous
         // tags.
-        if (you.mutation[MUT_TELEPORT_CONTROL] == 1)
-            you.mutation[MUT_TELEPORT_CONTROL] = 0;
-        if (you.mutation[MUT_TRAMPLE_RESISTANCE] > 0
-            || you.innate_mutation[MUT_TRAMPLE_RESISTANCE] > 0)
-        {
-            you.mutation[MUT_TRAMPLE_RESISTANCE] = 0;
-            you.innate_mutation[MUT_TRAMPLE_RESISTANCE] = 0;
-        }
-        if (you.mutation[MUT_CLING] == 1)
-            you.mutation[MUT_CLING] = 0;
-        if (you.species == SP_GARGOYLE)
-        {
-            you.mutation[MUT_POISON_RESISTANCE] =
-            you.innate_mutation[MUT_POISON_RESISTANCE] = 0;
-        }
-        if (you.species == SP_FORMICID)
-        {
-            you.mutation[MUT_ANTENNAE] = you.innate_mutation[MUT_ANTENNAE] = 3;
-            you.mutation[MUT_EXOSKELETON] =
-            you.innate_mutation[MUT_EXOSKELETON] = 0;
-        }
-    }
 
-    if (th.getMinorVersion() < TAG_MINOR_DIET_MUT)
-    {
-        you.mutation[MUT_CARNIVOROUS] = you.innate_mutation[MUT_CARNIVOROUS];
-        you.mutation[MUT_HERBIVOROUS] = you.innate_mutation[MUT_HERBIVOROUS];
+        // some mutations from this tag are handled by generic cleanup code
+        // below.
+
+        if (you.species == SP_GARGOYLE)
+            _clear_mutation(MUT_POISON_RESISTANCE);
+
+        if (you.species == SP_FORMICID)
+            you.mutation[MUT_ANTENNAE] = you.innate_mutation[MUT_ANTENNAE] = 3;
     }
 
     if (th.getMinorVersion() < TAG_MINOR_SAPROVOROUS
@@ -3116,89 +3222,125 @@ static void _tag_read_you(reader &th)
         you.innate_mutation[MUT_FAST_METABOLISM] -= 1;
     }
 
-    if (th.getMinorVersion() < TAG_MINOR_CE_HA_DIET)
+    if (th.getMinorVersion() < TAG_MINOR_ROT_IMMUNITY
+                                        && you.species == SP_VINE_STALKER)
     {
-        if (you.species == SP_CENTAUR)
-        {
-            you.mutation[MUT_FAST_METABOLISM] -= 1;
-            you.innate_mutation[MUT_FAST_METABOLISM] -= 1;
-
-            you.mutation[MUT_HERBIVOROUS] = 1;
-            you.innate_mutation[MUT_HERBIVOROUS] = 1;
-        }
-        else if (you.species == SP_HALFLING)
-        {
-            you.mutation[MUT_SLOW_METABOLISM] -= 1;
-            you.innate_mutation[MUT_SLOW_METABOLISM] -= 1;
-        }
+        you.mutation[MUT_NO_POTION_HEAL] =
+                you.innate_mutation[MUT_NO_POTION_HEAL] = 2;
     }
-
-    if (th.getMinorVersion() < TAG_MINOR_ROT_IMMUNITY)
-    {
-        if (you.species == SP_VINE_STALKER)
-        {
-            you.mutation[MUT_NO_POTION_HEAL] =
-            you.innate_mutation[MUT_NO_POTION_HEAL] = 3;
-        }
-
-        if (you.species == SP_VINE_STALKER
-            || you.species == SP_GARGOYLE)
-        {
-            you.mutation[MUT_ROT_IMMUNITY] =
-            you.innate_mutation[MUT_ROT_IMMUNITY] = 1;
-        }
-    }
-
-    if (th.getMinorVersion() < TAG_MINOR_FOUL_STENCH
-        && you.species == SP_DEMONSPAWN
-        && you.innate_mutation[MUT_SAPROVOROUS])
-    {
-        you.mutation[MUT_ROT_IMMUNITY] =
-        you.innate_mutation[MUT_ROT_IMMUNITY] = 1;
-    }
-
-    you.mutation[MUT_SAPROVOROUS] =
-    you.innate_mutation[MUT_SAPROVOROUS] = 0;
 
     if (th.getMinorVersion() < TAG_MINOR_DS_CLOUD_MUTATIONS
         && you.species == SP_DEMONSPAWN)
     {
         if (you.innate_mutation[MUT_CONSERVE_POTIONS])
         {
-            you.mutation[MUT_CONSERVE_POTIONS] =
-            you.innate_mutation[MUT_CONSERVE_POTIONS] = 0;
-
+            // cleanup handled below
             you.mutation[MUT_FREEZING_CLOUD_IMMUNITY] =
-            you.innate_mutation[MUT_FREEZING_CLOUD_IMMUNITY] = 1;
+                    you.innate_mutation[MUT_FREEZING_CLOUD_IMMUNITY] = 1;
         }
         if (you.innate_mutation[MUT_CONSERVE_SCROLLS])
         {
-            you.mutation[MUT_CONSERVE_SCROLLS] =
-            you.innate_mutation[MUT_CONSERVE_SCROLLS] = 0;
-
+            // cleanup handled below
             you.mutation[MUT_FLAME_CLOUD_IMMUNITY] =
-            you.innate_mutation[MUT_FLAME_CLOUD_IMMUNITY] = 1;
+                    you.innate_mutation[MUT_FLAME_CLOUD_IMMUNITY] = 1;
         }
     }
 
-    if (th.getMinorVersion() < TAG_MINOR_METABOLISM)
+    // Autogenerated species enums resulted in palentongas turning
+    // into meteorans, or possibly mayflytaurs. Fix those, and also fix
+    // the meteorans generated in the meantime.
+    if (th.getMinorVersion() < TAG_MINOR_METEORAN_ENUM)
     {
-        you.mutation[MUT_FAST_METABOLISM] =
-        you.innate_mutation[MUT_FAST_METABOLISM];
-
-        you.mutation[MUT_SLOW_METABOLISM] =
-        you.innate_mutation[MUT_SLOW_METABOLISM];
+        switch (you.species)
+        {
+        case SP_MAYFLYTAUR:
+            if (you.mutation[MUT_SHORT_LIFESPAN])
+            {
+                final_species_cleanup = SP_METEORAN;
+                break;
+            }
+            // fallthrough
+        case SP_METEORAN:
+            if (you.mutation[MUT_ROLL])
+                final_species_cleanup = SP_PALENTONGA;
+            break;
+        case SP_PALENTONGA:
+            if (you.mutation[MUT_SHORT_LIFESPAN])
+                final_species_cleanup = SP_METEORAN;
+            break;
+        default:
+            break;
+        }
+    }
+    // The initial fix implementation turned Me->My, fix those too.
+    else if (th.getMinorVersion() < TAG_MINOR_MY_ENUM)
+    {
+        switch (you.species)
+        {
+        case SP_MAYFLYTAUR:
+            if (you.mutation[MUT_SHORT_LIFESPAN])
+                final_species_cleanup = SP_METEORAN;
+            break;
+        default:
+            break;
+        }
     }
 
-    if (th.getMinorVersion() < TAG_MINOR_NO_JUMP
-        && you.species == SP_FELID && you.innate_mutation[MUT_JUMP] != 0)
+    // fixup trick for species-specific mutations. Not safe for mutations that
+    // can also appear randomly, or have other uses. This ensures that
+    // if `s` should have `m`, then it does, and also if the player has `m`
+    // and is the wrong species, that they don't.
+    // TODO: can we automate this from the species def?
+    // (There's a lot of weird interactions and special cases to worry about..)
+    #define SP_MUT_FIX(m, s) if (you.has_innate_mutation(m) || you.species == (s)) _fixup_species_mutations(m)
+
+    SP_MUT_FIX(MUT_QUADRUMANOUS, SP_FORMICID);
+    SP_MUT_FIX(MUT_NO_DRINK, SP_MUMMY);
+    SP_MUT_FIX(MUT_REFLEXIVE_HEADBUTT, SP_MINOTAUR);
+    SP_MUT_FIX(MUT_STEAM_RESISTANCE, SP_PALE_DRACONIAN);
+    SP_MUT_FIX(MUT_PAWS, SP_FELID);
+    SP_MUT_FIX(MUT_NO_GRASPING, SP_FELID);
+    SP_MUT_FIX(MUT_NO_ARMOUR, SP_FELID);
+    SP_MUT_FIX(MUT_MULTILIVED, SP_FELID);
+    SP_MUT_FIX(MUT_CONSTRICTING_TAIL, SP_NAGA);
+    SP_MUT_FIX(MUT_DISTRIBUTED_TRAINING, SP_GNOLL);
+    SP_MUT_FIX(MUT_MERTAIL, SP_MERFOLK);
+    SP_MUT_FIX(MUT_TENTACLE_ARMS, SP_OCTOPODE);
+    SP_MUT_FIX(MUT_VAMPIRISM, SP_VAMPIRE);
+    SP_MUT_FIX(MUT_FLOAT, SP_DJINNI);
+    SP_MUT_FIX(MUT_INNATE_CASTER, SP_DJINNI);
+    SP_MUT_FIX(MUT_HP_CASTING, SP_DJINNI);
+    SP_MUT_FIX(MUT_FLAT_HP, SP_DJINNI);
+    SP_MUT_FIX(MUT_FORLORN, SP_DEMIGOD);
+    SP_MUT_FIX(MUT_DIVINE_ATTRS, SP_DEMIGOD);
+    SP_MUT_FIX(MUT_DAYSTALKER, SP_BARACHI);
+
+    if (you.has_innate_mutation(MUT_NIMBLE_SWIMMER)
+        || you.species == SP_MERFOLK || you.species == SP_OCTOPODE)
     {
-        you.mutation[MUT_JUMP] = 0;
+        _fixup_species_mutations(MUT_NIMBLE_SWIMMER);
+    }
+    if (you.species == SP_GARGOYLE || you.species == SP_MUMMY
+        || you.species == SP_GHOUL)
+    {
+        // not safe for SP_MUT_FIX because demonspawn use this and it doesn't
+        // handle ds muts
+        _fixup_species_mutations(MUT_TORMENT_RESISTANCE);
+    }
+    if (you.species == SP_MUMMY)
+    {
+        // not safe for SP_MUT_FIX
+        _fixup_species_mutations(MUT_HEAT_VULNERABILITY);
+    }
+    // not sure this is safe for SP_MUT_FIX, leaving it out for now
+    if (you.species == SP_GREY_DRACONIAN || you.species == SP_GARGOYLE
+        || you.species == SP_GHOUL || you.species == SP_MUMMY
+        || you.species == SP_VAMPIRE)
+    {
+        _fixup_species_mutations(MUT_UNBREATHING);
     }
 
-    // No minor version needed: all old felids should get MUT_PAWS.
-    if (you.species == SP_FELID && you.innate_mutation[MUT_PAWS] < 1)
-        you.mutation[MUT_PAWS] = you.innate_mutation[MUT_PAWS] = 1;
+    #undef SP_MUT_FIX
 
     if (th.getMinorVersion() < TAG_MINOR_SPIT_POISON
         && you.species == SP_NAGA)
@@ -3206,13 +3348,11 @@ static void _tag_read_you(reader &th)
         if (you.innate_mutation[MUT_SPIT_POISON] < 2)
         {
             you.mutation[MUT_SPIT_POISON] =
-            you.innate_mutation[MUT_SPIT_POISON] = 2;
+                    you.innate_mutation[MUT_SPIT_POISON] = 2;
         }
+        // cleanup handled below
         if (you.mutation[MUT_BREATHE_POISON])
-        {
-            you.mutation[MUT_BREATHE_POISON] = 0;
             you.mutation[MUT_SPIT_POISON] = 3;
-        }
     }
 
     // Give nagas constrict, tengu flight, and mummies restoration/enhancers.
@@ -3225,25 +3365,10 @@ static void _tag_read_you(reader &th)
             give_level_mutations(you.species, xl);
     }
 
-    if (th.getMinorVersion() < TAG_MINOR_NO_FORLORN)
-    {
-        if (you.mutation[MUT_FORLORN])
-            you.mutation[MUT_FORLORN] = 0;
-    }
-
     if (th.getMinorVersion() < TAG_MINOR_MP_WANDS)
     {
         if (you.mutation[MUT_MP_WANDS] > 1)
             you.mutation[MUT_MP_WANDS] = 1;
-    }
-
-    if (th.getMinorVersion() < TAG_MINOR_NAGA_METABOLISM)
-    {
-        if (you.species == SP_NAGA)
-        {
-            you.mutation[MUT_SLOW_METABOLISM] =
-                you.innate_mutation[MUT_SLOW_METABOLISM] = 1;
-        }
     }
 
     if (th.getMinorVersion() < TAG_MINOR_DETERIORATION)
@@ -3256,36 +3381,6 @@ static void _tag_read_you(reader &th)
     {
         if (you.mutation[MUT_BLINK] > 1)
             you.mutation[MUT_BLINK] = 1;
-    }
-
-    if (th.getMinorVersion() < TAG_MINOR_MUMMY_RESTORATION)
-    {
-        if (you.mutation[MUT_MUMMY_RESTORATION])
-        {
-            you.mutation[MUT_MUMMY_RESTORATION] = 0;
-            you.innate_mutation[MUT_MUMMY_RESTORATION] = 0;
-        }
-        if (you.mutation[MUT_SUSTAIN_ATTRIBUTES])
-        {
-            you.mutation[MUT_SUSTAIN_ATTRIBUTES] = 0;
-            you.innate_mutation[MUT_SUSTAIN_ATTRIBUTES] = 0;
-        }
-    }
-    else
-    {
-        // need another fixup due to save compat issues; the first version
-        // above forgot to deal with innate mutations. The mutation might
-        // have been readded in the generic fixup code.
-        if (you.innate_mutation[MUT_MUMMY_RESTORATION])
-        {
-            you.mutation[MUT_MUMMY_RESTORATION] = 0;
-            you.innate_mutation[MUT_MUMMY_RESTORATION] = 0;
-        }
-        if (you.innate_mutation[MUT_SUSTAIN_ATTRIBUTES])
-        {
-            you.mutation[MUT_SUSTAIN_ATTRIBUTES] = 0;
-            you.innate_mutation[MUT_SUSTAIN_ATTRIBUTES] = 0;
-        }
     }
 
     if (th.getMinorVersion() < TAG_MINOR_SPIT_POISON_AGAIN)
@@ -3313,10 +3408,6 @@ static void _tag_read_you(reader &th)
         if (you.innate_mutation[MUT_SPIT_POISON] == 2)
             you.innate_mutation[MUT_SPIT_POISON] = 1;
     }
-
-    // Carnivore and herbivore used to be 3-level mutations.
-    _cap_mutation_at(MUT_HERBIVOROUS, 1);
-    _cap_mutation_at(MUT_CARNIVOROUS, 1);
 
     // Slow regeneration split into two single-level muts:
     // * Inhibited regeneration (no regen in los of monsters, what Gh get)
@@ -3348,11 +3439,38 @@ static void _tag_read_you(reader &th)
         you.innate_mutation[MUT_ACID_RESISTANCE] = 1;
     }
 
+    if (th.getMinorVersion() < TAG_MINOR_COMPRESS_BADMUTS)
+    {
+        if (you.mutation[MUT_SCREAM] > 2)
+            you.mutation[MUT_SCREAM] = 2;
+
+        if (you.species == SP_VINE_STALKER)
+            _fixup_species_mutations(MUT_NO_POTION_HEAL);
+        else if (you.mutation[MUT_NO_POTION_HEAL] > 2)
+            you.mutation[MUT_NO_POTION_HEAL] = 2;
+    }
+
+    if (th.getMinorVersion() < TAG_MINOR_RECOMPRESS_BADMUTS)
+    {
+        if (you.mutation[MUT_BERSERK] > 2)
+            you.mutation[MUT_BERSERK] = 2;
+
+        if (you.mutation[MUT_TELEPORT] > 2)
+            you.mutation[MUT_TELEPORT] = 2;
+    }
+
+    // fully clean up any removed mutations
+    for (auto m : get_removed_mutations())
+        _clear_mutation(m);
+
     // Fixup for Sacrifice XP from XL 27 (#9895). No minor tag, but this
     // should still be removed on a major bump.
     const int xl_remaining = you.get_max_xl() - you.experience_level;
     if (xl_remaining < 0)
         adjust_level(xl_remaining);
+
+    if (th.getMinorVersion() < TAG_MINOR_EVOLUTION_XP)
+        set_evolution_mut_xp(you.has_mutation(MUT_DEVOLUTION));
 #endif
 
     count = unmarshallUByte(th);
@@ -3545,15 +3663,13 @@ static void _tag_read_you(reader &th)
     if (th.getMinorVersion() < TAG_MINOR_PAKELLAS_WRATH
         && player_under_penance(GOD_PAKELLAS))
     {
-        you.exp_docked[GOD_PAKELLAS] = exp_needed(min<int>(you.max_level, 27) + 1)
-                                  - exp_needed(min<int>(you.max_level, 27));
+        you.exp_docked[GOD_PAKELLAS] = excom_xp_docked();
         you.exp_docked_total[GOD_PAKELLAS] = you.exp_docked[GOD_PAKELLAS];
     }
     if (th.getMinorVersion() < TAG_MINOR_ELYVILON_WRATH
         && player_under_penance(GOD_ELYVILON))
     {
-        you.exp_docked[GOD_ELYVILON] = exp_needed(min<int>(you.max_level, 27) + 1)
-                                  - exp_needed(min<int>(you.max_level, 27));
+        you.exp_docked[GOD_ELYVILON] = excom_xp_docked();
         you.exp_docked_total[GOD_ELYVILON] = you.exp_docked[GOD_ELYVILON];
     }
 
@@ -3692,9 +3808,9 @@ static void _tag_read_you(reader &th)
 
     you.piety_hysteresis = unmarshallByte(th);
 
-    you.m_quiver.load(th);
-
 #if TAG_MAJOR_VERSION == 34
+    you.m_quiver_history.load(th);
+
     if (th.getMinorVersion() < TAG_MINOR_FRIENDLY_PICKUP)
         unmarshallByte(th);
     if (th.getMinorVersion() < TAG_MINOR_NO_ZOTDEF)
@@ -3822,7 +3938,17 @@ static void _tag_read_you(reader &th)
 #if TAG_MAJOR_VERSION == 34
     }
 
-    if (th.getMinorVersion() >= TAG_MINOR_SEEDS)
+
+    if (th.getMinorVersion() < TAG_MINOR_SEEDS)
+    {
+        // XX code duplication
+        you.game_seed = rng::get_uint64();
+        dprf("Upgrading from ancient unseeded game.");
+        crawl_state.seed = you.game_seed;
+        you.fully_seeded = false;
+        you.deterministic_levelgen = false; // TAG_MINOR_INCREMENTAL_PREGEN fixup
+    }
+    else
     {
 #endif
     count = unmarshallUByte(th);
@@ -3835,6 +3961,7 @@ static void _tag_read_you(reader &th)
         dprf("Upgrading from unseeded game.");
         crawl_state.seed = you.game_seed;
         you.fully_seeded = false;
+        you.deterministic_levelgen = false; // TAG_MINOR_INCREMENTAL_PREGEN fixup
         for (int i = 1; i < count; i++)
             unmarshallInt(th);
     }
@@ -3883,12 +4010,18 @@ static void _tag_read_you(reader &th)
     you.props.clear();
     you.props.read(th);
 #if TAG_MAJOR_VERSION == 34
+    if (!you.props.exists(TIME_PER_LEVEL_KEY) && you.elapsed_time > 0)
+    {
+        CrawlHashTable &time_tracking = you.props[TIME_PER_LEVEL_KEY].get_table();
+        time_tracking["upgrade"] = -1;
+    }
+
     if (th.getMinorVersion() < TAG_MINOR_STICKY_FLAME)
     {
         if (you.props.exists("napalmer"))
-            you.props["sticky_flame_source"] = you.props["napalmer"];
+            you.props[STICKY_FLAMER_KEY] = you.props["napalmer"];
         if (you.props.exists("napalm_aux"))
-            you.props["sticky_flame_aux"] = you.props["napalm_aux"];
+            you.props[STICKY_FLAME_AUX_KEY] = you.props["napalm_aux"];
     }
 
     if (you.duration[DUR_EXCRUCIATING_WOUNDS] && !you.props.exists(ORIGINAL_BRAND_KEY))
@@ -3915,8 +4048,82 @@ static void _tag_read_you(reader &th)
         if (you.props[HEPLIAKLQANA_ALLY_GENDER_KEY].get_int() == GENDER_NEUTER)
             you.props[HEPLIAKLQANA_ALLY_GENDER_KEY] = GENDER_NEUTRAL;
     }
+
+    if (th.getMinorVersion() < TAG_MINOR_SHAFT_CARD
+            && you.props.exists(NEMELEX_STACK_KEY))
+    {
+        auto oldstack = you.props[NEMELEX_STACK_KEY].get_vector();
+        you.props[NEMELEX_STACK_KEY].get_vector().clear();
+        for (auto c : oldstack)
+        {
+            card_type card = static_cast<card_type>(c.get_int());
+            if (card != CARD_SHAFT_REMOVED)
+                you.props[NEMELEX_STACK_KEY].get_vector().push_back(card);
+        }
+    }
+
+    // Appendage changed to meld, so let's untransform players who were using
+    // the old one
+    if (th.getMinorVersion() < TAG_MINOR_APPENDAGE
+        && you.form == transformation::appendage)
+    {
+        you.form = transformation::none;
+        you.duration[DUR_TRANSFORMATION] = 0;
+        const mutation_type app = static_cast<mutation_type>(you.attribute[ATTR_UNUSED3]);
+        const int levels = you.get_base_mutation_level(app);
+        const int beast_levels = app == MUT_HORNS ? 2 : 3;
+        // Preserve extra mutation levels acquired after transforming.
+        const int extra = max(0, levels - you.get_innate_mutation_level(app)
+                                        - beast_levels);
+        you.mutation[app] = you.get_innate_mutation_level(app) + extra;
+        you.attribute[ATTR_UNUSED3] = 0;
+    }
+
+    if (you.props.exists(WU_JIAN_HEAVENLY_STORM_KEY) && !you.duration[DUR_HEAVENLY_STORM])
+    {
+        mprf(MSGCH_ERROR, "Fixing up incorrect heavenly storm key");
+        wu_jian_end_heavenly_storm();
+    }
+
+    if (you.props.exists("tornado_since"))
+    {
+        you.props[POLAR_VORTEX_KEY] = you.props["tornado_since"].get_int();
+        you.props.erase("tornado_since");
+    }
+
+    if (th.getMinorVersion() < TAG_MINOR_VORTEX_POWER
+        && you.duration[DUR_VORTEX])
+    {
+        // trying to calculate power here is scary and won't work well.
+        // instead, just give em a high power vortex. let em have fun.
+        // it's one vortex. how much could it cost, mennas? 20 sultanas?
+        you.props[VORTEX_POWER_KEY] = 150;
+    }
+
+    initialise_item_sets();
 #endif
 }
+
+#if TAG_MAJOR_VERSION == 34
+/// _cleanup_book_ids handles unmarshalling of old ID data for books.
+static void _cleanup_book_ids(reader &th, int n_subtypes)
+{
+    if (th.getMinorVersion() >= TAG_MINOR_BOOK_UNID
+        || th.getMinorVersion() < TAG_MINOR_BOOK_ID)
+    {
+        return;
+    }
+
+    const bool ubyte = th.getMinorVersion() < TAG_MINOR_ID_STATES;
+    for (int j = 0; j < n_subtypes; ++j)
+    {
+        if (ubyte)
+            unmarshallUByte(th);
+        else
+            unmarshallBoolean(th);
+    }
+}
+#endif
 
 static void _tag_read_you_items(reader &th)
 {
@@ -3972,7 +4179,6 @@ static void _tag_read_you_items(reader &th)
             {
                 you.equip[i] = -1;
                 you.melded.set(i, false);
-                // XXX: need to update ash bondage, or is this too early?
                 continue;
             }
             // likewise the boots of the Assassin before it became a hat
@@ -4031,19 +4237,19 @@ static void _tag_read_you_items(reader &th)
     for (int i = 0; i < iclasses; ++i)
     {
         if (!item_type_has_ids((object_class_type)i))
+        {
+        #if TAG_MAJOR_VERSION == 34
+            if (i == OBJ_BOOKS)
+                _cleanup_book_ids(th, count2);
+        #endif
             continue;
+        }
         for (int j = 0; j < count2; ++j)
         {
 #if TAG_MAJOR_VERSION == 34
             if (th.getMinorVersion() < TAG_MINOR_ID_STATES)
             {
-                uint8_t x;
-
-                if (th.getMinorVersion() < TAG_MINOR_BOOK_ID && i == OBJ_BOOKS)
-                    x = ID_UNKNOWN_TYPE;
-                else
-                    x = unmarshallUByte(th);
-
+                const uint8_t x = unmarshallUByte(th);
                 ASSERT(x < NUM_ID_STATE_TYPES);
                 if (x > ID_UNKNOWN_TYPE)
                     you.type_ids[i][j] = true;
@@ -4126,14 +4332,23 @@ static void _tag_read_you_items(reader &th)
     for (int i = 0; i < iclasses; i++)
         for (int j = 0; j < count2; j++)
             you.force_autopickup[i][j] = unmarshallInt(th);
+
+    // preconditions: need to have read items, and you (incl props).
+    you.quiver_action.load(QUIVER_MAIN_SAVE_KEY);
 #if TAG_MAJOR_VERSION == 34
+    if (th.getMinorVersion() < TAG_MINOR_MOSTLY_REMOVE_AMMO)
+    {
+        quiver::action_cycler ac;
+        ac.load(QUIVER_LAUNCHER_SAVE_KEY);
+    }
+
     if (th.getMinorVersion() < TAG_MINOR_FOOD_AUTOPICKUP)
     {
         const int oldstate = you.force_autopickup[OBJ_FOOD][NUM_FOODS];
         you.force_autopickup[OBJ_FOOD][FOOD_RATION] = oldstate;
 
         you.force_autopickup[OBJ_BOOKS][BOOK_MANUAL] =
-            you.force_autopickup[OBJ_BOOKS][NUM_BOOKS];
+            you.force_autopickup[OBJ_BOOKS][0];
     }
     if (th.getMinorVersion() < TAG_MINOR_FOOD_PURGE_AP_FIX)
     {
@@ -4173,8 +4388,33 @@ static void _tag_read_you_items(reader &th)
         reset_training();
 
     // Move any books from inventory into the player's library.
-    if (th.getMinorVersion() < TAG_MINOR_GOLDIFY_BOOKS)
+    // (Likewise for manuals.)
+    if (th.getMinorVersion() < TAG_MINOR_GOLDIFY_MANUALS)
         add_held_books_to_library();
+
+    for (int i = 0; i < ENDOFPACK; ++i)
+        if (you.inv[i].defined())
+            god_id_item(you.inv[i], true);
+
+    if (you.duration[DUR_EXCRUCIATING_WOUNDS])
+    {
+        ASSERT(you.props.exists(ORIGINAL_BRAND_KEY));
+        item_def *weapon = you.weapon();
+        ASSERT(weapon);
+        set_item_ego_type(*weapon, OBJ_WEAPONS, you.props[ORIGINAL_BRAND_KEY]);
+        you.props.erase(ORIGINAL_BRAND_KEY);
+        you.duration[DUR_EXCRUCIATING_WOUNDS] = 0;
+        if (get_weapon_brand(*weapon) == SPWPN_ANTIMAGIC)
+            calc_mp();
+        // In principle, we should check to see if the weapon was originally
+        // holy AND if you're in lich form, and unwield the weapon if so.
+        // However, this is a corner case that involves a lot of scary side
+        // effects while loading. Let it slide.
+    }
+
+    // See notes on TAG_MINOR_METEORAN_ENUM.
+    if (final_species_cleanup != NUM_SPECIES)
+        change_species_to(final_species_cleanup);
 #endif
 }
 
@@ -4299,7 +4539,7 @@ static void _tag_read_you_dungeon(reader &th)
     {
         const bool created = unmarshallBoolean(th);
 
-        if (j < NUM_MONSTERS)
+        if (j < NUM_MONSTERS && created)
             you.unique_creatures.set(j, created);
     }
 
@@ -4321,6 +4561,13 @@ static void _tag_read_you_dungeon(reader &th)
 #endif
         brentry[j]    = unmarshall_level_id(th);
 #if TAG_MAJOR_VERSION == 34
+        // Have to check this in case of old saves with 6-floor Depths.
+        if (th.getMinorVersion() < TAG_MINOR_ZOT_ENTRY_FIXUP
+            && j == BRANCH_ZOT
+            && brentry[j] == level_id(BRANCH_DEPTHS, 5))
+        {
+            brentry[j].depth = branches[j].mindepth;
+        }
         if (th.getMinorVersion() < TAG_MINOR_BRIBE_BRANCH)
             branch_bribe[j] = 0;
         else
@@ -4338,8 +4585,8 @@ static void _tag_read_you_dungeon(reader &th)
 #if TAG_MAJOR_VERSION == 34
     // Deepen the Abyss; this is okay since new abyssal stairs will be
     // generated as the place shifts.
-    if (crawl_state.game_is_normal() && th.getMinorVersion() <= TAG_MINOR_ORIG_MONNUM)
-        brdepth[BRANCH_ABYSS] = 5;
+    if (crawl_state.game_is_normal() && th.getMinorVersion() <= TAG_MINOR_ABYSS_SEVEN)
+        brdepth[BRANCH_ABYSS] = 7;
 #endif
 
     ASSERT(you.depth <= brdepth[you.where_are_you]);
@@ -4535,7 +4782,7 @@ static void _tag_construct_level(writer &th)
     for (int count_x = 0; count_x < GXM; count_x++)
         for (int count_y = 0; count_y < GYM; count_y++)
         {
-            marshallByte(th, grd[count_x][count_y]);
+            marshallByte(th, env.grid[count_x][count_y]);
             marshallMapCell(th, env.map_knowledge[count_x][count_y]);
             marshallInt(th, env.pgrid[count_x][count_y].flags);
         }
@@ -4580,8 +4827,6 @@ static void _tag_construct_level(writer &th)
     marshallCoord(th, env.sanctuary_pos);
     marshallByte(th, env.sanctuary_time);
 
-    marshallInt(th, env.spawn_random_rate);
-
     env.markers.write(th);
     env.properties.write(th);
 
@@ -4612,12 +4857,15 @@ void marshallItem(writer &th, const item_def &item, bool iinfo)
         return;
 
 #if TAG_MAJOR_VERSION == 34
-    if (!item.is_valid(iinfo))
+    if (!item.is_valid(iinfo, true))
     {
         string name;
         item_def dummy = item;
         if (!item.quantity)
-            name = "(quantity: 0) ", dummy.quantity = 1;
+        {
+            name = "(quantity: 0) ";
+            dummy.quantity = 1;
+        }
         name += dummy.name(DESC_PLAIN, true);
         die("Invalid item: %s", name.c_str());
     }
@@ -4637,7 +4885,7 @@ void marshallItem(writer &th, const item_def &item, bool iinfo)
 
     marshallShort(th, item.link);
     if (item.pos.x >= 0 && item.pos.y >= 0)
-        marshallShort(th, igrd(item.pos));  //  unused
+        marshallShort(th, env.igrid(item.pos));  //  unused
     else
         marshallShort(th, -1); // unused
 
@@ -4733,7 +4981,7 @@ void unmarshallItem(reader &th, item_def &item)
         item.link = ITEM_IN_SHOP;
 #endif
 
-    unmarshallShort(th);  // igrd[item.x][item.y] -- unused
+    unmarshallShort(th);  // env.igrid[item.x][item.y] -- unused
 
     item.slot        = unmarshallByte(th);
 
@@ -4833,7 +5081,7 @@ void unmarshallItem(reader &th, item_def &item)
                 item.sub_type = POT_MUTATION;
                 break;
             case POT_DUMMY_AGILITY:
-                item.sub_type = POT_STABBING;
+                item.sub_type = POT_ATTRACTION;
                 break;
             default:
                 break;
@@ -4917,23 +5165,26 @@ void unmarshallItem(reader &th, item_def &item)
     // Negative MR was only supposed to exist for Folly, but paranoia.
     if (th.getMinorVersion() < TAG_MINOR_MR_ITEM_RESCALE
         && is_artefact(item)
-        && artefact_property(item, ARTP_MAGIC_RESISTANCE))
+        && item.base_type != OBJ_BOOKS
+        && artefact_property(item, ARTP_WILLPOWER))
     {
-        int prop_mr = artefact_property(item, ARTP_MAGIC_RESISTANCE);
+        int prop_mr = artefact_property(item, ARTP_WILLPOWER);
         if (prop_mr > 99)
-            artefact_set_property(item, ARTP_MAGIC_RESISTANCE, 3);
+            artefact_set_property(item, ARTP_WILLPOWER, 3);
         else if (prop_mr > 79)
-            artefact_set_property(item, ARTP_MAGIC_RESISTANCE, 2);
+            artefact_set_property(item, ARTP_WILLPOWER, 2);
         else if (prop_mr < -40)
-            artefact_set_property(item, ARTP_MAGIC_RESISTANCE, -2);
+            artefact_set_property(item, ARTP_WILLPOWER, -2);
         else if (prop_mr < 0)
-            artefact_set_property(item, ARTP_MAGIC_RESISTANCE, -1);
+            artefact_set_property(item, ARTP_WILLPOWER, -1);
         else
-            artefact_set_property(item, ARTP_MAGIC_RESISTANCE, 1);
+            artefact_set_property(item, ARTP_WILLPOWER, 1);
     }
 
     // Rescale stealth (range 10..79 and -10..-98) to discrete steps (+-50/100)
-    if (th.getMinorVersion() < TAG_MINOR_STEALTH_RESCALE && is_artefact(item))
+    if (th.getMinorVersion() < TAG_MINOR_STEALTH_RESCALE
+        && is_artefact(item)
+        && item.base_type != OBJ_BOOKS)
     {
         if (artefact_property(item, ARTP_STEALTH))
         {
@@ -4956,13 +5207,9 @@ void unmarshallItem(reader &th, item_def &item)
         }
 
         // Make sure no weird fake-rap combinations are produced by the upgrade
-        // from rings of sustenance/hunger with {Stlth} to stealth/attention
-        if (item.base_type == OBJ_JEWELLERY
-            && (item.sub_type == RING_STEALTH
-                || item.sub_type == RING_ATTENTION))
-        {
+        // from rings of sustenance with {Stlth} to stealth
+        if (item.base_type == OBJ_JEWELLERY && item.sub_type == RING_STEALTH)
             artefact_set_property(item, ARTP_STEALTH, 0);
-        }
     }
 
     if (th.getMinorVersion() < TAG_MINOR_NO_POT_FOOD)
@@ -5142,8 +5389,17 @@ void unmarshallItem(reader &th, item_def &item)
         item.quantity = 1;
     }
 
+    if (th.getMinorVersion() < TAG_MINOR_REALLY_UNSTACK_EVOKERS
+        && item.base_type == OBJ_MISCELLANY
+        && (item.sub_type == MISC_PHANTOM_MIRROR
+            || item.sub_type == MISC_BOX_OF_BEASTS) )
+    {
+        item.quantity = 1;
+    }
+
     if (th.getMinorVersion() < TAG_MINOR_NO_NEGATIVE_VULN
         && is_artefact(item)
+        && item.base_type != OBJ_BOOKS
         && artefact_property(item, ARTP_NEGATIVE_ENERGY))
     {
         if (artefact_property(item, ARTP_NEGATIVE_ENERGY) < 0)
@@ -5152,6 +5408,7 @@ void unmarshallItem(reader &th, item_def &item)
 
     if (th.getMinorVersion() < TAG_MINOR_NO_RPOIS_MINUS
         && is_artefact(item)
+        && item.base_type != OBJ_BOOKS
         && artefact_property(item, ARTP_POISON))
     {
         if (artefact_property(item, ARTP_POISON) < 0)
@@ -5160,6 +5417,7 @@ void unmarshallItem(reader &th, item_def &item)
 
     if (th.getMinorVersion() < TAG_MINOR_TELEPORTITIS
         && is_artefact(item)
+        && item.base_type != OBJ_BOOKS
         && artefact_property(item, ARTP_CAUSE_TELEPORTATION) > 1)
     {
         artefact_set_property(item, ARTP_CAUSE_TELEPORTATION, 1);
@@ -5167,6 +5425,7 @@ void unmarshallItem(reader &th, item_def &item)
 
     if (th.getMinorVersion() < TAG_MINOR_NO_TWISTER
         && is_artefact(item)
+        && item.base_type != OBJ_BOOKS
         && artefact_property(item, ARTP_TWISTER))
     {
         artefact_set_property(item, ARTP_TWISTER, 0);
@@ -5177,8 +5436,9 @@ void unmarshallItem(reader &th, item_def &item)
     if (item.base_type == OBJ_WANDS && item.charges < 0)
         item.charges = 0;
 
-    if (item.base_type == OBJ_RODS && item.cursed())
-        do_uncurse_item(item); // rods can't be cursed anymore
+    // Prevent weird states for saves between UNCURSE and NEW_ASHENZARI
+    if (th.getMinorVersion() < TAG_MINOR_NEW_ASHENZARI && item.cursed())
+        item.flags &= (~ISFLAG_CURSED);
 
     // turn old hides into the corresponding armour
     static const map<int, armour_type> hide_to_armour = {
@@ -5221,7 +5481,7 @@ void unmarshallItem(reader &th, item_def &item)
     }
     if (item.is_type(OBJ_FOOD, FOOD_RATION) && item.pos == ITEM_IN_INVENTORY)
     {
-        item.props["item_tile_name"] = "food_ration_inventory";
+        item.props[ITEM_TILE_NAME_KEY] = "food_ration_inventory";
         bind_item_tile(item);
     }
 
@@ -5261,10 +5521,20 @@ void unmarshallItem(reader &th, item_def &item)
         }
     }
 
+    if (th.getMinorVersion() < TAG_MINOR_BARDING_MERGE)
+    {
+        if (item.is_type(OBJ_ARMOUR, ARM_CENTAUR_BARDING))
+            item.sub_type = ARM_BARDING;
+    }
 #endif
 
     if (is_unrandom_artefact(item))
         setup_unrandart(item, false);
+
+#if TAG_MAJOR_VERSION == 34
+    if (item.is_type(OBJ_WEAPONS, WPN_FUSTIBALUS))
+        item.sub_type = WPN_HAND_CROSSBOW;
+#endif
 
     bind_item_tile(item);
 }
@@ -5444,14 +5714,13 @@ static void _tag_construct_level_items(writer &th)
         marshallByte(th, trap.type);
         marshallCoord(th, trap.pos);
         marshallShort(th, trap.ammo_qty);
-        marshallUByte(th, trap.skill_rnd);
     }
 
     // how many items?
-    const int ni = _last_used_index(mitm, MAX_ITEMS);
+    const int ni = _last_used_index(env.item, MAX_ITEMS);
     marshallShort(th, ni);
     for (int i = 0; i < ni; ++i)
-        marshallItem(th, mitm[i]);
+        marshallItem(th, env.item[i]);
 }
 
 static void marshall_mon_enchant(writer &th, const mon_enchant &me)
@@ -5670,6 +5939,14 @@ void _unmarshallMonsterInfo(reader &th, monster_info& mi)
 #endif
         mi._colour = unmarshallInt(th);
     unmarshallUnsigned(th, mi.attitude);
+#if TAG_MAJOR_VERSION == 34
+    if (th.getMinorVersion() < TAG_MINOR_CUT_STRICT_NEUTRAL
+        && mi.attitude == ATT_OLD_STRICT_NEUTRAL)
+    {
+        mi.attitude = ATT_GOOD_NEUTRAL;
+    }
+#endif
+
     unmarshallUnsigned(th, mi.threat);
     unmarshallUnsigned(th, mi.dam);
     unmarshallUnsigned(th, mi.fire_blocker);
@@ -5726,7 +6003,7 @@ void _unmarshallMonsterInfo(reader &th, monster_info& mi)
     }
 #endif
 
-    mi.mr = mons_class_res_magic(mi.type, mi.base_type);
+    mi.mr = mons_class_willpower(mi.type, mi.base_type);
     mi.can_see_invis = mons_class_sees_invis(mi.type, mi.base_type);
 
     mi.mresists = unmarshallInt(th);
@@ -5791,21 +6068,21 @@ void _unmarshallMonsterInfo(reader &th, monster_info& mi)
             break;
         case LIGHTBLUE:    // blood saint, shock serpent
             if (mi.base_type != MONS_NO_MONSTER)
-                mi.type = MONS_BLOOD_SAINT;
+                mi.type = MONS_DEMONSPAWN_BLOOD_SAINT;
             else
                 mi.type = MONS_SHOCK_SERPENT;
             break;
         case LIGHTCYAN:    // warmonger, drowned soul
             if (mi.base_type != MONS_NO_MONSTER)
-                mi.type = MONS_WARMONGER;
+                mi.type = MONS_DEMONSPAWN_WARMONGER;
             else
                 mi.type = MONS_DROWNED_SOUL;
             break;
         case LIGHTGREEN:   // corrupter
-            mi.type = MONS_CORRUPTER;
+            mi.type = MONS_DEMONSPAWN_CORRUPTER;
             break;
         case LIGHTMAGENTA: // black sun
-            mi.type = MONS_BLACK_SUN;
+            mi.type = MONS_DEMONSPAWN_BLACK_SUN;
             break;
         case CYAN:         // worldbinder
             mi.type = MONS_WORLDBINDER;
@@ -5825,12 +6102,6 @@ void _unmarshallMonsterInfo(reader &th, monster_info& mi)
         default:
             die("Unexpected monster with type %d and colour %d",
                 mi.type, mi.colour(true));
-        }
-        if (mons_is_demonspawn(mi.type)
-            && mons_species(mi.type) == MONS_DEMONSPAWN
-            && mi.type != MONS_DEMONSPAWN)
-        {
-            ASSERT(mi.base_type != MONS_NO_MONSTER);
         }
     }
 
@@ -5940,12 +6211,12 @@ static void _tag_construct_level_monsters(writer &th)
         marshallMonType(th, env.mons_alloc[i]);
 
     // how many monsters?
-    nm = _last_used_index(menv, MAX_MONSTERS);
+    nm = _last_used_index(env.mons, MAX_MONSTERS);
     marshallShort(th, nm);
 
     for (int i = 0; i < nm; i++)
     {
-        monster& m(menv[i]);
+        monster& m(env.mons[i]);
 
 #if defined(DEBUG) || defined(DEBUG_MONS_SCAN)
         if (m.type != MONS_NO_MONSTER)
@@ -5976,8 +6247,8 @@ void _tag_construct_level_tiles(writer &th)
     // how many Y?
     marshallShort(th, GYM);
 
-    marshallShort(th, env.tile_names.size());
-    for (const string &name : env.tile_names)
+    marshallShort(th, tile_env.names.size());
+    for (const string &name : tile_env.names)
     {
         marshallString(th, name);
 #ifdef DEBUG_TILE_NAMES
@@ -5986,24 +6257,24 @@ void _tag_construct_level_tiles(writer &th)
     }
 
     // flavour
-    marshallShort(th, env.tile_default.wall_idx);
-    marshallShort(th, env.tile_default.floor_idx);
+    marshallShort(th, tile_env.default_flavour.wall_idx);
+    marshallShort(th, tile_env.default_flavour.floor_idx);
 
-    marshallShort(th, env.tile_default.wall);
-    marshallShort(th, env.tile_default.floor);
-    marshallShort(th, env.tile_default.special);
+    marshallShort(th, tile_env.default_flavour.wall);
+    marshallShort(th, tile_env.default_flavour.floor);
+    marshallShort(th, tile_env.default_flavour.special);
 
     for (int count_x = 0; count_x < GXM; count_x++)
         for (int count_y = 0; count_y < GYM; count_y++)
         {
-            marshallShort(th, env.tile_flv[count_x][count_y].wall_idx);
-            marshallShort(th, env.tile_flv[count_x][count_y].floor_idx);
-            marshallShort(th, env.tile_flv[count_x][count_y].feat_idx);
+            marshallShort(th, tile_env.flv[count_x][count_y].wall_idx);
+            marshallShort(th, tile_env.flv[count_x][count_y].floor_idx);
+            marshallShort(th, tile_env.flv[count_x][count_y].feat_idx);
 
-            marshallShort(th, env.tile_flv[count_x][count_y].wall);
-            marshallShort(th, env.tile_flv[count_x][count_y].floor);
-            marshallShort(th, env.tile_flv[count_x][count_y].feat);
-            marshallShort(th, env.tile_flv[count_x][count_y].special);
+            marshallShort(th, tile_env.flv[count_x][count_y].wall);
+            marshallShort(th, tile_env.flv[count_x][count_y].floor);
+            marshallShort(th, tile_env.flv[count_x][count_y].feat);
+            marshallShort(th, tile_env.flv[count_x][count_y].special);
         }
 
     marshallInt(th, TILE_WALL_MAX);
@@ -6043,12 +6314,12 @@ static void _tag_read_level(reader &th)
         for (int j = 0; j < gy; j++)
         {
             dungeon_feature_type feat = unmarshallFeatureType(th);
-            grd[i][j] = feat;
+            env.grid[i][j] = feat;
             ASSERT(feat < NUM_FEATURES);
 
 #if TAG_MAJOR_VERSION == 34
             // Save these for potential destination clean up.
-            if (grd[i][j] == DNGN_TRANSPORTER)
+            if (env.grid[i][j] == DNGN_TRANSPORTER)
                 transporters.push_back(coord_def(i, j));
 #endif
             unmarshallMapCell(th, env.map_knowledge[i][j]);
@@ -6063,7 +6334,7 @@ static void _tag_read_level(reader &th)
                 env.map_seen.set(i, j);
             env.pgrid[i][j].flags = unmarshallInt(th);
 
-            mgrd[i][j] = NON_MONSTER;
+            env.mgrid[i][j] = NON_MONSTER;
         }
 
 #if TAG_MAJOR_VERSION == 34
@@ -6148,7 +6419,10 @@ static void _tag_read_level(reader &th)
     env.sanctuary_pos  = unmarshallCoord(th);
     env.sanctuary_time = unmarshallByte(th);
 
-    env.spawn_random_rate = unmarshallInt(th);
+#if TAG_MAJOR_VERSION == 34
+    if (th.getMinorVersion() < TAG_MINOR_SPAWN_RATE)
+        unmarshallInt(th); // was env.spawn_random_rate
+#endif
 
     env.markers.read(th);
 #if TAG_MAJOR_VERSION == 34
@@ -6156,12 +6430,12 @@ static void _tag_read_level(reader &th)
     {
         for (auto& tr : transporters)
         {
-            if (grd(tr) != DNGN_TRANSPORTER)
+            if (env.grid(tr) != DNGN_TRANSPORTER)
                 continue;
 
             const coord_def dest = get_transporter_dest(tr);
             if (dest != INVALID_COORD)
-                grd(dest) = DNGN_TRANSPORTER_LANDING;
+                env.grid(dest) = DNGN_TRANSPORTER_LANDING;
         }
     }
     if (th.getMinorVersion() < TAG_MINOR_VETO_DISINT)
@@ -6173,6 +6447,22 @@ static void _tag_read_level(reader &th)
                 map_wiz_props_marker *marker =
                     new map_wiz_props_marker(mark->pos);
                 marker->set_property("veto_dig", "veto");
+                env.markers.add(marker);
+            }
+        }
+    }
+    if (th.getMinorVersion() < TAG_MINOR_MERGE_VETOES)
+    {
+        for (map_marker *mark : env.markers.get_all(MAT_ANY))
+        {
+            if (mark->property("veto_dig") == "veto"
+                || mark->property("veto_fire") == "veto"
+                || mark->property("veto_shatter") == "veto"
+                || mark->property("veto_tornado") == "veto")
+            {
+                map_wiz_props_marker *marker =
+                    new map_wiz_props_marker(mark->pos);
+                marker->set_property("veto_destroy", "veto");
                 env.markers.add(marker);
             }
         }
@@ -6202,6 +6492,28 @@ static void _tag_read_level(reader &th)
             }
         }
     }
+    if (th.getMinorVersion() < TAG_MINOR_BOX_OF_BEASTS_CHARGES)
+    {
+        // this is a fairly approximate fixup for obscure cases where new
+        // random types were added and broke handling of draconian zig levels;
+        // requires a save where the game crashed during levelgen on such a
+        // zig level.
+        CrawlHashTable &props = env.properties;
+        CrawlVector &type_vec = props[VAULT_MON_TYPES_KEY].get_vector();
+        for (size_t i = 0; i < type_vec.size(); i++)
+        {
+            monster_type type = static_cast<monster_type>(type_vec[i].get_int());
+            if (type == RANDOM_MOBILE_MONSTER || type == RANDOM_COMPATIBLE_MONSTER)
+                type_vec[i] = RANDOM_DRACONIAN;
+        }
+        // ensure that these exist to satisfy some ASSERTs
+        props[VAULT_MON_BASES_KEY].get_vector();
+        props[VAULT_MON_WEIGHTS_KEY].get_vector();
+        props[VAULT_MON_BANDS_KEY].get_vector();
+        props[VAULT_MON_PLACES_KEY].get_vector();
+
+    }
+
 #endif
 
     env.dactions_done = unmarshallInt(th);
@@ -6253,6 +6565,21 @@ static spell_type _fixup_soh_breath(monster_type mtyp)
             return SPELL_SERPENT_OF_HELL_TAR_BREATH;
     }
 }
+
+static bool _need_poly_refresh(const monster &mon)
+{
+    if (!mon.props.exists(POLY_SET_KEY))
+        return true;
+    const CrawlVector &set = mon.props[POLY_SET_KEY].get_vector();
+    for (int poly_mon : set)
+    {
+        const monster_type mc = (monster_type)poly_mon;
+        // removed monster
+        if (mc == MONS_PROGRAM_BUG || mons_species(mc) == MONS_PROGRAM_BUG)
+            return true;
+    }
+    return false;
+}
 #endif
 
 static void _tag_read_level_items(reader &th)
@@ -6277,15 +6604,14 @@ static void _tag_read_level_items(reader &th)
         if (th.getMinorVersion() == TAG_MINOR_0_11 && trap.type >= TRAP_TELEPORT)
             trap.type = (trap_type)(trap.type - 1);
         if (th.getMinorVersion() < TAG_MINOR_REVEAL_TRAPS)
-            grd(trap.pos) = trap.feature();
-        if (th.getMinorVersion() < TAG_MINOR_TRAPS_DETERM
-            || th.getMinorVersion() == TAG_MINOR_0_11)
+            env.grid(trap.pos) = trap.feature();
+        if (th.getMinorVersion() >= TAG_MINOR_TRAPS_DETERM
+            && th.getMinorVersion() != TAG_MINOR_0_11
+            && th.getMinorVersion() < TAG_MINOR_REVEALED_TRAPS)
         {
-            trap.skill_rnd = random2(256);
+            unmarshallUByte(th);
         }
-        else
 #endif
-        trap.skill_rnd = unmarshallUByte(th);
         env.trap[trap.pos] = trap;
     }
 
@@ -6296,8 +6622,8 @@ static void _tag_read_level_items(reader &th)
         for (int j = 0; j < GYM; j++)
         {
             coord_def pos(i, j);
-            if (feat_is_trap(grd(pos)) && !map_find(env.trap, pos))
-                grd(pos) = DNGN_FLOOR;
+            if (feat_is_trap(env.grid(pos)) && !map_find(env.trap, pos))
+                env.grid(pos) = DNGN_FLOOR;
         }
 
 #endif
@@ -6306,20 +6632,20 @@ static void _tag_read_level_items(reader &th)
     const int item_count = unmarshallShort(th);
     ASSERT_RANGE(item_count, 0, MAX_ITEMS + 1);
     for (int i = 0; i < item_count; ++i)
-        unmarshallItem(th, mitm[i]);
+        unmarshallItem(th, env.item[i]);
     for (int i = item_count; i < MAX_ITEMS; ++i)
-        mitm[i].clear();
+        env.item[i].clear();
 
 #ifdef DEBUG_ITEM_SCAN
     // There's no way to fix this, even with wizard commands, so get
     // rid of it when restoring the game.
     for (int i = 0; i < item_count; ++i)
     {
-        if (mitm[i].defined() && mitm[i].pos.origin())
+        if (env.item[i].defined() && env.item[i].pos.origin())
         {
-            debug_dump_item(mitm[i].name(DESC_PLAIN).c_str(), i, mitm[i],
+            debug_dump_item(env.item[i].name(DESC_PLAIN).c_str(), i, env.item[i],
                                         "Fixing up unlinked temporary item:");
-            mitm[i].clear();
+            env.item[i].clear();
         }
     }
 #endif
@@ -6452,7 +6778,7 @@ void unmarshallMonster(reader &th, monster& m)
         if (th.getMinorVersion() < TAG_MINOR_MORE_GHOST_MAGIC)
             slot.spell = _fixup_positional_monster_spell(slot.spell);
 
-        if (mons_is_zombified(m) && !mons_enslaved_soul(m)
+        if (mons_is_zombified(m) && !mons_bound_soul(m)
             && slot.spell != SPELL_CREATE_TENTACLES)
         {
             // zombies shouldn't have (most) spells
@@ -6462,7 +6788,7 @@ void unmarshallMonster(reader &th, monster& m)
             // Replace Draconian Breath with the colour-specific spell,
             // and remove Azrael's bad breath while we're at it.
             if (mons_genus(m.type) == MONS_DRACONIAN)
-                m.spells.push_back(drac_breath(draco_or_demonspawn_subspecies(m)));
+                m.spells.push_back(drac_breath(draconian_subspecies(m)));
         }
         // Give Mnoleg back malign gateway in place of tentacles.
         else if (slot.spell == SPELL_CREATE_TENTACLES
@@ -6501,6 +6827,13 @@ void unmarshallMonster(reader &th, monster& m)
 
     m.god      = static_cast<god_type>(unmarshallByte(th));
     m.attitude = static_cast<mon_attitude_type>(unmarshallByte(th));
+#if TAG_MAJOR_VERSION == 34
+    if (th.getMinorVersion() < TAG_MINOR_CUT_STRICT_NEUTRAL
+        && m.attitude == ATT_OLD_STRICT_NEUTRAL)
+    {
+        m.attitude = ATT_GOOD_NEUTRAL;
+    }
+#endif
     m.foe      = unmarshallShort(th);
 #if TAG_MAJOR_VERSION == 34
     // In 0.16 alpha we briefly allowed YOU_FAULTLESS as a monster's foe.
@@ -6619,21 +6952,21 @@ void unmarshallMonster(reader &th, monster& m)
             break;
         case LIGHTBLUE:    // blood saint, shock serpent
             if (m.base_monster != MONS_NO_MONSTER)
-                m.type = MONS_BLOOD_SAINT;
+                m.type = MONS_DEMONSPAWN_BLOOD_SAINT;
             else
                 m.type = MONS_SHOCK_SERPENT;
             break;
         case LIGHTCYAN:    // warmonger, drowned soul
             if (m.base_monster != MONS_NO_MONSTER)
-                m.type = MONS_WARMONGER;
+                m.type = MONS_DEMONSPAWN_WARMONGER;
             else
                 m.type = MONS_DROWNED_SOUL;
             break;
         case LIGHTGREEN:   // corrupter
-            m.type = MONS_CORRUPTER;
+            m.type = MONS_DEMONSPAWN_CORRUPTER;
             break;
         case LIGHTMAGENTA: // black sun
-            m.type = MONS_BLACK_SUN;
+            m.type = MONS_DEMONSPAWN_BLACK_SUN;
             break;
         case CYAN:         // worldbinder
             m.type = MONS_WORLDBINDER;
@@ -6667,12 +7000,6 @@ void unmarshallMonster(reader &th, monster& m)
             die("Unexpected monster with type %d and colour %d",
                 m.type, m.colour);
         }
-        if (mons_is_demonspawn(m.type)
-            && mons_species(m.type) == MONS_DEMONSPAWN
-            && m.type != MONS_DEMONSPAWN)
-        {
-            ASSERT(m.base_monster != MONS_NO_MONSTER);
-        }
     }
     else if (th.getMinorVersion() < TAG_MINOR_EXORCISE
         && th.getMinorVersion() >= TAG_MINOR_RANDLICHES
@@ -6698,20 +7025,20 @@ void unmarshallMonster(reader &th, monster& m)
     m.props.clear();
     m.props.read(th);
 
-    if (m.props.exists("monster_tile_name"))
+    if (m.props.exists(MONSTER_TILE_NAME_KEY))
     {
-        string tile = m.props["monster_tile_name"].get_string();
+        string tile = m.props[MONSTER_TILE_NAME_KEY].get_string();
         tileidx_t index;
         if (!tile_player_index(tile.c_str(), &index))
         {
             // If invalid tile name, complain and discard the props.
             dprf("bad tile name: \"%s\".", tile.c_str());
-            m.props.erase("monster_tile_name");
-            if (m.props.exists("monster_tile"))
-                m.props.erase("monster_tile");
+            m.props.erase(MONSTER_TILE_NAME_KEY);
+            if (m.props.exists(MONSTER_TILE_KEY))
+                m.props.erase(MONSTER_TILE_KEY);
         }
         else // Update monster tile.
-            m.props["monster_tile"] = short(index);
+            m.props[MONSTER_TILE_KEY] = short(index);
     }
 
 #if TAG_MAJOR_VERSION == 34
@@ -6739,7 +7066,7 @@ void unmarshallMonster(reader &th, monster& m)
 
     if (m.props.exists("siren_call"))
     {
-        m.props["merfolk_avatar_call"] = m.props["siren_call"].get_bool();
+        m.props[MERFOLK_AVATAR_CALL_KEY] = m.props["siren_call"].get_bool();
         m.props.erase("siren_call");
     }
 
@@ -6803,6 +7130,9 @@ void unmarshallMonster(reader &th, monster& m)
     {
         m.xp_tracking = XP_VAULT;
     }
+
+    if (th.getMinorVersion() < TAG_MINOR_SETPOLY || _need_poly_refresh(m))
+        init_poly_set(&m);
 #endif
 
     if (m.type != MONS_PROGRAM_BUG && mons_species(m.type) == MONS_PROGRAM_BUG)
@@ -6840,7 +7170,7 @@ static void _tag_read_level_monsters(reader &th)
 
     for (int i = 0; i < count; i++)
     {
-        monster& m = menv[i];
+        monster& m = env.mons[i];
         unmarshallMonster(th, m);
 
         // place monster
@@ -6905,16 +7235,16 @@ static void _tag_read_level_monsters(reader &th)
                  i, m.name(DESC_PLAIN, true).c_str(),
                  m.pos().x, m.pos().y);
         }
-        int midx = mgrd(m.pos());
+        int midx = env.mgrid(m.pos());
         if (midx != NON_MONSTER)
         {
             mprf(MSGCH_ERROR, "(%d, %d) for %s already occupied by %s",
                  m.pos().x, m.pos().y,
                  m.name(DESC_PLAIN, true).c_str(),
-                 menv[midx].name(DESC_PLAIN, true).c_str());
+                 env.mons[midx].name(DESC_PLAIN, true).c_str());
         }
 #endif
-        mgrd(m.pos()) = i;
+        env.mgrid(m.pos()) = i;
     }
 #if TAG_MAJOR_VERSION == 34
     // This relies on TAG_YOU (including lost monsters) being unmarshalled
@@ -6928,24 +7258,24 @@ static void _tag_read_level_monsters(reader &th)
     {
         for (monster_iterator mi; mi; ++mi)
         {
-            if (mi->props.exists("inwards"))
+            if (mi->props.exists(INWARDS_KEY))
             {
-                const int old_midx = mi->props["inwards"].get_int();
+                const int old_midx = mi->props[INWARDS_KEY].get_int();
                 if (invalid_monster_index(old_midx))
-                    mi->props["inwards"].get_int() = MID_NOBODY;
+                    mi->props[INWARDS_KEY].get_int() = MID_NOBODY;
                 else
-                    mi->props["inwards"].get_int() = menv[old_midx].mid;
+                    mi->props[INWARDS_KEY].get_int() = env.mons[old_midx].mid;
             }
-            if (mi->props.exists("outwards"))
+            if (mi->props.exists(OUTWARDS_KEY))
             {
-                const int old_midx = mi->props["outwards"].get_int();
+                const int old_midx = mi->props[OUTWARDS_KEY].get_int();
                 if (invalid_monster_index(old_midx))
-                    mi->props["outwards"].get_int() = MID_NOBODY;
+                    mi->props[OUTWARDS_KEY].get_int() = MID_NOBODY;
                 else
-                    mi->props["outwards"].get_int() = menv[old_midx].mid;
+                    mi->props[OUTWARDS_KEY].get_int() = env.mons[old_midx].mid;
             }
             if (mons_is_tentacle_or_tentacle_segment(mi->type))
-                mi->tentacle_connect = menv[mi->tentacle_connect].mid;
+                mi->tentacle_connect = env.mons[mi->tentacle_connect].mid;
         }
     }
 #endif
@@ -6960,13 +7290,13 @@ static void _debug_count_tiles()
     for (int i = 0; i < GXM; i++)
         for (int j = 0; j < GYM; j++)
         {
-            t = env.tile_bk_bg[i][j];
+            t = tile_env.bk_bg[i][j];
             if (!found.count(t))
                 cnt++, found[t] = true;
-            t = env.tile_bk_fg[i][j];
+            t = tile_env.bk_fg[i][j];
             if (!found.count(t))
                 cnt++, found[t] = true;
-            t = env.tile_bk_cloud[i][j];
+            t = tile_env.bk_cloud[i][j];
             if (!found.count(t))
                 cnt++, found[t] = true;
         }
@@ -6983,38 +7313,38 @@ void _tag_read_level_tiles(reader &th)
     // how many Y?
     const int gy = unmarshallShort(th);
 
-    env.tile_names.clear();
+    tile_env.names.clear();
     unsigned int num_tilenames = unmarshallShort(th);
     for (unsigned int i = 0; i < num_tilenames; ++i)
     {
 #ifdef DEBUG_TILE_NAMES
         string temp = unmarshallString(th);
         mprf("Reading tile_names[%d] = %s", i, temp.c_str());
-        env.tile_names.push_back(temp);
+        tile_env.names.push_back(temp);
 #else
-        env.tile_names.push_back(unmarshallString(th));
+        tile_env.names.push_back(unmarshallString(th));
 #endif
     }
 
     // flavour
-    env.tile_default.wall_idx  = unmarshallShort(th);
-    env.tile_default.floor_idx = unmarshallShort(th);
-    env.tile_default.wall      = unmarshallShort(th);
-    env.tile_default.floor     = unmarshallShort(th);
-    env.tile_default.special   = unmarshallShort(th);
+    tile_env.default_flavour.wall_idx  = unmarshallShort(th);
+    tile_env.default_flavour.floor_idx = unmarshallShort(th);
+    tile_env.default_flavour.wall      = unmarshallShort(th);
+    tile_env.default_flavour.floor     = unmarshallShort(th);
+    tile_env.default_flavour.special   = unmarshallShort(th);
 
     for (int x = 0; x < gx; x++)
         for (int y = 0; y < gy; y++)
         {
-            env.tile_flv[x][y].wall_idx  = unmarshallShort(th);
-            env.tile_flv[x][y].floor_idx = unmarshallShort(th);
-            env.tile_flv[x][y].feat_idx  = unmarshallShort(th);
+            tile_env.flv[x][y].wall_idx  = unmarshallShort(th);
+            tile_env.flv[x][y].floor_idx = unmarshallShort(th);
+            tile_env.flv[x][y].feat_idx  = unmarshallShort(th);
 
             // These get overwritten by _regenerate_tile_flavour
-            env.tile_flv[x][y].wall    = unmarshallShort(th);
-            env.tile_flv[x][y].floor   = unmarshallShort(th);
-            env.tile_flv[x][y].feat    = unmarshallShort(th);
-            env.tile_flv[x][y].special = unmarshallShort(th);
+            tile_env.flv[x][y].wall    = unmarshallShort(th);
+            tile_env.flv[x][y].floor   = unmarshallShort(th);
+            tile_env.flv[x][y].feat    = unmarshallShort(th);
+            tile_env.flv[x][y].special = unmarshallShort(th);
         }
 
     _debug_count_tiles();
@@ -7027,15 +7357,15 @@ void _tag_read_level_tiles(reader &th)
 
 static tileidx_t _get_tile_from_vector(const unsigned int idx)
 {
-    if (idx <= 0 || idx > env.tile_names.size())
+    if (idx <= 0 || idx > tile_env.names.size())
     {
 #ifdef DEBUG_TILE_NAMES
         mprf("Index out of bounds: idx = %d - 1, size(tile_names) = %d",
-            idx, env.tile_names.size());
+            idx, tile_env.names.size());
 #endif
         return 0;
     }
-    string tilename = env.tile_names[idx - 1];
+    string tilename = tile_env.names[idx - 1];
 
     tileidx_t tile;
     if (!tile_dngn_index(tilename.c_str(), &tile))
@@ -7058,16 +7388,16 @@ static void _regenerate_tile_flavour()
 {
     /* Remember the wall_idx and floor_idx; tile_init_default_flavour
        sets them to 0 */
-    tileidx_t default_wall_idx = env.tile_default.wall_idx;
-    tileidx_t default_floor_idx = env.tile_default.floor_idx;
+    tileidx_t default_wall_idx = tile_env.default_flavour.wall_idx;
+    tileidx_t default_floor_idx = tile_env.default_flavour.floor_idx;
     tile_init_default_flavour();
     if (default_wall_idx)
     {
         tileidx_t new_wall = _get_tile_from_vector(default_wall_idx);
         if (new_wall)
         {
-            env.tile_default.wall_idx = default_wall_idx;
-            env.tile_default.wall = new_wall;
+            tile_env.default_flavour.wall_idx = default_wall_idx;
+            tile_env.default_flavour.wall = new_wall;
         }
     }
     if (default_floor_idx)
@@ -7075,15 +7405,15 @@ static void _regenerate_tile_flavour()
         tileidx_t new_floor = _get_tile_from_vector(default_floor_idx);
         if (new_floor)
         {
-            env.tile_default.floor_idx = default_floor_idx;
-            env.tile_default.floor = new_floor;
+            tile_env.default_flavour.floor_idx = default_floor_idx;
+            tile_env.default_flavour.floor = new_floor;
         }
     }
 
     for (rectangle_iterator ri(coord_def(0, 0), coord_def(GXM-1, GYM-1));
          ri; ++ri)
     {
-        tile_flavour &flv = env.tile_flv(*ri);
+        tile_flavour &flv = tile_env.flv(*ri);
         flv.wall = 0;
         flv.floor = 0;
         flv.feat = 0;
@@ -7202,9 +7532,9 @@ void unmarshallSpells(reader &th, monster_spells &spells
 #if TAG_MAJOR_VERSION == 34
             if (th.getMinorVersion() < TAG_MINOR_DEMONIC_SPELLS)
             {
-                if (spells[j].flags & MON_SPELL_DEMONIC)
+                if (spells[j].flags & MON_SPELL_VOCAL)
                 {
-                    spells[j].flags &= ~MON_SPELL_DEMONIC;
+                    spells[j].flags &= ~MON_SPELL_VOCAL;
                     spells[j].flags |= MON_SPELL_MAGICAL;
                 }
             }
@@ -7328,8 +7658,8 @@ static ghost_demon _unmarshallGhost(reader &th)
     {
         if (th.getMinorVersion() < TAG_MINOR_GHOST_MAGIC)
             slot.spell = _fixup_positional_monster_spell(slot.spell);
-
-        ghost.spells.push_back(slot);
+        if (!spell_removed(slot.spell))
+            ghost.spells.push_back(slot);
     }
 #endif
 

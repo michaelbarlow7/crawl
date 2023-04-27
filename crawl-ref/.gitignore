@@ -43,6 +43,9 @@ noise-grid.html
 # From mac-crawl-build
 last-mac-build.version
 mac-app-zips
+crawl-arm64*
+crawl-x86_64*
+crawl-universal
 
 # Text editor generated junk (backup files and such)
 DEADJOE
@@ -57,6 +60,7 @@ DEADJOE
 /docs/aptitudes-wide.txt
 /docs/FAQ.html
 /docs/crawl_manual.txt
+/docs/quickstart.txt
 /docs/lua/
 /docs/develop/lua/
 
@@ -73,6 +77,7 @@ mapstat.log
 *.out
 *.stat
 objstat_*.txt
+objstat_*.tsv
 fsim.txt
 fsim.csv
 webtiles.log
@@ -124,6 +129,7 @@ makefile.dep
 
 # The Crawl executable.
 /source/crawl
+/source/crawl-tiles
 
 # Precompiled header
 /source/AppHdr.h.gch
@@ -245,3 +251,7 @@ icon.png
 
 # generated files for catch2-tests
 /source/catch2-tests/*.d
+
+# generated files for appimage
+/source/appimage
+/source/stone_soup-*.AppImage

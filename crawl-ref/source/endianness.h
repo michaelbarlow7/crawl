@@ -1,3 +1,5 @@
+#pragma once
+
 #include <sys/types.h>
 #include <sys/param.h>
 
@@ -14,6 +16,10 @@
 # else
 #  define BYTE_ORDER BIG_ENDIAN
 # endif
+#endif
+
+#ifdef __HAIKU__
+#include <endian.h>
 #endif
 
 #ifndef htole32

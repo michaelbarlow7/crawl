@@ -1,8 +1,11 @@
 #pragma once
 
+#include <vector>
+
 #include "coordit.h"
 #include "env.h"
 #include "files.h"
+#include "output.h"
 #include "player.h"
 #include "terrain.h"
 #include "tilesdl.h"
@@ -10,6 +13,8 @@
 #include "tileview.h"
 #include "travel.h"
 #include "viewchar.h"
+
+using std::vector;
 
 class levelview_excursion : public level_excursion
 {
@@ -23,6 +28,7 @@ public:
     {
         if (!you.on_current_level)
             go_to(original);
+        print_stats_level();
     }
 
     // Not virtual!
@@ -77,6 +83,8 @@ bool travel_colour_override(const coord_def& p);
 bool is_feature(char32_t feature, const coord_def& where);
 bool show_map(level_pos &spec_place,
               bool travel_mode, bool allow_offlevel);
+void process_map_command(command_type cmd);
+level_pos map_follow_stairs(bool up, const coord_def &pos);
 
 bool emphasise(const coord_def& where);
 vector<coord_def> search_path_around_point(coord_def centre);

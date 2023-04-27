@@ -31,9 +31,9 @@
 #include "species-groups.h"
 #include "state.h"
 #include "stringutil.h"
+#include "tilepick.h"
 #ifdef USE_TILE
 #include "tilereg-crt.h"
-#include "tilepick.h"
 #include "tilepick-p.h"
 #include "tilefont.h"
 #include "rltiles/tiledef-main.h"
@@ -135,6 +135,12 @@ static bool _char_defined(const newgame_def& ng)
     return ng.species != SP_UNKNOWN && ng.job != JOB_UNKNOWN;
 }
 
+static char_choice_restriction _job_allowed(species_type sp, job_type job) {
+    if (job == JOB_DELVER && crawl_state.game_is_sprint())
+        return CC_BANNED;
+    return job_allowed(sp, job);
+}
+
 string newgame_char_description(const newgame_def& ng)
 {
     if (_is_random_viable_choice(ng))
@@ -144,7 +150,7 @@ string newgame_char_description(const newgame_def& ng)
     else if (_is_random_job(ng.job))
     {
         const string j = (ng.job == JOB_RANDOM ? "Random " : "Recommended ");
-        return j + species_name(ng.species);
+        return j + species::name(ng.species);
     }
     else if (_is_random_species(ng.species))
     {
@@ -152,14 +158,14 @@ string newgame_char_description(const newgame_def& ng)
         return s + get_job_name(ng.job);
     }
     else
-        return species_name(ng.species) + " " + get_job_name(ng.job);
+        return species::name(ng.species) + " " + get_job_name(ng.job);
 }
 
 static string _welcome(const newgame_def& ng)
 {
     string text;
     if (ng.species != SP_UNKNOWN)
-        text = species_name(ng.species);
+        text = species::name(ng.species);
     if (ng.job != JOB_UNKNOWN)
     {
         if (!text.empty())
@@ -201,7 +207,7 @@ static void _resolve_species(newgame_def& ng, const newgame_def& ng_choice)
 
     if (!is_starting_job(ng.job)) // VIABLE, RANDOM, UNKNOWN, or disabled
     {
-        ng.species = random_starting_species();
+        ng.species = species::random_starting_species();
         return;
     }
 
@@ -233,7 +239,7 @@ static void _resolve_job(newgame_def& ng, const newgame_def& ng_choice)
         return;
     }
 
-    if (!is_starting_species(ng.species)) // VIABLE, RANDOM, UNKNOWN, or disabled
+    if (!species::is_starting_species(ng.species)) // VIABLE, RANDOM, UNKNOWN, or disabled
     {
         ng.job = random_starting_job();
         return;
@@ -244,7 +250,7 @@ static void _resolve_job(newgame_def& ng, const newgame_def& ng_choice)
     if (ng_choice.job == JOB_VIABLE)
     {
         erase_if(candidate_jobs, [&](const job_type job) {
-            return !species_recommends_job(ng.species, job);
+            return !species::recommends_job(ng.species, job);
         });
     }
     else
@@ -281,7 +287,7 @@ static void _resolve_species_job(newgame_def& ng, const newgame_def& ng_choice)
 static string _highlight_pattern(const newgame_def& ng)
 {
     if (ng.species != SP_UNKNOWN)
-        return species_name(ng.species) + "  ";
+        return species::name(ng.species) + "  ";
 
     if (ng.job == JOB_UNKNOWN)
         return "";
@@ -290,7 +296,7 @@ static string _highlight_pattern(const newgame_def& ng)
 
     for (const auto sp : playable_species())
         if (species_allowed(ng.job, sp) == CC_UNRESTRICTED)
-            ret += species_name(sp) + "  |";
+            ret += species::name(sp) + "  |";
 
     if (!ret.empty())
         ret.resize(ret.size() - 1);
@@ -319,7 +325,7 @@ static void _choose_species_job(newgame_def& ng, newgame_def& ng_choice,
         _resolve_species_job(ng, ng_choice);
     }
 
-    if (!job_allowed(ng.species, ng.job))
+    if (!_job_allowed(ng.species, ng.job))
     {
         // Either an invalid combination was passed in through options,
         // or we messed up.
@@ -332,7 +338,7 @@ static void _choose_species_job(newgame_def& ng, newgame_def& ng_choice,
 // reroll characters until the player accepts one of them or quits.
 static bool _reroll_random(newgame_def& ng)
 {
-    string specs = chop_string(species_name(ng.species), 79, false);
+    string specs = chop_string(species::name(ng.species), 79, false);
 
     formatted_string prompt;
     prompt.cprintf("You are a%s %s %s.",
@@ -360,7 +366,7 @@ static bool _reroll_random(newgame_def& ng)
     auto popup = make_shared<ui::Popup>(move(vbox));
 
     bool done = false;
-    char c;
+    int c;
     popup->on_keydown_event([&](const KeyEvent& ev) {
         c = ev.key();
         return done = true;
@@ -368,14 +374,16 @@ static bool _reroll_random(newgame_def& ng)
 
 #ifdef USE_TILE_WEB
     tiles.json_open_object();
-    tiles.json_write_string("prompt", prompt.to_colour_string());
+    tiles.json_write_string("prompt", prompt.to_colour_string(LIGHTGREY));
     tiles.send_doll(doll, false, false);
     tiles.push_ui_layout("newgame-random-combo", 0);
     popup->on_layout_pop([](){ tiles.pop_ui_layout(); });
 #endif
     ui::run_layout(move(popup), done);
 
-    if (key_is_escape(c) || toalower(c) == 'q' || crawl_state.seen_hups)
+    // XX mouse interface in local tiles for `y` -- right now right click does
+    // `q` only
+    if (key_is_escape(c) || c == CK_MOUSE_CMD || toalower(c) == 'q' || crawl_state.seen_hups)
         game_ended(game_exit::abort);
     return toalower(c) == 'n' || c == '\t' || c == '!' || c == '#';
 }
@@ -404,7 +412,7 @@ static void _choose_char(newgame_def& ng, newgame_def& choice,
     // Apologies to non-public servers.
     if (ng.type == GAME_TYPE_NORMAL)
     {
-        if (!yesno("Trunk games don't count for the tournament, you want "
+        if (!yesno("Trunk doesn't count for the tournament, you want "
                    TOURNEY ". Play trunk anyway? (Y/N)", false, 'n'))
         {
             game_ended(game_exit::abort);
@@ -430,8 +438,7 @@ static void _choose_char(newgame_def& ng, newgame_def& choice,
                 if (character.length() == 4)
                 {
                     choice.species =
-                        get_species_by_abbrev(
-                            character.substr(0, 2).c_str());
+                        species::from_abbrev(character.substr(0, 2).c_str());
                     choice.job =
                         get_job_by_abbrev(
                             character.substr(2, 2).c_str());
@@ -440,11 +447,11 @@ static void _choose_char(newgame_def& ng, newgame_def& choice,
                 {
                     for (const auto sp : playable_species())
                     {
-                        if (starts_with(character, species_name(sp)))
+                        if (starts_with(character, species::name(sp)))
                         {
                             choice.species = sp;
                             string temp =
-                                character.substr(species_name(sp).length());
+                                character.substr(species::name(sp).length());
                             choice.job = str_to_job(trim_string(temp));
                             break;
                         }
@@ -548,7 +555,7 @@ static void _choose_name(newgame_def& ng, newgame_def& choice)
     bool good_name = true;
     bool cancel = false;
 
-    string specs = chop_string(species_name(ng.species), 79, false);
+    string specs = chop_string(species::name(ng.species), 79, false);
 
     formatted_string title;
     title.cprintf("You are a%s %s %s.",
@@ -692,7 +699,7 @@ static keyfun_action _keyfun_seed_input(int &ch)
     // lose focus. (TODO: maybe handle this better in TextEntry somehow?)
     if (ch == CONTROL('K') || ch == CONTROL('D') || ch == CONTROL('W') ||
             ch == CONTROL('U') || ch == CONTROL('A') || ch == CONTROL('E') ||
-            ch == CK_BKSP || ch == CK_ESCAPE ||
+            ch == CK_BKSP || ch == CK_ESCAPE || ch == CK_MOUSE_CMD ||
             ch < 0 || // this should get all other special keys
             isadigit(ch))
     {
@@ -886,7 +893,8 @@ static void _choose_seed(newgame_def& ng, newgame_def& choice,
 
     auto pregen_check = make_shared<ui::Checkbox>();
     pregen_check->set_sync_id("pregenerate");
-    pregen_check->set_checked(choice.pregenerate = Options.pregen_dungeon);
+    choice.pregenerate = Options.pregen_dungeon == level_gen_type::full;
+    pregen_check->set_checked(choice.pregenerate);
     pregen_check->set_visible(show_pregen_toggle);
     pregen_check->set_child(make_shared<ui::Text>("Fully pregenerate the dungeon"));
     box->add_child(pregen_check);
@@ -932,7 +940,7 @@ static void _choose_seed(newgame_def& ng, newgame_def& choice,
             return false;
         }
 #endif
-        else if (key_is_escape(key))
+        else if (key_is_escape(key) || key == CK_MOUSE_CMD)
             return done = cancel = true;
         return false;
     });
@@ -959,7 +967,10 @@ static void _choose_seed(newgame_def& ng, newgame_def& choice,
         game_ended(game_exit::abort);
 
     Options.seed = choice.seed = tmp_seed;
-    Options.pregen_dungeon = choice.pregenerate = pregen_check->checked();
+    choice.pregenerate = pregen_check->checked();
+    if (choice.pregenerate)
+        Options.pregen_dungeon = level_gen_type::full; // XX don't do this
+    // otherwise, let (potentially default) option decide
 }
 
 // Read a choice of game into ng.
@@ -970,6 +981,8 @@ bool choose_game(newgame_def& ng, newgame_def& choice,
 {
 #ifdef USE_TILE_WEB
     tiles.set_ui_state(UI_CRT);
+    // send some minimal where info, in case there is a lingering .where file
+    update_whereis_chargen(choice.name);
 #endif
 
     clrscr();
@@ -1006,7 +1019,7 @@ bool choose_game(newgame_def& ng, newgame_def& choice,
         end(1, false, "No player name specified.");
 
     ASSERT(is_good_name(ng.name, false)
-           && job_allowed(ng.species, ng.job)
+           && _job_allowed(ng.species, ng.job)
            && ng.type != NUM_GAME_TYPE);
 
     write_newgame_options_file(choice);
@@ -1075,28 +1088,29 @@ static job_group jobs_order[] =
     {
         "Warrior",
         coord_def(0, 0), 20,
-        { JOB_FIGHTER, JOB_GLADIATOR, JOB_MONK, JOB_HUNTER, JOB_ASSASSIN }
+        { JOB_FIGHTER, JOB_GLADIATOR, JOB_MONK, JOB_HUNTER, JOB_BRIGAND }
     },
     {
         "Adventurer",
-        coord_def(0, 7), 20,
-        { JOB_ARTIFICER, JOB_WANDERER }
+        coord_def(0, 6), 20,
+        { JOB_ARTIFICER, JOB_WANDERER, JOB_DELVER, }
     },
     {
         "Zealot",
         coord_def(1, 0), 25,
-        { JOB_BERSERKER, JOB_ABYSSAL_KNIGHT, JOB_CHAOS_KNIGHT }
+        { JOB_BERSERKER, JOB_ABYSSAL_KNIGHT, JOB_CINDER_ACOLYTE,
+          JOB_CHAOS_KNIGHT }
     },
     {
         "Warrior-mage",
         coord_def(1, 5), 26,
-        { JOB_SKALD, JOB_TRANSMUTER, JOB_WARPER, JOB_ARCANE_MARKSMAN,
+        { JOB_TRANSMUTER, JOB_WARPER, JOB_ARCANE_MARKSMAN,
           JOB_ENCHANTER }
     },
     {
         "Mage",
         coord_def(2, 0), 22,
-        { JOB_WIZARD, JOB_CONJURER, JOB_SUMMONER, JOB_NECROMANCER,
+        { JOB_HEDGE_WIZARD, JOB_CONJURER, JOB_SUMMONER, JOB_NECROMANCER,
           JOB_FIRE_ELEMENTALIST, JOB_ICE_ELEMENTALIST,
           JOB_AIR_ELEMENTALIST, JOB_EARTH_ELEMENTALIST, JOB_VENOM_MAGE }
     }
@@ -1116,7 +1130,7 @@ static void _construct_backgrounds_menu(const newgame_def& ng,
     {
         if (ng.species == SP_UNKNOWN
             || any_of(begin(group.jobs), end(group.jobs), [&ng](job_type job)
-                      { return job_allowed(ng.species, job) != CC_BANNED; }))
+                      { return _job_allowed(ng.species, job) != CC_BANNED; }))
         {
             group.attach(ng, defaults, ng_menu, letter);
         }
@@ -1230,9 +1244,7 @@ protected:
                                 int id,
                                 int item_status,
                                 string item_name,
-#ifdef USE_TILE
                                 tile_def item_tile,
-#endif
                                 bool is_active_item,
                                 coord_def position)
 
@@ -1249,6 +1261,8 @@ protected:
         tile->flex_grow = 0;
         hbox->add_child(move(tile));
         hbox->add_child(label);
+#else
+        UNUSED(item_tile);
 #endif
 
         COLOURS fg, hl;
@@ -1419,7 +1433,7 @@ void UINewGameMenu::_allocate_region()
 #ifdef USE_TILE_WEB
 void UINewGameMenu::serialize()
 {
-    tiles.json_write_string("title", welcome.to_colour_string());
+    tiles.json_write_string("title", welcome.to_colour_string(LIGHTGREY));
     m_main_items->serialize("main-items");
     m_sub_items->serialize("sub-items");
 }
@@ -1476,7 +1490,7 @@ void UINewGameMenu::menu_item_activated(int id)
         {
             job_type job = static_cast<job_type> (id);
             if (m_ng.species == SP_UNKNOWN
-                || job_allowed(m_ng.species, job) != CC_BANNED)
+                || _job_allowed(m_ng.species, job) != CC_BANNED)
             {
                 m_ng_choice.job = job;
                 done = true;
@@ -1508,8 +1522,11 @@ void job_group::attach(const newgame_def& ng, const newgame_def& defaults,
         if (job == JOB_UNKNOWN)
             break;
 
+        if (job == JOB_DELVER && ng.type == GAME_TYPE_SPRINT)
+            continue;
+
         if (ng.species != SP_UNKNOWN
-            && job_allowed(ng.species, job) == CC_BANNED)
+            && _job_allowed(ng.species, job) == CC_BANNED)
         {
             continue;
         }
@@ -1517,12 +1534,13 @@ void job_group::attach(const newgame_def& ng, const newgame_def& defaults,
         int item_status;
         if (ng.species == SP_UNKNOWN)
             item_status = ITEM_STATUS_UNKNOWN;
-        else if (job_allowed(ng.species, job) == CC_RESTRICTED)
+        else if (_job_allowed(ng.species, job) == CC_RESTRICTED)
             item_status = ITEM_STATUS_RESTRICTED;
         else
             item_status = ITEM_STATUS_ALLOWED;
 
         const bool is_active_item = defaults.job == job;
+        const bool recommended = item_status != ITEM_STATUS_RESTRICTED;
 
         ++pos.y;
 
@@ -1531,10 +1549,7 @@ void job_group::attach(const newgame_def& ng, const newgame_def& defaults,
             job,
             item_status,
             get_job_name(job),
-#ifdef USE_TILE
-            tile_def(tileidx_player_job(job,
-                    item_status != ITEM_STATUS_RESTRICTED), TEX_GUI),
-#endif
+            tile_def(tileidx_player_job(job, recommended)),
             is_active_item,
             pos
         );
@@ -1555,7 +1570,10 @@ void species_group::attach(const newgame_def& ng, const newgame_def& defaults,
         if (this_species == SP_UNKNOWN)
             break;
 
-        if (ng.job == JOB_UNKNOWN && !is_starting_species(this_species))
+        if (this_species == SP_METEORAN && ng.type == GAME_TYPE_SPRINT)
+            continue;
+
+        if (ng.job == JOB_UNKNOWN && !species::is_starting_species(this_species))
             continue;
 
         if (ng.job != JOB_UNKNOWN
@@ -1573,6 +1591,7 @@ void species_group::attach(const newgame_def& ng, const newgame_def& defaults,
             item_status = ITEM_STATUS_ALLOWED;
 
         const bool is_active_item = defaults.species == this_species;
+        const bool recommended = item_status != ITEM_STATUS_RESTRICTED;
 
         ++pos.y;
 
@@ -1580,11 +1599,8 @@ void species_group::attach(const newgame_def& ng, const newgame_def& defaults,
             letter,
             this_species,
             item_status,
-            species_name(this_species),
-#ifdef USE_TILE
-            tile_def(tileidx_player_species(this_species,
-                    item_status != ITEM_STATUS_RESTRICTED), TEX_GUI),
-#endif
+            species::name(this_species),
+            tile_def(tileidx_player_species(this_species, recommended)),
             is_active_item,
             pos
         );
@@ -1652,64 +1668,24 @@ static void _construct_weapon_menu(const newgame_def& ng,
     };
     vector<weapon_menu_item> choices;
 
-    string thrown_name;
-
     for (unsigned int i = 0; i < weapons.size(); ++i)
     {
         weapon_type wpn_type = weapons[i].first;
 
-        switch (wpn_type)
+        if (wpn_type == WPN_UNARMED)
         {
-        case WPN_UNARMED:
-            choices.emplace_back(SK_UNARMED_COMBAT, species_has_claws(ng.species) ? "claws" : "unarmed");
-            break;
-        case WPN_THROWN:
-        {
-            // We don't support choosing among multiple thrown weapons.
-            tileidx_t tile = 0;
-            if (species_can_throw_large_rocks(ng.species))
-            {
-                thrown_name = "large rocks";
-#ifdef USE_TILE
-                tile = TILE_MI_LARGE_ROCK;
-#endif
-            }
-            else if (species_size(ng.species, PSIZE_TORSO) <= SIZE_SMALL)
-            {
-                thrown_name = "boomerangs";
-#ifdef USE_TILE
-                tile = TILE_MI_BOOMERANG;
-#endif
-            }
-            else
-            {
-                thrown_name = "javelins";
-#ifdef USE_TILE
-                tile = TILE_MI_JAVELIN;
-#endif
-            }
-            choices.emplace_back(SK_THROWING,
-                    thrown_name + " and throwing nets", tile);
-            break;
-        }
-        default:
+            choices.emplace_back(SK_UNARMED_COMBAT,
+                        species::has_claws(ng.species) ? "claws" : "unarmed");
+        } else {
             string text = weapon_base_name(wpn_type);
             item_def dummy;
             dummy.base_type = OBJ_WEAPONS;
             dummy.sub_type = wpn_type;
-            if (is_ranged_weapon_type(wpn_type))
-            {
-                text += " and ";
-                text += wpn_type == WPN_HUNTING_SLING ? ammo_name(MI_SLING_BULLET)
-                                                      : ammo_name(wpn_type);
-                text += "s";
-            }
             choices.emplace_back(item_attack_skill(dummy), text
 #ifdef USE_TILE
                     , tileidx_item(dummy)
 #endif
             );
-            break;
         }
     }
 
@@ -1731,11 +1707,6 @@ static void _construct_weapon_menu(const newgame_def& ng,
         tile_stack->flex_grow = 0;
         hbox->add_child(tile_stack);
 
-        if (choice.skill == SK_THROWING)
-        {
-            tile_stack->add_child(make_shared<Image>(
-                    tile_def(TILE_MI_THROWING_NET, TEX_DEFAULT)));
-        }
         if (choice.skill == SK_UNARMED_COMBAT)
         {
 #ifndef USE_TILE_WEB
@@ -1745,7 +1716,7 @@ static void _construct_weapon_menu(const newgame_def& ng,
         else
         {
             tile_stack->add_child(make_shared<Image>(
-                    tile_def(choice.tile, TEX_DEFAULT)));
+                    tile_def(choice.tile)));
         }
 #endif
 
@@ -1801,11 +1772,9 @@ static void _construct_weapon_menu(const newgame_def& ng,
     {
         string text = "Tab - ";
 
-        ASSERT(defweapon != WPN_THROWN || thrown_name != "");
         text += defweapon == WPN_RANDOM  ? "Random" :
                 defweapon == WPN_VIABLE  ? "Recommended" :
                 defweapon == WPN_UNARMED ? "unarmed" :
-                defweapon == WPN_THROWN  ? thrown_name :
                 weapon_base_name(defweapon);
 
         _add_menu_sub_item(sub_items, 1, 2, text,
@@ -1877,7 +1846,10 @@ static bool _prompt_weapon(const newgame_def& ng, newgame_def& ng_choice,
                 return true;
             case M_DEFAULT_CHOICE:
                 if (defweapon != WPN_UNKNOWN)
+                {
                     ng_choice.weapon = defweapon;
+                    break;
+                }
                 // No default weapon defined.
                 // This case should never happen in those cases but just in case
                 return true;
@@ -1919,8 +1891,8 @@ static bool _prompt_weapon(const newgame_def& ng, newgame_def& ng_choice,
 
 #ifdef USE_TILE_WEB
     tiles.json_open_object();
-    tiles.json_write_string("title", title->get_text().to_colour_string());
-    tiles.json_write_string("prompt", prompt->get_text().to_colour_string());
+    tiles.json_write_string("title", title->get_text().to_colour_string(LIGHTGREY));
+    tiles.json_write_string("prompt", prompt->get_text().to_colour_string(LIGHTGREY));
     main_items->serialize("main-items");
     sub_items->serialize("sub-items");
     tiles.send_doll(doll, false, false);
@@ -1932,11 +1904,11 @@ static bool _prompt_weapon(const newgame_def& ng, newgame_def& ng_choice,
     return ret;
 }
 
-static weapon_type _starting_weapon_upgrade(weapon_type wp, job_type job,
+weapon_type starting_weapon_upgrade(weapon_type wp, job_type job,
                                             species_type species)
 {
     const bool fighter = job == JOB_FIGHTER;
-    const size_type size = species_size(species, PSIZE_TORSO);
+    const size_type size = species::size(species, PSIZE_TORSO);
 
     // TODO: actually query itemprop for one-handedness.
     switch (wp)
@@ -1952,6 +1924,8 @@ static weapon_type _starting_weapon_upgrade(weapon_type wp, job_type job,
         return fighter && size <= SIZE_SMALL  ? wp : WPN_TRIDENT;
     case WPN_FALCHION:
         return WPN_LONG_SWORD;
+    case WPN_SLING:
+        return WPN_SHORTBOW;
     default:
         return wp;
     }
@@ -1960,40 +1934,22 @@ static weapon_type _starting_weapon_upgrade(weapon_type wp, job_type job,
 static vector<weapon_choice> _get_weapons(const newgame_def& ng)
 {
     vector<weapon_choice> weapons;
-    if (job_gets_ranged_weapons(ng.job))
+    weapon_type startwep[7] = { WPN_SHORT_SWORD, WPN_MACE, WPN_HAND_AXE,
+                                WPN_SPEAR, WPN_FALCHION, WPN_QUARTERSTAFF,
+                                WPN_UNARMED };
+    for (int i = 0; i < 7; ++i)
     {
-        weapon_type startwep[4] = { WPN_THROWN, WPN_HUNTING_SLING,
-                                    WPN_SHORTBOW, WPN_HAND_CROSSBOW };
-
-        for (int i = 0; i < 4; i++)
+        weapon_choice wp;
+        wp.first = startwep[i];
+        if (job_gets_good_weapons(ng.job))
         {
-            weapon_choice wp;
-            wp.first = startwep[i];
-
-            wp.second = weapon_restriction(wp.first, ng);
-            if (wp.second != CC_BANNED)
-                weapons.push_back(wp);
+            wp.first = starting_weapon_upgrade(wp.first, ng.job,
+                                                ng.species);
         }
-    }
-    else
-    {
-        weapon_type startwep[7] = { WPN_SHORT_SWORD, WPN_MACE, WPN_HAND_AXE,
-                                    WPN_SPEAR, WPN_FALCHION, WPN_QUARTERSTAFF,
-                                    WPN_UNARMED };
-        for (int i = 0; i < 7; ++i)
-        {
-            weapon_choice wp;
-            wp.first = startwep[i];
-            if (job_gets_good_weapons(ng.job))
-            {
-                wp.first = _starting_weapon_upgrade(wp.first, ng.job,
-                                                    ng.species);
-            }
 
-            wp.second = weapon_restriction(wp.first, ng);
-            if (wp.second != CC_BANNED)
-                weapons.push_back(wp);
-        }
+        wp.second = weapon_restriction(wp.first, ng);
+        if (wp.second != CC_BANNED)
+            weapons.push_back(wp);
     }
     return weapons;
 }
@@ -2046,7 +2002,7 @@ static bool _choose_weapon(newgame_def& ng, newgame_def& ng_choice,
                            const newgame_def& defaults)
 {
     // No weapon use at all. The actual item will be removed later.
-    if (ng.species == SP_FELID)
+    if (species::mutation_level(ng.species, MUT_NO_GRASPING))
         return true;
 
     if (!job_has_weapon_choice(ng.job))
@@ -2086,28 +2042,28 @@ static tile_def tile_for_map_name(string name)
             TILEG_CMD_CAST_SPELL,
             TILEG_CMD_USE_ABILITY,
         };
-        return tile_def(tutorial_tiles[i], TEX_GUI);
+        return tile_def(tutorial_tiles[i]);
     }
 
     if (name == "Sprint I: \"Red Sonja\"")
-        return tile_def(TILEP_MONS_SONJA, TEX_PLAYER);
+        return tile_def(TILEP_MONS_SONJA);
     if (name == "Sprint II: \"The Violet Keep of Menkaure\"")
-        return tile_def(TILEP_MONS_MENKAURE, TEX_PLAYER);
+        return tile_def(TILEP_MONS_MENKAURE);
     if (name == "Sprint III: \"The Ten Rune Challenge\"")
-        return tile_def(TILE_MISC_RUNE_OF_ZOT, TEX_DEFAULT);
+        return tile_def(TILE_MISC_RUNE_OF_ZOT);
     if (name == "Sprint IV: \"Fedhas' Mad Dash\"")
-        return tile_def(TILE_DNGN_ALTAR_FEDHAS, TEX_FEAT);
+        return tile_def(TILE_DNGN_ALTAR_FEDHAS);
     if (name == "Sprint V: \"Ziggurat Sprint\"")
-        return tile_def(TILE_DNGN_PORTAL_ZIGGURAT, TEX_FEAT);
+        return tile_def(TILE_DNGN_PORTAL_ZIGGURAT);
     if (name == "Sprint VI: \"Thunderdome\"")
-        return tile_def(TILE_GOLD16, TEX_DEFAULT);
+        return tile_def(TILE_GOLD16);
     if (name == "Sprint VII: \"The Pits\"")
-        return tile_def(TILE_WALL_CRYPT_METAL + 2, TEX_WALL);
+        return tile_def(TILE_WALL_CRYPT_METAL + 2);
     if (name == "Sprint VIII: \"Arena of Blood\"")
-        return tile_def(TILE_UNRAND_WOE, TEX_DEFAULT);
+        return tile_def(TILE_UNRAND_WOE);
     if (name == "Sprint IX: \"|||||||||||||||||||||||||||||\"")
-        return tile_def(TILE_WALL_LAB_METAL + 2, TEX_WALL);
-    return tile_def(0, TEX_GUI);
+        return tile_def(TILE_WALL_LAB_METAL + 2);
+    return tile_def(0);
 }
 #endif
 
@@ -2289,6 +2245,7 @@ static void _prompt_gamemode_map(newgame_def& ng, newgame_def& ng_choice,
 #endif
                 end(0);
                 break;
+            case CK_MOUSE_CMD:
             CASE_ESCAPE
                 return done = cancel = true;
                 break;
@@ -2302,7 +2259,7 @@ static void _prompt_gamemode_map(newgame_def& ng, newgame_def& ng_choice,
     });
 #ifdef USE_TILE_WEB
     tiles.json_open_object();
-    tiles.json_write_string("title", welcome.to_colour_string());
+    tiles.json_write_string("title", welcome.to_colour_string(LIGHTGREY));
     main_items->serialize("main-items");
     sub_items->serialize("sub-items");
     tiles.push_ui_layout("newgame-choice", 1);

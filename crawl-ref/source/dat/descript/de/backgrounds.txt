@@ -92,11 +92,6 @@ Necromancer
 Nekromanten sind Zauberer, die sich auf Todesmagie spezialisieren. Sie beginnen
 mit dem Schmerzfluch.
 %%%%
-Skald
-
-Skalden sind Nahkämpfer, die sich im Kampf mit Zaubern aus dem Buch des
-Gefechts stärken können.
-%%%%
 Summoner
 
 Boten fangen mit dem Buch von Callings an und sind im Stande sich zu werfen
@@ -122,7 +117,7 @@ Teleporter starten mit einer Waffe ihrer Wahl und einer
 Kurzstreckenteleport-Schriftrolle(?). Sie können Zaubersprüche aus dem Buch der
 räumlichen Bewegungen lernen.
 %%%%
-Wizard
+Hedge Wizard
 
 Zauberer starten mit einem Buch der kleinen Magie, das eine breite Auswahl an
 Zaubersprüchen enthält. Sie haben mehr magische Reserven als irgendein anderer

@@ -5,8 +5,12 @@
 
 #pragma once
 
+#include "description-level-type.h"
 #include "level-id.h"
 #include "monster-type.h"
+#include "object-class-type.h"
+#include "skill-type.h"
+#include "store.h"
 
 // We are not 64 bits clean here yet since many places still pass (or store!)
 // it as 32 bits or, worse, longs. I considered setting this as uint32_t,
@@ -59,7 +63,7 @@ struct item_def
     /// pos (-1, -1), items in monster inventory by (-2, -2), and items
     /// in shops by (0, y) for y >= 5.
     coord_def pos;
-    /// For floor items, index in the mitm array of the next item in the
+    /// For floor items, index in the env.item array of the next item in the
     /// pile. NON_ITEM for the last item in a pile. For items in player
     /// inventory, instead the index into you.inv. For items in monster
     /// inventory, equal to NON_ITEM + 1 + mindex. For items in shops,
@@ -99,18 +103,16 @@ public:
     }
 
     /**
-     * Find the index of an item in the mitm array. Results are undefined
+     * Find the index of an item in the env.item array. Results are undefined
      * if this item is not in the array!
      *
-     * @pre The item is actually in the mitm array.
-     * @return  The index of this item in the mitm array, between
+     * @pre The item is actually in the env.item array.
+     * @return  The index of this item in the env.item array, between
      *          0 and MAX_ITEMS-1.
      */
     int  index() const;
 
     int  armour_rating() const;
-
-    bool launched_by(const item_def &launcher) const;
 
     void clear()
     {
@@ -120,7 +122,7 @@ public:
     /**
      * Sets this item as being held by a given monster.
      *
-     * @param mon The monster. Must be in menv!
+     * @param mon The monster. Must be in env.mons!
      */
     void set_holding_monster(const monster& mon);
 
@@ -136,7 +138,7 @@ public:
 
     bool defined() const;
     bool appearance_initialized() const;
-    bool is_valid(bool info = false) const;
+    bool is_valid(bool info = false, bool error=false) const;
 
     /** Should this item be preserved as far as possible? */
     bool is_critical() const;
@@ -159,7 +161,6 @@ private:
     colour_t missile_colour() const;
     colour_t armour_colour() const;
     colour_t wand_colour() const;
-    colour_t food_colour() const;
     colour_t jewellery_colour() const;
     colour_t potion_colour() const;
     colour_t book_colour() const;
@@ -167,6 +168,4 @@ private:
     colour_t corpse_colour() const;
 };
 
-typedef item_def item_info;
-
-item_info get_item_info(const item_def& info);
+item_def get_item_known_info(const item_def& info);

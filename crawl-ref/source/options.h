@@ -1,24 +1,34 @@
 #pragma once
 
 #include <algorithm>
+#include <unordered_set>
+#include <vector>
 
+#include "ability-type.h"
 #include "activity-interrupt-type.h"
 #include "char-set-type.h"
-#include "confirm-butcher-type.h"
 #include "confirm-prompt-type.h"
 #include "easy-confirm-type.h"
+#include "explore-greedy-options.h"
 #include "feature.h"
 #include "flang-t.h"
 #include "flush-reason-type.h"
-#include "hunger-state-t.h"
+#include "kill-dump-options-type.h"
 #include "lang-t.h"
+#include "level-gen-type.h"
 #include "maybe-bool.h"
 #include "mpr.h"
 #include "newgame-def.h"
 #include "pattern.h"
 #include "screen-mode.h"
 #include "skill-focus-mode.h"
+#include "slot-select-mode.h"
+#include "spell-type.h"
 #include "tag-pref.h"
+#include "travel-open-doors-type.h"
+#include "wizard-option-type.h"
+
+using std::vector;
 
 enum autosac_type
 {
@@ -129,6 +139,7 @@ public:
     game_options();
     ~game_options();
     void reset_options();
+    void reset_paths();
 
     void read_option_line(const string &s, bool runscripts = false);
     void read_options(LineInput &, bool runscripts,
@@ -173,8 +184,7 @@ public:
 
     uint64_t    seed;           // Non-random games.
     uint64_t    seed_from_rc;
-    bool        pregen_dungeon; // Is the dungeon completely generated at the beginning?
-    bool        incremental_pregen; // Does the dungeon always generate in a specified order?
+    level_gen_type pregen_dungeon;
 
 #ifdef DGL_SIMPLE_MESSAGING
     bool        messaging;      // Check for messages.
@@ -183,6 +193,7 @@ public:
     bool        suppress_startup_errors;
 
     bool        mouse_input;
+    bool        menu_arrow_control;
 
     int         view_max_width;
     int         view_max_height;
@@ -192,6 +203,7 @@ public:
     int         msg_webtiles_height;
     bool        mlist_allow_alternate_layout;
     bool        monster_item_view_coordinates;
+    vector<text_pattern> monster_item_view_features;
     bool        messages_at_top;
     bool        msg_condense_repeats;
     bool        msg_condense_short;
@@ -203,7 +215,7 @@ public:
     bool        view_lock_y;
 
     // For an unlocked viewport, this will centre the viewport when scrolling.
-    bool        center_on_scroll;
+    bool        centre_on_scroll;
 
     // If symmetric_scroll is set, for diagonal moves, if the view
     // scrolls at all, it'll scroll diagonally.
@@ -216,7 +228,7 @@ public:
     // Whether exclusions and exclusion radius are visible in the viewport.
     bool        always_show_exclusions;
 
-    int         autopickup_on;
+    int         autopickup_on; // can be -1, 0, or 1. XX refactor as enum
     bool        autopickup_starting_ammo;
     bool        default_manual_training;
     bool        default_show_all_skills;
@@ -228,19 +240,13 @@ public:
 
     FixedBitVector<NUM_OBJECT_CLASSES> autopickups; // items to autopickup
     bool        auto_switch;     // switch melee&ranged weapons according to enemy range
-    bool        travel_open_doors;     // open doors while exploring
+    travel_open_doors_type travel_open_doors; // open doors while exploring
     bool        easy_unequip;    // allow auto-removing of armour / jewellery
     bool        equip_unequip;   // Make 'W' = 'T', and 'P' = 'R'.
     bool        jewellery_prompt; // Always prompt for slot when changing jewellery.
     bool        easy_door;       // 'O', 'C' don't prompt with just one door.
     bool        warn_hatches;    // offer a y/n prompt when the player uses an escape hatch
     bool        enable_recast_spell; // Allow recasting spells with 'z' Enter.
-    confirm_butcher_type confirm_butcher; // When to prompt for butchery
-    hunger_state_t auto_butcher; // auto-butcher corpses while travelling
-    int         auto_butcher_max_chunks; // if nonzero, only auto-butcher if player
-                                         // has fewer than this many chunks
-    bool        easy_eat_chunks; // make 'e' auto-eat the oldest safe chunk
-    bool        auto_eat_chunks; // allow eating chunks while resting or travelling
     skill_focus_mode skill_focus; // is the focus skills available
     bool        auto_hide_spells; // hide new spells
 
@@ -252,9 +258,12 @@ public:
     bool        note_chat_messages; // log chat in Webtiles
     bool        note_dgl_messages; // log chat in DGL
     easy_confirm_type easy_confirm;    // make yesno() confirming easier
-    bool        easy_quit_item_prompts; // make item prompts quitable on space
     confirm_prompt_type allow_self_target;      // yes, no, prompt
     bool        simple_targeting; // disable smart spell targeting
+    bool        always_use_static_spell_targeters; // whether to always use
+                                                   // static spell targeters
+    bool        always_use_static_ability_targeters; // whether to always use
+                                                     // static ability targeters
 
     int         colour[16];      // macro fg colours to other colours
     unsigned    background_colour; // select default background colour
@@ -268,10 +277,10 @@ public:
     bool        clear_messages;   // clear messages each turn
     bool        show_more;        // Show message-full more prompts.
     bool        small_more;       // Show one-char more prompts.
-    unsigned    friend_brand;     // Attribute for branding friendly monsters
-    unsigned    neutral_brand;    // Attribute for branding neutral monsters
+    unsigned    friend_highlight;     // Attribute for highlighting friendly monsters
+    unsigned    neutral_highlight;    // Attribute for highlighting neutral monsters
     bool        blink_brightens_background; // Assume blink will brighten bg.
-    bool        bold_brightens_foreground; // Assume bold will brighten fg.
+    maybe_bool  bold_brightens_foreground; // Assume bold will brighten fg.
     bool        best_effort_brighten_background; // Allow bg brighten attempts.
     bool        best_effort_brighten_foreground; // Allow fg brighten attempts.
     bool        allow_extended_colours; // Use more than 8 terminal colours.
@@ -280,9 +289,31 @@ public:
     int         autofight_warning;      // Amount of real time required between
                                         // two autofight commands
     bool        cloud_status;     // Whether to show a cloud status light
+    bool        always_show_zot;  // Whether to always show the Zot timer
+
+#ifdef USE_TILE_WEB
+    vector<object_class_type> action_panel;   // types of items to show on the panel
+    vector<text_pattern> action_panel_filter; // what should be filtered out
+    bool        action_panel_show_unidentified; // whether to show unidentified items
+    bool        action_panel_show;
+    int         action_panel_scale;       // the scale factor for resizing the panel
+    string      action_panel_orientation; // whether to place the panel horizontally
+    string      action_panel_font_family; // font used to display the quantities
+    int         action_panel_font_size;
+    bool        action_panel_glyphs;
+#endif
 
     int         fire_items_start; // index of first item for fire command
     vector<unsigned> fire_order;  // missile search order for 'f' command
+    unordered_set<spell_type, hash<int>> fire_order_spell;
+    unordered_set<ability_type, hash<int>> fire_order_ability;
+    bool        quiver_menu_focus;
+    bool        launcher_autoquiver;
+
+    unordered_set<int> force_spell_targeter; // spell types to always use a
+                                             // targeter for
+    unordered_set<int> force_ability_targeter; // ability types to always use a
+                                               // targeter for
 
     bool        flush_input[NUM_FLUSH_REASONS]; // when to flush input buff
 
@@ -292,12 +323,12 @@ public:
     char_set_type  char_set;
     FixedVector<char32_t, NUM_DCHAR_TYPES> char_table;
 
-#ifdef WIZARD
-    int            wiz_mode;      // no, never, start in wiz mode
-    int            explore_mode;  // no, never, start in explore mode
-#endif
+    wizard_option_type wiz_mode;      // no, never, start in wiz mode
+    wizard_option_type explore_mode;  // no, never, start in explore mode
+
     vector<string> terp_files; // Lua files to load for luaterp
     bool           no_save;    // don't use persistent save files
+    bool           no_player_bones;   // don't save player's info in bones files
 
     // internal use only:
     int         sc_entries;      // # of score entries
@@ -359,11 +390,11 @@ public:
     unsigned    detected_item_colour;       // Colour of detected items
     unsigned    status_caption_colour;      // Colour of captions in HUD.
 
-    unsigned    heap_brand;         // Highlight heaps of items
-    unsigned    stab_brand;         // Highlight monsters that are stabbable
-    unsigned    may_stab_brand;     // Highlight potential stab candidates
-    unsigned    feature_item_brand; // Highlight features covered by items.
-    unsigned    trap_item_brand;    // Highlight traps covered by items.
+    unsigned    heap_highlight;         // Highlight heaps of items
+    unsigned    stab_highlight;         // Highlight monsters that are stabbable
+    unsigned    may_stab_highlight;     // Highlight potential stab candidates
+    unsigned    feature_item_highlight; // Highlight features covered by items.
+    unsigned    trap_item_highlight;    // Highlight traps covered by items.
 
     // What is the minimum number of items in a stack for which
     // you show summary (one-line) information
@@ -378,6 +409,8 @@ public:
 
     bool        explore_greedy;    // Explore goes after items as well.
 
+    int explore_greedy_visit; // Set what type of items explore_greedy visits.
+
     // How much more eager greedy-explore is for items than to explore.
     int         explore_item_greed;
 
@@ -389,6 +422,8 @@ public:
 
     bool        travel_key_stop;   // Travel stops on keypress.
 
+    bool        travel_one_unsafe_move; // Allow one unsafe move of auto travel
+
     vector<sound_mapping> sound_mappings;
     string sound_file_path;
     vector<colour_mapping> menu_colour_mappings;
@@ -397,22 +432,24 @@ public:
     vector<menu_sort_condition> sort_menus;
 
     bool        dump_on_save;       // Automatically dump character when saving.
-    int         dump_kill_places;   // How to dump place information for kills.
+    kill_dump_options dump_kill_places;   // How to dump place information for kills.
     int         dump_message_count; // How many old messages to dump
 
     int         dump_item_origins;  // Show where items came from?
     int         dump_item_origin_price;
 
+    unordered_set<string> dump_fields;
     // Order of sections in the character dump.
     vector<string> dump_order;
 
     int         pickup_menu_limit;  // Over this number of items, menu for
                                     // pickup
     bool        ability_menu;       // 'a'bility starts with a full-screen menu
+    bool        spell_menu;         // 'z' starts with a full-screen menu
     bool        easy_floor_use;     // , selects the floor item if there's 1
     bool        bad_item_prompt;    // Confirm before using a bad consumable
 
-    int         assign_item_slot;   // How free slots are assigned
+    slot_select_mode assign_item_slot;   // How free slots are assigned
     maybe_bool  show_god_gift;      // Show {god gift} in item names
 
     maybe_bool  restart_after_game; // If true, Crawl will not close on game-end
@@ -479,6 +516,7 @@ public:
 
     // -1 and 0 mean no confirmation, other possible values are 1,2,3 (see fail_severity())
     int         fail_severity_to_confirm;
+    int         fail_severity_to_quiver;
 #ifdef WIZARD
     // Parameters for fight simulations.
     string      fsim_mode;
@@ -537,6 +575,8 @@ public:
     string      tile_font_msg_family;
     string      tile_font_stat_family;
     string      tile_font_lbl_family;
+    string      glyph_mode_font;
+    int         glyph_mode_font_size;
 #endif
     int         tile_font_crt_size;
     int         tile_font_msg_size;
@@ -551,8 +591,10 @@ public:
     screen_mode tile_full_screen;
     int         tile_window_width;
     int         tile_window_height;
+    int         tile_window_ratio;
     maybe_bool  tile_use_small_layout;
 #endif
+    int         tile_sidebar_pixels;
     int         tile_cell_pixels;
     int         tile_viewport_scale;
     int         tile_map_scale;
@@ -560,6 +602,8 @@ public:
     int         tile_map_pixels;
 
     bool        tile_force_overlay;
+    VColour     tile_overlay_col;           // Background color for message overlay
+    int         tile_overlay_alpha_percent; // Background alpha percent for message overlay
     // display settings
     int         tile_update_rate;
     int         tile_runrest_rate;
@@ -584,6 +628,7 @@ public:
     bool        tile_level_map_hide_messages;
     bool        tile_level_map_hide_sidebar;
     bool        tile_web_mouse_control;
+    string      tile_web_mobile_input_helper;
 #endif
 #endif // USE_TILE
 
@@ -601,9 +646,26 @@ private:
     set<string>    included;  // Files we've included already.
 
 public:
+    bool prefs_dirty;
     // Fix option values if necessary, specifically file paths.
     void fixup_options();
+    void reset_loaded_state();
+    vector<GameOption*> get_option_behaviour() const
+    {
+        return option_behaviour;
+    }
+    void merge(const game_options &other);
+    GameOption *option_from_name(string name) const
+    {
+        auto o = options_by_name.find(name);
+        if (o == options_by_name.end())
+            return nullptr;
+        return o->second;
+    }
 
+    void write_prefs(FILE *f);
+
+    void reset_aliases(bool clear=true);
 private:
     string unalias(const string &key) const;
     string expand_vars(const string &field) const;
@@ -628,12 +690,15 @@ private:
                                 bool remove_interrupts);
     void set_fire_order(const string &full, bool append, bool prepend);
     void add_fire_order_slot(const string &s, bool prepend);
+    void set_fire_order_spell(const string &s, bool append, bool remove);
+    void set_fire_order_ability(const string &s, bool append, bool remove);
     void set_menu_sort(string field);
     void str_to_enemy_hp_colour(const string &, bool);
     void new_dump_fields(const string &text, bool add = true,
                          bool prepend = false);
     void do_kill_map(const string &from, const string &to);
     int  read_explore_stop_conditions(const string &) const;
+    int  read_explore_greedy_visit_conditions(const string &) const;
     use_animations_type read_use_animations(const string &) const;
 
     void split_parse(const string &s, const string &separator,
@@ -649,6 +714,10 @@ private:
     void set_fake_langs(const string &input);
     void set_player_tile(const string &s);
     void set_tile_offsets(const string &s, bool set_shield);
+    void add_force_spell_targeter(const string &s, bool prepend);
+    void remove_force_spell_targeter(const string &s, bool prepend);
+    void add_force_ability_targeter(const string &s, bool prepend);
+    void remove_force_ability_targeter(const string &s, bool prepend);
 
     static const string interrupt_prefix;
 
@@ -668,6 +737,6 @@ extern game_options  Options;
 
 static inline short macro_colour(short col)
 {
-    ASSERT(col < NUM_TERM_COLOURS);
+    ASSERTM(col < NUM_TERM_COLOURS, "invalid color %hd", col);
     return col < 0 ? col : Options.colour[ col ];
 }

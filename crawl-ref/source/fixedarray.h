@@ -6,8 +6,13 @@
 #pragma once
 
 #include <algorithm>
+#include <vector>
+#include <map>
 
 #include "fixedvector.h"
+
+using std::pair;
+using std::vector;
 
 template <class TYPE, int WIDTH, int HEIGHT> class FixedArray
 {
@@ -35,6 +40,13 @@ public:
         init(def);
     }
 
+    FixedArray(const FixedArray &other)
+    {
+        for (int i = 0; i < width(); i++)
+            for (int j = 0; j < height(); j++)
+                (*this)[i][j] = other[i][j];
+    }
+
 public:
     // ----- Size -----
     bool empty() const { return WIDTH == 0 || HEIGHT == 0; }
@@ -56,7 +68,7 @@ public:
     }
 
     template<class First, class Second>
-    TYPE& operator () (const pair<First,Second> &p)
+    TYPE& operator () (const std::pair<First,Second> &p)
     {
         return mData[p.first][p.second];
     }

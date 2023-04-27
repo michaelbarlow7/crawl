@@ -168,42 +168,6 @@ static const map<spschool, miscast_datum> miscast_effects = {
         }
     },
     {
-        spschool::charms,
-        {
-            BEAM_NONE,
-            {
-                "The air around you crackles with energy",
-                "Multicoloured lights dance before your eyes",
-                "You feel a strange surge of energy",
-                "Waves of light ripple over your body",
-                "Strange energies run through your body",
-                "You feel enfeebled",
-                "Magic surges out from your body",
-            },
-            {
-                "The air around @the_monster@ crackles with energy",
-                "Multicoloured lights dance around @the_monster@",
-                "Waves of light ripple over @the_monster@'s body",
-                "@The_monster@ twitches",
-                "@The_monster@'s body glows momentarily",
-                "Magic surges out from @the_monster@",
-            },
-            {
-                "Multicoloured lights dance in the air",
-                "Magic surges out from thin air",
-            },
-            [] (actor& target, actor* source, miscast_source_info /*mc_info*/,
-                int dam, string /*cause*/) {
-                if (target.is_player())
-                    debuff_player();
-                else
-                    debuff_monster(*target.as_monster());
-
-                target.slow_down(source, dam);
-            }
-        },
-    },
-    {
         spschool::hexes,
         {
             BEAM_NONE,
@@ -214,6 +178,11 @@ static const map<spschool, miscast_datum> miscast_effects = {
                 "The light around you dims momentarily",
                 "Strange energies run through your body",
                 "You hear an indistinct dissonance whispering inside your mind",
+                "The air around you crackles with energy",
+                "You feel a strange surge of energy",
+                "Waves of light ripple over your body",
+                "You feel enfeebled",
+                "Magic surges out from your body",
             },
             {
                 "@The_monster@ looks off-balance for a moment",
@@ -222,18 +191,17 @@ static const map<spschool, miscast_datum> miscast_effects = {
                 "The light around @the_monster@ dims momentarily",
                 "@The_monster@ twitches",
                 "@The_monster@'s body glows momentarily",
+                "The air around @the_monster@ crackles with energy",
+                "Waves of light ripple over @the_monster@'s body",
+                "Magic surges out from @the_monster@",
             },
             {
                 "Multicoloured lights dance in the air",
                 "A patch of light dims momentarily",
+                "Magic surges out from thin air",
             },
             [] (actor& target, actor* source, miscast_source_info /*mc_info*/,
                 int dam, string /*cause*/) {
-                if (target.is_player())
-                    debuff_player();
-                else
-                    debuff_monster(*target.as_monster());
-
                 target.slow_down(source, dam);
             }
         },
@@ -287,7 +255,9 @@ static const map<spschool, miscast_datum> miscast_effects = {
                             break;
                         case ATT_GOOD_NEUTRAL:
                         case ATT_NEUTRAL:
-                        case ATT_STRICT_NEUTRAL:
+#if TAG_MAJOR_VERSION == 34
+                    case ATT_OLD_STRICT_NEUTRAL:
+#endif
                             data.behaviour = BEH_NEUTRAL;
                         break;
                     }
@@ -379,9 +349,15 @@ static const map<spschool, miscast_datum> miscast_effects = {
                 int dam, string /*cause*/) {
 
                 if (target.is_player())
-                    you.increase_duration(DUR_DIMENSION_ANCHOR, dam, dam);
+                {
+                    // number arbitrarily chosen & needs more playtesting
+                    const int dur = div_rand_round(dam, 2);
+                    you.set_duration(DUR_LOCKED_DOWN, dur, dur,
+                                     "You are magically locked in place.");
+                }
                 else
                 {
+                    // TODO: monster version? something else?
                      target.as_monster()->add_ench(
                          mon_enchant(ENCH_DIMENSION_ANCHOR,
                                      0, source, dam * BASELINE_DELAY));
@@ -654,6 +630,14 @@ void miscast_effect(actor& target, actor* source, miscast_source_info mc_info,
 
     if (school == spschool::random)
         school = spschools_type::exponent(random2(SPSCHOOL_LAST_EXPONENT + 1));
+
+    // Don't summon friendly nameless horrors if they would always turn hostile.
+    if (source && source->is_player()
+        && school == spschool::summoning
+        && you.allies_forbidden())
+    {
+        return;
+    }
 
     miscast_datum effect =  miscast_effects.find(school)->second;
 

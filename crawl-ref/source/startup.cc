@@ -20,7 +20,6 @@
 #include "end.h"
 #include "exclude.h"
 #include "files.h"
-#include "food.h"
 #include "god-abil.h"
 #include "god-passive.h"
 #include "hints.h"
@@ -63,6 +62,7 @@
  #include "windowmanager.h"
 #endif
 #include "ui.h"
+#include "version.h"
 
 using namespace ui;
 
@@ -112,8 +112,8 @@ static void _initialize()
     reset_all_monsters();
     init_anon();
 
-    igrd.init(NON_ITEM);
-    mgrd.init(NON_MONSTER);
+    env.igrid.init(NON_ITEM);
+    env.mgrid.init(NON_MONSTER);
     env.map_knowledge.init(map_cell());
     env.pgrid.init(terrain_property_t{});
 
@@ -138,7 +138,9 @@ static void _initialize()
     _loading_message("Loading spells and features...");
     init_feat_desc_cache();
     init_spell_name_cache();
-    init_spell_rarities();
+#ifdef DEBUG
+    validate_spellbooks();
+#endif
 
     // Read special levels and vaults.
     _loading_message("Loading maps...");
@@ -206,30 +208,38 @@ static void _initialize()
 *
 *  Doesn't affect monsters behind glass, only those that would
 *  immediately have line-of-fire.
-*
-*  @param items_also whether to zap items as well as monsters.
 */
-static void _zap_los_monsters(bool items_also)
+static void _zap_los_monsters()
 {
+    const bool items_also = Hints.hints_events[HINT_SEEN_FIRST_OBJECT];
     for (radius_iterator ri(you.pos(), LOS_SOLID); ri; ++ri)
     {
         if (items_also)
         {
-            int item = igrd(*ri);
+            int item = env.igrid(*ri);
 
-            if (item != NON_ITEM && mitm[item].defined())
+            if (item != NON_ITEM && env.item[item].defined())
                 destroy_item(item);
         }
 
-        // If we ever allow starting with a friendly monster,
-        // we'll have to check here.
         monster* mon = monster_at(*ri);
-        if (mon == nullptr || !mons_is_threatening(*mon))
+        if (mon == nullptr || !mons_is_threatening(*mon) || mon->friendly())
             continue;
 
         dprf("Dismissing %s",
              mon->name(DESC_PLAIN, true).c_str());
 
+        if (mons_is_or_was_unique(*mon))
+        {
+            if (mons_is_elven_twin(mon))
+            {
+                if (monster* sibling = mons_find_elven_twin_of(mon))
+                {
+                    sibling->flags |=MF_HARD_RESET;
+                    monster_die(*sibling, KILL_DISMISSED, NON_MONSTER, true, true);
+                }
+            }
+        }
         // Do a hard reset so the monster's items will be discarded.
         mon->flags |= MF_HARD_RESET;
         // Do a silent, wizard-mode monster_die() just to be extra sure the
@@ -247,6 +257,11 @@ static void _post_init(bool newc)
     // case there are any early game warning messages to be logged.
 #ifdef USE_TILE
     tiles.resize();
+
+#ifdef USE_TILE_WEB
+    if (!newc)
+        sync_last_milestone();
+#endif
 #endif
 
     clua.load_persist();
@@ -262,20 +277,23 @@ static void _post_init(bool newc)
 
     calc_hp();
     calc_mp();
-    if (you.form != transformation::lich)
-        food_change(true);
     shopping_list.refresh();
+    populate_sets_by_obj_type();
 
     run_map_local_preludes();
 
     if (newc)
     {
-        if (Options.pregen_dungeon && crawl_state.game_standard_levelgen())
+        // n.b. temple already generated in setup_game at this point
+        if (Options.pregen_dungeon == level_gen_type::full
+            && crawl_state.game_standard_levelgen())
+        {
             pregen_dungeon(level_id(NUM_BRANCHES, -1));
+        }
 
         you.entering_level = false;
         you.transit_stair = DNGN_UNSEEN;
-        you.depth = 1;
+        you.depth = starting_absdepth() + 1;
         // Abyssal Knights start out in the Abyss.
         if (you.chapter == CHAPTER_POCKET_ABYSS)
             you.where_are_you = BRANCH_ABYSS;
@@ -287,18 +305,23 @@ static void _post_init(bool newc)
     level_id old_level;
     old_level.branch = NUM_BRANCHES;
 
-    load_level(you.entering_level ? you.transit_stair : DNGN_STONE_STAIRS_DOWN_I,
+#ifdef USE_TILE_WEB
+    if (tiles.get_ui_state() == UI_CRT)
+        tiles.set_ui_state(UI_NORMAL);
+#endif
+
+    load_level(you.entering_level ? you.transit_stair :
+               you.char_class == JOB_DELVER ? DNGN_STONE_STAIRS_UP_I : DNGN_STONE_STAIRS_DOWN_I,
                you.entering_level ? LOAD_ENTER_LEVEL :
                newc               ? LOAD_START_GAME : LOAD_RESTART_GAME,
                old_level);
 
     if (newc && you.chapter == CHAPTER_POCKET_ABYSS)
+    {
         generate_abyss();
+        save_level(level_id::current());
+    }
 
-#ifdef DEBUG_DIAGNOSTICS
-    // Debug compiles display a lot of "hidden" information, so we auto-wiz.
-    you.wizard = true;
-#endif
 #ifdef WIZARD
     // Save-less games are pointless except for tests.
     if (Options.no_save)
@@ -313,23 +336,30 @@ static void _post_init(bool newc)
     you.redraw_armour_class = true;
     you.redraw_evasion      = true;
     you.redraw_experience   = true;
-    you.redraw_quiver       = true;
+    you.redraw_noise        = true;
     you.wield_change        = true;
+    you.gear_change         = true;
+    quiver::set_needs_redraw();
+
 
     // Start timer on session.
     you.last_keypress_time = chrono::system_clock::now();
 
-#ifdef CLUA_BINDINGS
+    // in principle everything here might be skippable if CLUA_BINDINGS is not
+    // defined, but do it anyways for consistency with normal builds.
     clua.runhook("chk_startgame", "b", newc);
 
     read_init_file(true);
     Options.fixup_options();
+    read_startup_prefs();
+#ifdef USE_TILE_WEB
+    tiles.send_options();
+#endif
 
     // In case Lua changed the character set.
     init_char_table(Options.char_set);
     init_show_table();
     init_monster_symbols();
-#endif
 
 #ifdef USE_TILE
     init_player_doll();
@@ -338,13 +368,17 @@ static void _post_init(bool newc)
 #endif
     update_player_symbol();
 
+    if (newc)
+        quiver::on_newchar(); // needs to happen after init file is read
+
     draw_border();
     new_level(!newc);
     update_turn_count();
     update_vision_range();
-    you.xray_vision = !!you.duration[DUR_SCRYING];
     init_exclusion_los();
-    ash_check_bondage(false);
+    ash_check_bondage();
+    if (you.prev_save_version != Version::Long)
+        check_if_everything_is_identified();
 
     trackers_init_new_level();
 
@@ -352,14 +386,16 @@ static void _post_init(bool newc)
     {
         // For a new game, wipe out monsters in LOS, and
         // for new hints mode games also the items.
-        _zap_los_monsters(Hints.hints_events[HINT_SEEN_FIRST_OBJECT]);
+        _zap_los_monsters();
     }
 
     // This just puts the view up for the first turn.
     you.redraw_title = true;
     you.redraw_status_lights = true;
     print_stats();
+    update_screen();
     viewwindow();
+    update_screen();
 
     activate_notes(true);
 
@@ -413,7 +449,7 @@ static void _construct_game_modes_menu(shared_ptr<OuterMenu>& container)
         auto hbox = make_shared<Box>(Box::HORZ);
         hbox->set_cross_alignment(Widget::Align::CENTER);
         auto tile = make_shared<Image>();
-        tile->set_tile(tile_def(tileidx_gametype(entry.id), TEX_GUI));
+        tile->set_tile(tile_def(tileidx_gametype(entry.id)));
         tile->set_margin_for_sdl(0, 6, 0, 0);
         hbox->add_child(move(tile));
         hbox->add_child(label);

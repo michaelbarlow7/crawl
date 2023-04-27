@@ -1,12 +1,18 @@
 #pragma once
 
 #include <functional>
+#include <vector>
 
 #include "enchant-type.h"
 #include "mon-util.h"
+#include "tag-version.h"
+
+using std::vector;
 
 #define SPECIAL_WEAPON_KEY "special_weapon_name"
 #define CLOUD_IMMUNE_MB_KEY "cloud_immune"
+#define PRIEST_KEY "priest"
+#define ACTUAL_SPELLCASTER_KEY "actual_spellcaster"
 
 enum monster_info_flags
 {
@@ -43,9 +49,11 @@ enum monster_info_flags
 #endif
     MB_PETRIFYING,
     MB_PETRIFIED,
-    MB_VULN_MAGIC,
+    MB_LOWERED_WL,
     MB_POSSESSABLE,
-    MB_ENSLAVED,
+#if TAG_MAJOR_VERSION == 34
+    MB_OLD_ENSLAVED,
+#endif
     MB_SWIFT,
     MB_INSANE,
     MB_SILENCING,
@@ -63,7 +71,7 @@ enum monster_info_flags
     MB_PREP_RESURRECT,
 #endif
     MB_REGENERATION,
-    MB_RAISED_MR,
+    MB_STRONG_WILLED,
     MB_MIRROR_DAMAGE,
     MB_SAFE,
     MB_UNSAFE,
@@ -105,11 +113,10 @@ enum monster_info_flags
     MB_NO_REGEN,
 #if TAG_MAJOR_VERSION == 34
     MB_SUPPRESSED,
-    MB_ROLLING,
 #endif
+    MB_ROLLING,
     MB_RANGED_ATTACK,
     MB_NO_NAME_TAG,
-    MB_OZOCUBUS_ARMOUR,
 #if TAG_MAJOR_VERSION == 34
     MB_MAGIC_ARMOUR,
 #endif
@@ -134,11 +141,10 @@ enum monster_info_flags
     MB_TOXIC_RADIANCE,
     MB_GRASPING_ROOTS,
     MB_FIRE_VULN,
-    MB_TORNADO,
-    MB_TORNADO_COOLDOWN,
+    MB_VORTEX,
+    MB_VORTEX_COOLDOWN,
     MB_BARBS,
     MB_POISON_VULN,
-    MB_ICEMAIL,
     MB_AGILE,
     MB_FROZEN,
     MB_BLACK_MARK,
@@ -179,8 +185,34 @@ enum monster_info_flags
     MB_PINNED,
 #endif
     MB_VILE_CLUTCH,
-    MB_HIGHLIGHTED_SUMMONER,
     MB_WATERLOGGED,
+    MB_CLOUD_RING_THUNDER,
+    MB_CLOUD_RING_FLAMES,
+    MB_CLOUD_RING_CHAOS,
+    MB_CLOUD_RING_MUTATION,
+    MB_CLOUD_RING_FOG,
+    MB_CLOUD_RING_ICE,
+    MB_CLOUD_RING_DRAINING,
+    MB_CLOUD_RING_ACID,
+    MB_CLOUD_RING_MIASMA,
+    MB_WITHERING,
+    MB_CRUMBLING,
+    MB_ALLY_TARGET,
+    MB_CANT_DRAIN,
+    MB_CONCENTRATE_VENOM,
+    MB_FIRE_CHAMPION,
+    MB_SILENCE_IMMUNE,
+    MB_ANTIMAGIC,
+    MB_NO_ATTACKS,
+    MB_RES_DROWN,
+    MB_ANGUISH,
+    MB_CLARITY,
+    MB_DISTRACTED_ONLY,
+    MB_CANT_SEE_YOU,
+    MB_UNBLINDABLE,
+    MB_SIMULACRUM,
+    MB_REFLECTING,
+    MB_TELEPORTING,
     NUM_MB_FLAGS
 };
 
@@ -225,6 +257,7 @@ struct monster_info_base
     monster_spells spells;
     mon_attack_def attack[MAX_NUM_ATTACKS];
     bool can_go_frenzy;
+    bool can_feel_fear;
 
     uint32_t client_id;
 };
@@ -300,7 +333,7 @@ struct monster_info : public monster_info_base
 
     inline bool neutral() const
     {
-        return attitude == ATT_NEUTRAL || attitude == ATT_GOOD_NEUTRAL || attitude == ATT_STRICT_NEUTRAL;
+        return attitude == ATT_NEUTRAL || attitude == ATT_GOOD_NEUTRAL;
     }
 
     string db_name() const;
@@ -320,7 +353,7 @@ struct monster_info : public monster_info_base
 
     string constriction_description() const;
 
-    monster_type draco_or_demonspawn_subspecies() const;
+    monster_type draconian_subspecies() const;
 
     mon_intel_type intel() const
     {
@@ -339,7 +372,9 @@ struct monster_info : public monster_info_base
 
     int randarts(artefact_prop_type ra_prop) const;
     bool can_see_invisible() const;
-    int res_magic() const;
+    bool nightvision() const;
+    int willpower() const;
+    int lighting_modifiers() const;
 
     int base_speed() const
     {
@@ -350,12 +385,13 @@ struct monster_info : public monster_info_base
 
     bool wields_two_weapons() const;
     bool can_regenerate() const;
-    reach_type reach_range() const;
+    reach_type reach_range(bool items = true) const;
 
     size_type body_size() const;
 
     // These should be kept in sync with the actor equivalents
     // (Maybe unify somehow?)
+    // Note: actor version is now actor::cannot_act.
     bool cannot_move() const;
     bool airborne() const;
     bool ground_level() const;
@@ -367,21 +403,24 @@ struct monster_info : public monster_info_base
 
     bool is_actual_spellcaster() const
     {
-        return props.exists("actual_spellcaster");
+        return props.exists(ACTUAL_SPELLCASTER_KEY);
     }
 
     bool is_priest() const
     {
-        return props.exists("priest");
+        return props.exists(PRIEST_KEY);
     }
 
+    bool fellow_slime() const;
+
     bool has_spells() const;
+    bool antimagic_susceptible() const;
     int spell_hd(spell_type spell = SPELL_NO_SPELL) const;
     unsigned colour(bool base_colour = false) const;
     void set_colour(int colour);
 
     bool has_trivial_ench(enchant_type ench) const;
-    bool debuffable() const;
+    bool unravellable() const;
 
 protected:
     string _core_name() const;
@@ -400,5 +439,3 @@ void mons_to_string_pane(string& desc, int& desc_colour, bool fullname,
                            int count);
 void mons_conditions_string(string& desc, const vector<monster_info>& mi,
                             int start, int count, bool equipment);
-
-typedef function<vector<string> (const monster_info& mi)> (desc_filter);

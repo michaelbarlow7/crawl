@@ -6,6 +6,7 @@
 #include "AppHdr.h"
 
 #include "misc.h"
+#include "mpr.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -24,11 +25,6 @@
 #include "terrain.h"
 #include "tileview.h"
 #include "traps.h"
-
-string weird_glowing_colour()
-{
-    return getMiscString("glowing_colour_name");
-}
 
 // Make the player swap positions with a given monster.
 void swap_with_monster(monster* mon_to_swap)
@@ -96,7 +92,7 @@ void swap_with_monster(monster* mon_to_swap)
                 mpr("You become entangled in the net!");
             else
                 mpr("You get stuck in the web!");
-            you.redraw_quiver = true; // Account for being in a net.
+            quiver::set_needs_redraw();
             you.redraw_evasion = true;
         }
 
@@ -124,6 +120,12 @@ unsigned int breakpoint_rank(int val, const int breakpoints[],
         ++result;
 
     return result;
+}
+
+counted_monster_list::counted_monster_list(vector<monster *> ms)
+{
+    for (auto mon : ms)
+        add(mon);
 }
 
 void counted_monster_list::add(const monster* mons)
@@ -194,6 +196,15 @@ bool today_is_halloween()
     const struct tm *date = TIME_FN(&curr_time);
     // tm_mon is zero-based in case you are wondering
     return date->tm_mon == 9 && date->tm_mday == 31;
+}
+
+bool now_is_morning()
+{
+    const time_t curr_time = time(nullptr);
+    const tm *date = TIME_FN(&curr_time);
+    // Assume 'morning' starts at 6 AM and ends at 6 PM.
+    dprf("hr %d", date->tm_hour);
+    return date->tm_hour >= 6 && date->tm_hour < 18;
 }
 
 bool tobool(maybe_bool mb, bool def)

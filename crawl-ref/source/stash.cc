@@ -17,6 +17,7 @@
 #include "cluautil.h"
 #include "command.h"
 #include "coordit.h"
+#include "corpse.h"
 #include "describe.h"
 #include "describe-spells.h"
 #include "directn.h"
@@ -35,7 +36,6 @@
 #include "notes.h"
 #include "output.h"
 #include "religion.h"
-#include "rot.h"
 #include "spl-book.h"
 #include "state.h"
 #include "stringutil.h"
@@ -53,7 +53,6 @@ StashTracker StashTrack;
 
 string userdef_annotate_item(const char *s, const item_def *item)
 {
-#ifdef CLUA_BINDINGS
     lua_stack_cleaner cleaner(clua);
     clua_push_item(clua, const_cast<item_def*>(item));
     if (!clua.callfn(s, 1, 1) && !clua.error.empty())
@@ -62,9 +61,6 @@ string userdef_annotate_item(const char *s, const item_def *item)
     if (lua_isstring(clua, -1))
         ann = luaL_checkstring(clua, -1);
     return ann;
-#else
-    return "";
-#endif
 }
 
 string stash_annotate_item(const char *s, const item_def *item)
@@ -194,15 +190,13 @@ bool Stash::are_items_same(const item_def &a, const item_def &b, bool exact)
 
     return same
            || (!exact && a.base_type == b.base_type
-               && (a.base_type == OBJ_CORPSES
-                   || (a.is_type(OBJ_FOOD, FOOD_CHUNK)
-                       && b.sub_type == FOOD_CHUNK))
+               && a.base_type == OBJ_CORPSES
                && a.plus == b.plus);
 }
 
-bool Stash::unverified() const
+bool Stash::unvisited() const
 {
-    return !verified;
+    return !visited;
 }
 
 bool Stash::pickup_eligible() const
@@ -235,16 +229,6 @@ static bool _grid_has_perceived_item(const coord_def& pos)
     return you.visible_igrd(pos) != NON_ITEM;
 }
 
-static bool _grid_has_perceived_multiple_items(const coord_def& pos)
-{
-    int count = 0;
-
-    for (stack_iterator si(pos, true); si && count < 2; ++si)
-        ++count;
-
-    return count > 1;
-}
-
 bool Stash::unmark_trapping_nets()
 {
     bool changed = false;
@@ -256,7 +240,7 @@ bool Stash::unmark_trapping_nets()
 
 void Stash::update()
 {
-    feat = grd(pos);
+    feat = env.grid(pos);
     trap = NUM_TRAPS;
 
     if (is_boring_feature(feat))
@@ -274,114 +258,62 @@ void Stash::update()
     else
         feat_desc = feature_description_at(pos, false, DESC_A);
 
-    // If this is your position, you know what's on this square
-    if (pos == you.pos())
-    {
-        // Zap existing items
-        items.clear();
+    int previous_size = items.size();
 
-        // Now, grab all items on that square and fill our vector
-        for (stack_iterator si(pos, true); si; ++si)
-        {
-            god_id_item(*si);
+    // Zap existing items
+    items.clear();
+
+    if (!_grid_has_perceived_item(pos))
+    {
+        visited = true;
+        return;
+    }
+
+    // Squares are big, whole piles of loot can be seen on each so
+    // let's update them
+
+    // There's something on this square. Take a squint at it.
+    item_def *pitem = &env.item[you.visible_igrd(pos)];
+    hints_first_item(*pitem);
+
+    bool glowing_item_on_square = false;
+    bool artefact_item_on_square = false;
+    // Now, grab all items on that square and fill our vector
+    for (stack_iterator si(pos, true); si; ++si)
+    {
+        god_id_item(*si);
+        maybe_identify_base_type(*si);
+        if (!(si->flags & ISFLAG_UNOBTAINABLE))
             add_item(*si);
-        }
 
-        verified = true;
+        if (si->base_type == OBJ_STAVES || si->flags & ISFLAG_COSMETIC_MASK)
+            glowing_item_on_square = true;
+
+        if (si->flags & ISFLAG_ARTEFACT_MASK)
+            artefact_item_on_square = true;
     }
-    // If this is not your position, the only thing we can do is verify that
-    // what the player sees on the square is the first item in this vector.
-    else
-    {
-        if (!_grid_has_perceived_item(pos))
-        {
-            items.clear();
-            verified = true;
-            return;
-        }
 
-        // There's something on this square. Take a squint at it.
-        item_def *pitem = &mitm[you.visible_igrd(pos)];
-        hints_first_item(*pitem);
+    const bool stack_greed      =  static_cast<int>(items.size()) > 1
+                                && (Options.explore_greedy_visit & EG_STACK);
+    const bool glowing_greed    =  glowing_item_on_square
+                                && (Options.explore_greedy_visit & EG_GLOWING);
+    const bool artefact_greed   = artefact_item_on_square
+                                && (Options.explore_greedy_visit & EG_ARTEFACT);
 
-        god_id_item(*pitem);
-        maybe_identify_base_type(*pitem);
-        const item_def& item = *pitem;
-
-        if (!_grid_has_perceived_multiple_items(pos))
-            items.clear();
-
-        // We knew of nothing on this square, so we'll assume this is the
-        // only item here, but mark it as unverified unless we can see nothing
-        // under the item.
-        if (items.empty())
-        {
-            if (!(item.flags & ISFLAG_UNOBTAINABLE))
-                add_item(item);
-            // Note that we could be lying here, since we can have
-            // a verified falsehood (if there's a mimic.)
-            verified = !_grid_has_perceived_multiple_items(pos);
-            return;
-        }
-
-        // There's more than one item in this pile. Check to see if
-        // the top item matches what we remember.
-        const item_def &first = items[0];
-        // Compare these items
-        if (are_items_same(first, item))
-        {
-            // Replace the item to reflect seen recharging, etc.
-            if (!are_items_same(first, item, true))
-            {
-                items.erase(items.begin());
-                add_item(item, true);
-            }
-        }
-        else
-        {
-            // See if 'item' matches any of the items we have. If it does,
-            // we'll just make that the first item and leave 'verified'
-            // unchanged.
-
-            // Start from 1 because we've already checked items[0]
-            for (int i = 1, count = items.size(); i < count; ++i)
-            {
-                if (are_items_same(items[i], item))
-                {
-                    // Found it. Swap it to the front of the vector.
-                    swap(items[i], items[0]);
-
-                    // We don't set verified to true. If this stash was
-                    // already unverified, it remains so.
-                    return;
-                }
-            }
-
-            // If this is unverified, forget last item on stack. This isn't
-            // terribly clever, but it prevents the vector swelling forever.
-            if (!verified)
-                items.pop_back();
-
-            // Items are different. We'll put this item in the front of our
-            // vector, and mark this as unverified
-            add_item(item, true);
-            verified = false;
-        }
-    }
+    visited = pos == you.pos()
+              || !(stack_greed || glowing_greed || artefact_greed)
+              || static_cast<int>(items.size()) == previous_size && visited;
 }
 
 static bool _is_rottable(const item_def &item)
 {
     if (is_shop_item(item))
         return false;
-    return item.base_type == OBJ_CORPSES || item.is_type(OBJ_FOOD, FOOD_CHUNK);
+    return item.base_type == OBJ_CORPSES;
 }
 
 static short _min_rot(const item_def &item)
 {
-    if (item.base_type == OBJ_FOOD)
-        return 0;
-
     if (item.is_type(OBJ_CORPSES, CORPSE_SKELETON))
         return 0;
 
@@ -395,13 +327,17 @@ static short _min_rot(const item_def &item)
 // stash-tracking pre/suffixes.
 string Stash::stash_item_name(const item_def &item)
 {
-    string name = item.name(DESC_A);
-
+    string name;
     if (in_inventory(item))
     {
-        name.insert(0, " (carried) ");
+        name = item.name(DESC_INVENTORY_EQUIP); // add `(worn)`, etc
+        // use [] to match with the location info
+        name.insert(0, "[carried] ");
         return name;
     }
+    else
+        name = item.name(DESC_A);
+
 
     if (!_is_rottable(item))
         return name;
@@ -520,7 +456,7 @@ void Stash::_update_identification()
     }
 }
 
-void Stash::add_item(const item_def &item, bool add_to_front)
+void Stash::add_item(item_def &item, bool add_to_front)
 {
     if (_is_rottable(item))
         StashTrack.update_corpses();
@@ -543,7 +479,7 @@ void Stash::add_item(const item_def &item, bool add_to_front)
 
 void Stash::write(FILE *f, coord_def refpos, string place, bool identify) const
 {
-    if (items.empty() && verified)
+    if (items.empty() && visited)
         return;
 
     no_notes nx;
@@ -569,7 +505,7 @@ void Stash::write(FILE *f, coord_def refpos, string place, bool identify) const
         }
 
         fprintf(f, "  %s%s%s\n", OUTS(s), OUTS(ann),
-            (!verified && (items.size() > 1 || i) ? " (still there?)" : ""));
+            (!visited && (items.size() > 1 || i) ? " (still there?)" : ""));
 
         if (is_dumpable_artefact(item))
         {
@@ -591,7 +527,7 @@ void Stash::write(FILE *f, coord_def refpos, string place, bool identify) const
         }
     }
 
-    if (items.size() <= 1 && !verified)
+    if (items.size() <= 1 && !visited)
         fprintf(f, "  (unseen)\n");
 }
 
@@ -608,7 +544,7 @@ void Stash::save(writer& outf) const
 
     marshallString(outf, feat_desc);
 
-    marshallByte(outf, verified? 1 : 0);
+    marshallByte(outf, visited? 1 : 0);
 
     // And dump the items individually. We don't bother saving fields we're
     // not interested in (and don't anticipate being interested in).
@@ -629,7 +565,7 @@ void Stash::load(reader& inf)
     feat_desc = unmarshallString(inf);
 
     uint8_t flags = unmarshallUByte(inf);
-    verified = (flags & 1) != 0;
+    visited = (flags & 1) != 0;
 
     // Zap out item vector, in case it's in use (however unlikely)
     items.clear();
@@ -798,7 +734,7 @@ bool LevelStashes::shop_needs_visit(const coord_def& c) const
 bool LevelStashes::needs_visit(const coord_def& c, bool autopickup) const
 {
     const Stash *s = find_stash(c);
-    if (s && (s->unverified()
+    if (s && (s->unvisited()
               || autopickup && s->pickup_eligible()))
     {
         return true;
@@ -809,7 +745,7 @@ bool LevelStashes::needs_visit(const coord_def& c, bool autopickup) const
 bool LevelStashes::needs_stop(const coord_def &c) const
 {
     const Stash *s = find_stash(c);
-    return s && s->unverified() && s->needs_stop();
+    return s && s->unvisited() && s->needs_stop();
 }
 
 ShopInfo &LevelStashes::get_shop(const coord_def& c)
@@ -1154,10 +1090,9 @@ void StashTracker::load(reader& inf)
 void StashTracker::update_visible_stashes()
 {
     LevelStashes *lev = find_current_level();
-    for (radius_iterator ri(you.pos(),
-                            you.xray_vision ? LOS_NONE : LOS_DEFAULT); ri; ++ri)
+    for (vision_iterator ri(you); ri; ++ri)
     {
-        const dungeon_feature_type feat = grd(*ri);
+        const dungeon_feature_type feat = env.grid(*ri);
 
         if ((!lev || !lev->update_stash(*ri))
             && (_grid_has_perceived_item(*ri)
@@ -1442,6 +1377,7 @@ void StashTracker::search_stashes(string search_term)
             {
                 show_stash_search_help();
                 redraw_screen();
+                update_screen();
             }
             else
                 break;
@@ -1589,11 +1525,13 @@ class StashSearchMenu : public Menu
 {
 public:
     StashSearchMenu(const char* sort_style_,const char* filtered_)
-        : Menu(MF_MULTISELECT | MF_ALLOW_FORMATTING),
+        : Menu(MF_SINGLESELECT | MF_ALLOW_FORMATTING | MF_ARROWS_SELECT
+            | MF_INIT_HOVER),
           request_toggle_sort_method(false),
           request_toggle_filter_useless(false),
           sort_style(sort_style_),
-          filtered(filtered_)
+          filtered(filtered_),
+          search(nullptr)
     { }
 
 public:
@@ -1601,10 +1539,49 @@ public:
     bool request_toggle_filter_useless;
     const char* sort_style;
     const char* filtered;
+    base_pattern *search;
 
 protected:
     bool process_key(int key) override;
     virtual formatted_string calc_title() override;
+    bool examine_index(int i) override;
+};
+
+class StashMenuEntry : public MenuEntry
+{
+public:
+    StashMenuEntry(const string &txt = string(),
+               MenuEntryLevel lev = MEL_ITEM,
+               colour_t col = MENU_ITEM_STOCK_COLOUR,
+               int qty  = 0,
+               int hotk = 0,
+               bool _here = false)
+        : MenuEntry(txt, lev, qty, hotk),
+        here(_here), main_colour(col), alt_colour(DARKGREY)
+    {
+        toggle_colour(true);
+    }
+
+    stash_search_result *get_search_result() const
+    {
+        return static_cast<stash_search_result *>(data);
+    }
+
+    void toggle_colour(bool main)
+    {
+        colour = main ?  main_colour : alt_colour;
+    }
+
+    void set_here_enabled(bool e)
+    {
+        toggle_colour(!no_travel_needed() || e);
+    }
+
+    bool no_travel_needed() const { return here; }
+protected:
+    bool here;
+    colour_t main_colour;
+    colour_t alt_colour;
 };
 
 formatted_string StashSearchMenu::calc_title()
@@ -1630,7 +1607,9 @@ formatted_string StashSearchMenu::calc_title()
             ": only useless items found; press <w>=</w> to show."
             "                    "
             "</lightgrey>");
-    } else {
+    }
+    else
+    {
         fs += formatted_string::parse_string(make_stringf(
             "<lightgrey>"
             ": <w>%s</w> [toggle: <w>!</w>],"
@@ -1658,7 +1637,56 @@ bool StashSearchMenu::process_key(int key)
         return false;
     }
 
-    return Menu::process_key(key);
+    auto cur_action = menu_action;
+    auto ret = Menu::process_key(key);
+    if (cur_action != menu_action)
+    {
+        // recolor items at the player's position
+        for (auto *me : items)
+        {
+            auto *sme = dynamic_cast<StashMenuEntry *>(me);
+            if (me)
+                sme->set_here_enabled(menu_action != ACT_EXECUTE);
+        }
+        update_menu();
+#ifdef USE_TILE_WEB
+        webtiles_update_items(0, items.size() - 1);
+#endif
+    }
+    return ret;
+}
+
+bool StashSearchMenu::examine_index(int i)
+{
+    ASSERT(i >= 0 && i < static_cast<int>(items.size()));
+
+    const StashMenuEntry *sme = dynamic_cast<const StashMenuEntry *>(items[i]);
+    const stash_search_result *res = sme->get_search_result();
+
+    if (res->item.defined())
+    {
+        item_def it = res->item;
+        // pass the level as a prop, not very elegant
+        it.props["level_id"].get_string() = res->pos.id.describe();
+        if (!describe_item(it,
+            [this](string& desc)
+            {
+                if (search)
+                    desc = search->match_location(desc).annotate_string("lightcyan");
+            }))
+        {
+            return false;
+        }
+    }
+    else if (res->shop)
+        res->shop->show_menu(res->pos);
+    else
+    {
+        level_excursion le;
+        le.go_to(res->pos.id);
+        describe_feature_wide(res->pos.pos);
+    }
+    return true;
 }
 
 // Returns true to request redisplay if display method was toggled
@@ -1685,21 +1713,60 @@ bool StashTracker::display_search_results(
     stashmenu.menu_action  = default_execute ? Menu::ACT_EXECUTE
                                              : Menu::ACT_EXAMINE;
     string title = "match";
+    if (!nohl)
+        stashmenu.search = search;
 
     MenuEntry *mtitle = new MenuEntry(title, MEL_TITLE);
     // Abuse of the quantity field.
     mtitle->quantity = num_alt_results;
     stashmenu.set_title(mtitle);
 
+    bool need_here_subtitle = stashmenu.menu_action == Menu::ACT_EXECUTE
+                                                            && sort_by_dist;
+    bool need_there_subtitle = false;
+    StashMenuEntry *first_hdr = nullptr;
+
     menu_letter hotkey;
+    int initial_snap = -1;
     for (stash_search_result &res : *results)
     {
         ostringstream matchtitle;
+        const bool here = res.pos.id == level_id::current() && res.pos.pos == you.pos();
+
+        // handled on first result, show the `here` subtitle if there is
+        // an item of some kind here
+        if (need_here_subtitle && (here || res.in_inventory))
+        {
+            // LIGHTCYAN for better contrast. XX change the default?
+            first_hdr = new StashMenuEntry("Results at your position",
+                                                    MEL_SUBTITLE, LIGHTCYAN);
+            stashmenu.add_entry(first_hdr);
+            // only show the `elsewhere` subtitle if there are any `here`
+            // results
+            need_there_subtitle = true;
+        }
+
+        need_here_subtitle = false;
+
+        if (need_there_subtitle && !(here || res.in_inventory))
+        {
+            const string cycle_keyhelp = " <lightgrey>([<w>,</w>] to cycle)</lightgrey>";
+            stashmenu.add_entry(new StashMenuEntry(
+                "Results elsewhere" + cycle_keyhelp, MEL_SUBTITLE, LIGHTCYAN));
+            ASSERT(first_hdr);
+            first_hdr->text += cycle_keyhelp;
+            need_there_subtitle = false;
+            initial_snap = static_cast<int>(stashmenu.item_count());
+        }
+
         if (!res.in_inventory)
         {
             if (const uint8_t waypoint = travel_cache.is_waypoint(res.pos))
                 matchtitle << "(" << waypoint << ") ";
-            matchtitle << "[" << res.pos.id.describe() << "] ";
+            if (here)
+                matchtitle << "[right here] ";
+            else
+                matchtitle << "[" << res.pos.id.describe() << "] ";
         }
 
         matchtitle << res.match;
@@ -1717,21 +1784,23 @@ bool StashTracker::display_search_results(
             matchtitle << ")";
         }
 
-        MenuEntry *me = new MenuEntry(matchtitle.str(), MEL_ITEM, 1,
-                                      res.in_inventory ? 0
-                                                       : (int)hotkey);
-        me->data = &res;
-
-        if (res.shop && !res.shop->is_visited())
-            me->colour = CYAN;
-
-        if (res.item.defined())
+        int colour = MENU_ITEM_STOCK_COLOUR;
+        if (res.shop && !res.shop->is_visited()) // ???
+            colour = CYAN;
+        else if (res.item.defined())
         {
             const int itemcol = menu_colour(res.item.name(DESC_PLAIN).c_str(),
                                             item_prefix(res.item), "pickup");
             if (itemcol != -1)
-                me->colour = itemcol;
+                colour = itemcol;
         }
+
+        StashMenuEntry *me = new StashMenuEntry(matchtitle.str(), MEL_ITEM,
+                                            colour, 1, (int) hotkey, here);
+        me->data = &res;
+
+        // set items on this position to darkgrey if we're in travel mode
+        me->set_here_enabled(stashmenu.menu_action != Menu::ACT_EXECUTE);
 
         if (res.item.defined())
         {
@@ -1741,58 +1810,33 @@ bool StashTracker::display_search_results(
                 me->add_tile(tile);
         }
         else if (res.shop)
-            me->add_tile(tile_def(tileidx_shop(&res.shop->shop), TEX_FEAT));
+            me->add_tile(tile_def(tileidx_shop(&res.shop->shop)));
         else if (feat_is_trap(res.feat))
-        {
-            const tileidx_t idx = tileidx_trap(res.trap);
-            me->add_tile(tile_def(idx, get_dngn_tex(idx)));
-        }
+            me->add_tile(tile_def(tileidx_trap(res.trap)));
         else if (feat_is_runed(res.feat))
         {
             // Handle large doors and huge gates
-            const tileidx_t idx = tileidx_feature_base(res.feat);
-            me->add_tile(tile_def(idx, get_dngn_tex(idx)));
+            me->add_tile(tile_def(tileidx_feature_base(res.feat)));
         }
         else
         {
             const dungeon_feature_type feat = feat_by_desc(res.match);
-            const tileidx_t idx = tileidx_feature_base(feat);
-            me->add_tile(tile_def(idx, get_dngn_tex(idx)));
+            me->add_tile(tile_def(tileidx_feature_base(feat)));
         }
 
         stashmenu.add_entry(me);
-        if (!res.in_inventory)
-            ++hotkey;
+        hotkey++;
     }
+    if (initial_snap > 0)
+        stashmenu.set_hovered(initial_snap);
 
-    stashmenu.set_flags(MF_SINGLESELECT | MF_ALLOW_FORMATTING);
-
-    stashmenu.on_single_selection = [&stashmenu, &search, &nohl](const MenuEntry& item)
+    stashmenu.on_single_selection = [](const MenuEntry& item)
     {
-        stash_search_result *res = static_cast<stash_search_result *>(item.data);
-        if (stashmenu.menu_action == StashSearchMenu::ACT_EXAMINE)
+        const StashMenuEntry *sme = dynamic_cast<const StashMenuEntry *>(&item);
+        const stash_search_result *res = sme->get_search_result();
+        if (!sme->no_travel_needed())
         {
-            if (res->item.defined())
-            {
-                item_def it = res->item;
-                describe_item(it,
-                    [search, nohl](string& desc)
-                    {
-                        if (!nohl)
-                            desc = search->match_location(desc).annotate_string("lightcyan");
-                    });
-            }
-            else if (res->shop)
-                res->shop->show_menu(res->pos);
-            else
-            {
-                level_excursion le;
-                le.go_to(res->pos.id);
-                describe_feature_wide(res->pos.pos);
-            }
-        }
-        else
-        {
+            // XX if no travel needed, do something else? show description?
             level_pos lp = res->pos;
             if (show_map(lp, true, true))
             {
@@ -1803,8 +1847,14 @@ bool StashTracker::display_search_results(
         return true;
     };
 
+    // XX it would be possible to start the hover on a travelable item. Would
+    // this be too confusing? (This was my initial implementation, actually,
+    // and it was a bit confusing. But maybe it's a typical use case. The
+    // existence of [,] mitigates the need for this a bit.)
+
     vector<MenuEntry*> sel = stashmenu.show();
     redraw_screen();
+    update_screen();
     default_execute = stashmenu.menu_action == Menu::ACT_EXECUTE;
     if (stashmenu.request_toggle_sort_method)
     {

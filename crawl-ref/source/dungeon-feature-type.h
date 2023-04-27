@@ -1,5 +1,7 @@
 #pragma once
 
+#include "tag-version.h"
+
 // When adding:
 // * Add an entry in feature-data.h for the feature.
 // * edit dat/descript/features.txt and add a
@@ -14,7 +16,9 @@ enum dungeon_feature_type
     DNGN_UNSEEN = 0,                   // must be zero
     DNGN_CLOSED_DOOR,
 #if TAG_MAJOR_VERSION > 34
+    DNGN_BROKEN_DOOR,
     DNGN_CLOSED_CLEAR_DOOR,
+    DNGN_BROKEN_CLEAR_DOOR,
 #endif
     DNGN_RUNED_DOOR,
 #if TAG_MAJOR_VERSION > 34
@@ -25,6 +29,11 @@ enum dungeon_feature_type
     DNGN_SEALED_CLEAR_DOOR,
 #endif
     DNGN_TREE,
+#if TAG_MAJOR_VERSION > 34
+    DNGN_MANGROVE,                    // Swamp's tree type
+    DNGN_DEMONIC_TREE,                // tree used in Abyss and Pan
+    DNGN_PETRIFIED_TREE,              // tree but lrd-able
+#endif
 
     // Walls
     DNGN_METAL_WALL,
@@ -83,11 +92,6 @@ enum dungeon_feature_type
     DNGN_PASSAGE_OF_GOLUBRIA,
 #endif
 #if TAG_MAJOR_VERSION > 34
-    DNGN_TRAP_ARROW,
-    DNGN_TRAP_SPEAR,
-    DNGN_TRAP_BLADE,
-    DNGN_TRAP_DART,
-    DNGN_TRAP_BOLT,
     DNGN_TRAP_NET,
     DNGN_TRAP_PLATE,
 #endif
@@ -119,6 +123,12 @@ enum dungeon_feature_type
     DNGN_ENTER_GEHENNA,
     DNGN_ENTER_COCYTUS,
     DNGN_ENTER_TARTARUS,
+#if TAG_MAJOR_VERSION > 34
+    DNGN_EXIT_DIS,
+    DNGN_EXIT_GEHENNA,
+    DNGN_EXIT_COCYTUS,
+    DNGN_EXIT_TARTARUS,
+#endif
     DNGN_ENTER_ABYSS,
     DNGN_EXIT_ABYSS,
     DNGN_STONE_ARCH,
@@ -215,6 +225,7 @@ enum dungeon_feature_type
     DNGN_ALTAR_USKAYAW,
     DNGN_ALTAR_HEPLIAKLQANA,
     DNGN_ALTAR_WU_JIAN,
+    DNGN_ALTAR_IGNIS,
     DNGN_ALTAR_ECUMENICAL,
 #endif
 
@@ -227,8 +238,11 @@ enum dungeon_feature_type
     DNGN_DRY_FOUNTAIN_BLOOD,
 #endif
     DNGN_DRY_FOUNTAIN,
+#if TAG_MAJOR_VERSION > 34
+    DNGN_RUNELIGHT,
+#endif
 
-    // Not meant to ever appear in grd().
+    // Not meant to ever appear in env.grid().
     DNGN_EXPLORE_HORIZON, // dummy for redefinition
 #if TAG_MAJOR_VERSION > 34
     DNGN_TRAVEL_TRAIL, // dummy for redefinition
@@ -263,6 +277,9 @@ enum dungeon_feature_type
     DNGN_ENTER_VOLCANO,
     DNGN_ENTER_WIZLAB,
     DNGN_ENTER_DESOLATION,
+#if TAG_MAJOR_VERSION > 34
+    DNGN_ENTER_ARENA,
+#endif
 
     DNGN_EXIT_ZIGGURAT,
     DNGN_EXIT_BAZAAR,
@@ -280,6 +297,9 @@ enum dungeon_feature_type
     DNGN_EXIT_LABYRINTH,
 #endif
     DNGN_EXIT_DESOLATION,
+#if TAG_MAJOR_VERSION > 34
+    DNGN_EXIT_ARENA,
+#endif
 #if TAG_MAJOR_VERSION == 34
 
     DNGN_ALTAR_GOZAG,
@@ -305,9 +325,7 @@ enum dungeon_feature_type
     DNGN_RUNED_CLEAR_DOOR,
     DNGN_SEALED_CLEAR_DOOR,
     DNGN_TOXIC_BOG,
-#endif
 
-#if TAG_MAJOR_VERSION == 34
     DNGN_TRAP_ARROW,
     DNGN_TRAP_SPEAR,
     DNGN_TRAP_BLADE,
@@ -317,6 +335,20 @@ enum dungeon_feature_type
     DNGN_TRAP_PLATE,
     DNGN_TRAP_TELEPORT_PERMANENT,
     DNGN_TRAVEL_TRAIL,
+
+    DNGN_PETRIFIED_TREE,
+    DNGN_MANGROVE,
+    DNGN_DEMONIC_TREE,
+    DNGN_ENTER_ARENA,
+    DNGN_EXIT_ARENA,
+    DNGN_ALTAR_IGNIS,
+    DNGN_BROKEN_DOOR,
+    DNGN_BROKEN_CLEAR_DOOR,
+    DNGN_EXIT_DIS,
+    DNGN_EXIT_GEHENNA,
+    DNGN_EXIT_COCYTUS,
+    DNGN_EXIT_TARTARUS,
+    DNGN_RUNELIGHT,
 #endif
 
     NUM_FEATURES

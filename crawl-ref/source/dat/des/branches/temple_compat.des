@@ -10,6 +10,8 @@
 # that transfer that didn't make it to Temple can still have a map as
 # the game expected.
 #
+# These should not have the tags like in temple.des
+#
 # If other temple maps are removed in future commits, they should also
 # go here. This file can be cut when TAG_MAJOR_VERSION > 34.
 
@@ -551,7 +553,7 @@ TILE:   c = WALL_STONE_SMOOTH
 TILE:   ' = FLOOR_PEBBLE_BROWN
 TILE:   t = DNGN_TREE_YELLOW w:5 / DNGN_TREE_LIGHTRED w:5 / DNGN_TREE_RED / DNGN_TREE_DEAD: 3
 COLOUR: . = brown
-COLOUR: t = red w:5 / yellow w:5 / brown
+COLOUR: t = lightred / red w:5 / yellow w:5 / brown
 COLOUR: ' = darkgrey
 SUBST:  'd = .
 : temple_compat_setup(_G)

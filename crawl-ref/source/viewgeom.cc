@@ -256,14 +256,20 @@ bool crawl_view_buffer::empty() const
     return m_size.x * m_size.y <= 0;
 }
 
-const crawl_view_buffer &crawl_view_buffer::operator = (const crawl_view_buffer &rhs)
+crawl_view_buffer::crawl_view_buffer(const crawl_view_buffer &rhs)
+    : crawl_view_buffer(rhs.m_size)
 {
-    resize(rhs.m_size);
     if (rhs.m_buffer)
     {
         size_t count = m_size.x * m_size.y;
         copy(rhs.m_buffer, rhs.m_buffer+count, m_buffer);
     }
+}
+
+const crawl_view_buffer &crawl_view_buffer::operator = (crawl_view_buffer rhs)
+{
+    swap(m_size, rhs.m_size);
+    swap(m_buffer, rhs.m_buffer);
     return *this;
 }
 
@@ -291,7 +297,7 @@ crawl_view_geometry::crawl_view_geometry()
       msgp(1, viewp.y + viewsz.y), msgsz(80, 7),
       mlistp(hudp.x, hudp.y + hudsz.y),
       mlistsz(hudsz.x, msgp.y - mlistp.y),
-      vbuf(), vgrdc(), viewhalfsz(), glos1(), glos2(),
+      vgrdc(), viewhalfsz(), glos1(), glos2(),
       vlos1(), vlos2(), mousep(), last_player_pos()
 {
 }
@@ -299,7 +305,6 @@ crawl_view_geometry::crawl_view_geometry()
 void crawl_view_geometry::init_view()
 {
     viewhalfsz = viewsz / 2;
-    vbuf.resize(viewsz);
     if (!crawl_state.game_is_arena())
         set_player_at(you.pos(), true);
     else
@@ -350,10 +355,10 @@ void crawl_view_geometry::set_player_at(const coord_def &c, bool centre)
         else if (c.y + LOS_RADIUS > vgrdc.y + viewhalfsz.y - ymarg)
             vgrdc.y = c.y + LOS_RADIUS - viewhalfsz.y + ymarg;
 
-        if (vgrdc != oldc && Options.center_on_scroll)
+        if (vgrdc != oldc && Options.centre_on_scroll)
             vgrdc = c;
 
-        if (!Options.center_on_scroll && Options.symmetric_scroll
+        if (!Options.centre_on_scroll && Options.symmetric_scroll
             && !Options.view_lock_x
             && !Options.view_lock_y
             && (c - last_player_pos).abs() == 2
@@ -427,6 +432,7 @@ void crawl_view_geometry::init_geometry()
         winner = &lay_mlist;
     }
 #ifndef USE_TILE_LOCAL
+    // I don't know why this crashes on local tiles
     ASSERT(winner->valid);
 #endif
 

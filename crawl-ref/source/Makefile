@@ -63,9 +63,24 @@
 #    WEBDIR        -- place to hold the Webtiles client data. Can be either
 #                     relative to prefix or absolute.
 #
+#    LINUXDEPLOY   -- path to linuxdeploy tool, required for AppImage builds
 #    ANDROID       -- perform an Android build (see docs/develop/android.txt)
 #    TOUCH_UI      -- enable UI behaviour more compatible with touch-screens
 #
+# For various mac build tricks oriented at release builds see the various
+# mac-app-* targets as well as the crawl-universal target. (For normal dev
+# circumstances, none of this is needed.)
+#
+# There are a number of #defines that may be useful for downstream packaging
+# or custom server setups. See AppHdr.h for more details. Of note:
+#
+#    VERSIONED_CACHE_DIR -- use a cache dir per version, rather than a shared
+#                           cache dir across versions. This may be useful for
+#                           reproducible builds, since the shared cache
+#                           directory makes use of mtimes.
+#
+# To set defines from the command line while building, use EXTERNAL_DEFINES.
+# E.g.: make EXTERNAL_DEFINES="-DVERSIONED_CACHE_DIR"
 #
 # Requirements:
 #    For tile builds, you need pkg-config.
@@ -74,7 +89,12 @@
 #    them; you can also ask for a package with convenience libraries instead --
 #    we'll try to provide them somewhere in the near future.
 
-GAME = crawl
+# allow overriding GAME at the command line, intended for downstream packaging
+# processes. Not supported for MSYS2/cygwin builds, and will be overridden for
+# mac universal builds. This does not count as a change in build flags.
+ifndef GAME
+	GAME = crawl
+endif
 
 # Disable GNU Make implicit rules and variables. Leaving them enabled will slow
 # down MinGW and Cygwin builds by a very VERY noticeable degree. Besides, we have
@@ -83,11 +103,12 @@ MAKEFLAGS += -rR # This only works for recursive makes, i.e. contribs ...
 .SUFFIXES:       # ... so zap the suffix list to neutralize most predifined rules, too
 
 .PHONY: all test install clean clean-contrib clean-rltiles clean-android \
-        clean-catch2 clean-plug-and-play-tests \
-		clean-coverage clean-coverage-full \
-        distclean debug debug-lite profile package-source source \
+        clean-appimage clean-catch2 clean-plug-and-play-tests \
+        clean-coverage clean-coverage-full \
+        appimage distclean debug debug-lite profile package-source source \
         build-windows package-windows-installer docs greet api api-dev android FORCE \
-        monster catch2-tests plug-and-play-tests
+        monster catch2-tests plug-and-play-tests \
+        crawl-universal crawl-arm64-apple-macos11 crawl-x86_64-apple-macos10.7 clean-mac
 
 include Makefile.obj
 
@@ -190,6 +211,7 @@ HOST := $(shell sh -c 'cc -dumpmachine || echo unknown')
 ARCH := $(HOST)
 
 ifdef CROSSHOST
+	# XX is there a way of integrating this with mac cross-compiling?
 	ARCH := $(CROSSHOST)
 	ifneq (,$(shell which $(ARCH)-pkg-config 2>/dev/null))
 	  PKGCONFIG = $(ARCH)-pkg-config
@@ -229,6 +251,7 @@ ifdef msys
 	NEED_LIBW32C = YesPlease
 	BUILD_PCRE = YesPlease
 	BUILD_ZLIB = YesPlease
+	BUILD_SQLITE = YesPlease
 	SOUND = YesPlease
 	DEFINES_L += -DWINMM_PLAY_SOUNDS -D__USE_MINGW_ANSI_STDIO
 	EXTRA_LIBS += -lwinmm
@@ -245,24 +268,36 @@ ifdef msys
 	endif
 endif
 ifeq ($(uname_S),Darwin)
+ifdef MAC_TARGET
+	# for reasons I really cannot figure out, setting GAME later (when the
+	# other MAC_TARGET checks are done) really does not work.
+	GAME = crawl-$(MAC_TARGET)
+endif
+
 	STRIP := strip -x
 	NEED_APPKIT = YesPlease
 	LIBNCURSES_IS_UNICODE = Yes
-	NO_PKGCONFIG = Yes
-	BUILD_SQLITE = YesPlease
-	BUILD_ZLIB = YesPlease
 	ifdef TILES
-		EXTRA_LIBS += -framework AppKit -framework AudioUnit -framework CoreAudio -framework ForceFeedback -framework Carbon -framework IOKit -framework OpenGL -framework AudioToolbox -framework CoreVideo contrib/install/$(ARCH)/lib/libSDL2main.a
-		BUILD_FREETYPE = YesPlease
-		BUILD_SDL2 = YesPlease
-		BUILD_SDL2IMAGE = YesPlease
-		ifdef SOUND
-			ifndef WIN32
-				BUILD_SDL2MIXER = YesPlease
-			endif
-		endif
-		BUILD_LIBPNG = YesPlease
+		EXTRA_LIBS += -framework AppKit -framework AudioUnit -framework CoreAudio -framework ForceFeedback -framework Carbon -framework IOKit -framework OpenGL -framework AudioToolbox -framework CoreVideo
 		COPY_FONTS = yes
+	endif
+	ifndef FORCE_PKGCONFIG
+		NO_PKGCONFIG = Yes
+		# is any of this stuff actually needed if NO_PKGCONFIG is set?
+		BUILD_SQLITE = YesPlease
+		BUILD_ZLIB = YesPlease
+		ifdef TILES
+			EXTRA_LIBS += contrib/install/$(ARCH)/lib/libSDL2main.a
+			BUILD_FREETYPE = YesPlease
+			BUILD_SDL2 = YesPlease
+			BUILD_SDL2IMAGE = YesPlease
+			ifdef SOUND
+				ifndef WIN32
+					BUILD_SDL2MIXER = YesPlease
+				endif
+			endif
+			BUILD_LIBPNG = YesPlease
+		endif
 	endif
 endif
 ifneq (,$(findstring CYGWIN,$(uname_S)))
@@ -297,6 +332,7 @@ endif
 # Should be the first rule, but must come after $(GAME) is set.
 all: greet check-fonts $(GAME) docs webserver
 
+# XX these are set wrong on mac cross-compiling
 LIBPCRE := contrib/install/$(ARCH)/lib/libpcre.a
 LIBSDL2 := contrib/install/$(ARCH)/lib/libSDL2.a
 LIBPNG := contrib/install/$(ARCH)/lib/libpng.a
@@ -350,7 +386,9 @@ ifdef WIN32
 EXTRA_OBJECTS += icon.o
 else
 ifndef ANDROID
+ifneq ($(uname_S),Haiku)
 EXTRA_LIBS += -pthread
+endif
 endif
 endif
 
@@ -410,34 +448,55 @@ endif
 
 INCLUDES_L += -Iutil -I.
 
+
 ifdef APPLE_PLATFORM
 
-ifdef BUILD_UNIVERSAL
-# [ds] 10.4 SDK g++-4.0 + x86_64 runs into SDL compile issues.
-CFLAGS_ARCH := -arch i386 -arch ppc -faltivec
-CFLAGS_DEPCC_ARCH := -arch i386
-NO_INLINE_DEPGEN := YesPlease
+ifdef MAC_TARGET
+	# support mac cross-compiling. As of Apr 2021 on OS X 11, some example
+	# values for this that seem to work include:
+	#   x86_64-apple-macos10.7
+	#   x86_64-apple-macos10.12
+	#   arm64-apple-macos11
+	# leave MACOSX_MIN_VERSION unset, or there will be many warnings
+	CFLAGS_ARCH := -target $(MAC_TARGET)
+	# couldn't get setting GAME here to work?
 else
-CFLAGS_ARCH := -arch $(uname_M)
+ifdef BUILD_OLD_UNIVERSAL
+	# XX can be removed?
+	# [ds] 10.4 SDK g++-4.0 + x86_64 runs into SDL compile issues.
+	CFLAGS_ARCH := -arch i386 -arch ppc -faltivec
+	CFLAGS_DEPCC_ARCH := -arch i386
+	NO_INLINE_DEPGEN := YesPlease
+else
+	CFLAGS_ARCH := -arch $(uname_M)
+	MACOSX_MIN_VERSION=10.7
+endif
 endif
 
-MACOSX_MIN_VERSION=10.7
-CC = $(GCC) $(CFLAGS_ARCH) -mmacosx-version-min=$(MACOSX_MIN_VERSION)
-CXX = $(GXX) $(CFLAGS_ARCH) -stdlib=libc++ -mmacosx-version-min=$(MACOSX_MIN_VERSION)
-DEPCC = $(GCC) $(or $(CFLAGS_DEPCC_ARCH),$(CFLAGS_ARCH)) -mmacosx-version-min=$(MACOSX_MIN_VERSION)
-DEPCXX = $(GXX) $(or $(CFLAGS_DEPCC_ARCH),$(CFLAGS_ARCH)) -stdlib=libc++ -mmacosx-version-min=$(MACOSX_MIN_VERSION)
+# only set this when no -target is passed
+ifdef MACOSX_MIN_VERSION
+	CFLAGS_ARCH += -mmacosx-version-min=$(MACOSX_MIN_VERSION)
+	CFLAGS_DEPCC_ARCH += -mmacosx-version-min=$(MACOSX_MIN_VERSION)
+endif
+CC = $(GCC) $(CFLAGS_ARCH)
+CXX = $(GXX) $(CFLAGS_ARCH) -stdlib=libc++
+DEPCC = $(GCC) $(or $(CFLAGS_DEPCC_ARCH),$(CFLAGS_ARCH))
+DEPCXX = $(GXX) $(or $(CFLAGS_DEPCC_ARCH),$(CFLAGS_ARCH)) -stdlib=libc++
 
 ifdef USE_ICC
 CC += -gcc-name=gcc-$(GCC_VER) -gxx-name=g++-$(GCC_VER)
 CXX += -gcc-name=gcc-$(GCC_VER) -gxx-name=g++-$(GCC_VER)
 endif
 
+ifdef BUILD_OLD_UNIVERSAL
+# XX remove?
 ifndef CROSSHOST
 # Don't need a universal build of host tools, so use DEPCC.
 HOSTCC = $(DEPCC)
 HOSTCXX = $(DEPCXX)
 export HOSTCC
 export HOSTCXX
+endif
 endif
 
 endif # MacOS
@@ -555,6 +614,32 @@ ifndef NO_PKGCONFIG
 ifeq ($(shell which $(PKGCONFIG) 2> /dev/null),)
 NO_PKGCONFIG = YesPlease
 endif
+endif
+
+ifdef TILES
+  XDG_ORIG := org.develz.Crawl_tiles
+  ifndef XDG_NAME
+    XDG_NAME := org.develz.Crawl_tiles
+  endif
+else
+  XDG_ORIG := org.develz.Crawl_console
+  ifndef XDG_NAME
+    XDG_NAME := org.develz.Crawl_console
+  endif
+endif
+
+ifdef LINUXDEPLOY
+  prefix=usr
+  DESTDIR=appimage/
+  SAVEDIR=~/.crawl
+  COPY_FONTS=yes
+  export VERSION=$(SRC_VERSION)
+ifdef TILES
+  appimage_build := tiles
+else
+  appimage_build := console
+endif
+  export OUTPUT = stone_soup-$(SRC_VERSION)-linux-$(appimage_build).$(uname_M).AppImage
 endif
 
 ifdef ANDROID
@@ -893,7 +978,11 @@ ifneq ($(strip $(DATADIR)),)
 else
   ifneq ($(prefix),)
 	DATADIR := $(strip $(prefix))/$(strip $(DATADIR))
-	FONTDIR = $(strip $(DATADIR))/dat/tiles/
+        ifeq ($(LINUXDEPLOY),)
+	  FONTDIR = $(strip $(DATADIR))/dat/tiles/
+        else
+	  FONTDIR = dat/tiles/
+        endif
   else
     ifneq ($(DESTDIR)$(ANDROID),)
         FONTDIR = dat/tiles/
@@ -1155,6 +1244,20 @@ INCLUDES_L += -isystem contrib/install/$(ARCH)/include
 LIBS += -Lcontrib/install/$(ARCH)/lib
 endif
 
+ifdef APPLE_PLATFORM
+# workaround: mac clang hardcodes (as far as I can tell) `-I /usr/local/include`
+# into the include path. Homebrew also installs into this directory. So a user
+# that has homebrew installed will get includes from there rather than contribs,
+# leading to build failures. This workaround relies on that if both -I and
+# -isystem are defined for the same path, then the -I version is ignored, which
+# effectively demotes this include path below the contrib -isystem paths.
+# TODO: it's not clear to me that using -isystem for contribs is at all the
+# right thing to do, since they are libraries we control, aren't actually
+# system libraries, and always take lower precedence than any -I that might be
+# caused by environment variables.
+INCLUDES_L += -isystem /usr/local/include
+endif
+
 LIBS += $(CONTRIB_LIBS) $(EXTRA_LIBS)
 
 
@@ -1171,7 +1274,7 @@ RLTILES_CFLAGS := $(ALL_CFLAGS) -Wno-tautological-compare
 
 DOC_BASE        := ../docs
 DOC_TEMPLATES   := $(DOC_BASE)/template
-GENERATED_DOCS  := $(DOC_BASE)/aptitudes.txt $(DOC_BASE)/aptitudes-wide.txt $(DOC_BASE)/FAQ.html $(DOC_BASE)/crawl_manual.txt
+GENERATED_DOCS  := $(DOC_BASE)/aptitudes.txt $(DOC_BASE)/aptitudes-wide.txt $(DOC_BASE)/FAQ.html $(DOC_BASE)/crawl_manual.txt $(DOC_BASE)/quickstart.txt
 # Headers that need to exist before attempting to compile cc files
 GENERATED_HEADERS := art-enum.h config.h mon-mst.h species-type.h
 # All other generated files will be created later
@@ -1201,7 +1304,7 @@ SRC_PKG_ZIP   := $(PKG_SRC_DIR).zip
 greet:
 	@if [ ! -e $(GAME) ]; then\
 		printf '  * %s\n' "If you experience any problems building Crawl, please take a second look"\
-		                  "at INSTALL.txt: the solution to your problem just might be in there!";\
+		                  "at INSTALL.md: the solution to your problem just might be in there!";\
 	fi
 
 docs: $(GENERATED_DOCS)
@@ -1224,9 +1327,12 @@ TITLEIMGS = denzi_dragon denzi_kitchen_duty denzi_summoner \
             white_noise_grabbing_the_orb pooryurik_knight \
             psiweapon_roxanne baconkid_gastronok baconkid_mnoleg \
             peileppe_bloax_eye baconkid_duvessa_dowan ploomutoo_ijyb \
-	    froggy_thunder_fist_nikola froggy_rune_and_run_failed_on_dis \
-	    froggy_natasha_and_boris froggy_jiyva_felid \
-	    froggy_goodgod_tengu_gold Cws_Minotauros nibiki_octopode
+            froggy_thunder_fist_nikola froggy_rune_and_run_failed_on_dis \
+            froggy_natasha_and_boris froggy_jiyva_felid \
+            froggy_goodgod_tengu_gold Cws_Minotauros nibiki_octopode \
+            e_m_fields sastrei_chei anon_octopus_wizard arbituhhh_tesu \
+            kaonedong_ignis_the_dying_flame kaonedong_menkaure_prince_of_dust \
+            philosopheropposite_palentonga_paladin
 
 STATICFILES = $(TILEIMAGEFILES:%=webserver/game_data/static/%.png) \
               webserver/static/stone_soup_icon-32x32.png \
@@ -1364,6 +1470,11 @@ $(DOC_BASE)/aptitudes-wide.txt: $(DOC_TEMPLATES)/apt-tmpl-wide.txt species-data.
 $(DOC_BASE)/FAQ.html: dat/database/FAQ.txt util/FAQ2html.pl
 	$(QUIET_GEN)./util/FAQ2html.pl $< $@
 
+# Generate a .txt version because some servers need it
+# TODO: actually render this
+$(DOC_BASE)/quickstart.txt: $(DOC_BASE)/quickstart.md
+	$(QUIET_COPY)$(COPY) $< $@
+
 $(DOC_BASE)/crawl_manual.txt: $(DOC_BASE)/crawl_manual.rst util/unrest.pl
 	$(QUIET_GEN)util/unrest.pl <$< >$@
 
@@ -1464,6 +1575,7 @@ endif
 	mkdir -p $(datadir_fp)/dat/dist_bones
 	$(COPY) dat/dist_bones/* $(datadir_fp)/dat/dist_bones/
 	$(COPY) ../docs/*.txt $(datadir_fp)/docs/
+	$(COPY) ../docs/*.md $(datadir_fp)/docs/
 	$(COPY) ../docs/develop/*.txt $(datadir_fp)/docs/develop/
 	$(COPY) ../docs/develop/levels/*.txt $(datadir_fp)/docs/develop/levels/
 	$(COPY) ../docs/license/*.txt $(datadir_fp)/docs/license/
@@ -1511,6 +1623,26 @@ ifeq ($(USE_DGAMELAUNCH),)
 endif
 endif
 
+install-xdg-data:
+	[ -d $(prefix_fp)/share/applications ] || mkdir -p $(prefix_fp)/share/applications
+	[ -d $(prefix_fp)/share/metainfo ] || mkdir -p $(prefix_fp)/share/metainfo
+	[ -d $(prefix_fp)/share/icons/hicolor/32x32/apps ] || mkdir -p $(prefix_fp)/share/icons/hicolor/32x32/apps
+	[ -d $(prefix_fp)/share/icons/hicolor/48x48/apps ] || mkdir -p $(prefix_fp)/share/icons/hicolor/48x48/apps
+	[ -d $(prefix_fp)/share/icons/hicolor/512x512/apps ] || mkdir -p $(prefix_fp)/share/icons/hicolor/512x512/apps
+	[ -d $(prefix_fp)/share/icons/hicolor/scalable/apps ] || mkdir -p $(prefix_fp)/share/icons/hicolor/scalable/apps
+	$(COPY) xdg-data/$(XDG_ORIG).desktop $(prefix_fp)/share/applications/$(XDG_NAME).desktop
+	echo Icon=$(XDG_NAME) >>$(prefix_fp)/share/applications/$(XDG_NAME).desktop
+ifdef LINUXDEPLOY
+	echo Exec=$(GAME) >>$(prefix_fp)/share/applications/$(XDG_NAME).desktop
+else
+	echo Exec=$(prefix)/$(bin_prefix)/$(GAME) >>$(prefix_fp)/share/applications/$(XDG_NAME).desktop
+endif
+	sed "s/@XDG_NAME@/$(XDG_NAME)/" <xdg-data/$(XDG_ORIG).appdata.xml >$(prefix_fp)/share/metainfo/$(XDG_NAME).appdata.xml
+	$(COPY) dat/tiles/stone_soup_icon-32x32.png $(prefix_fp)/share/icons/hicolor/32x32/apps/$(XDG_NAME).png
+	$(COPY) dat/tiles/stone_soup_icon-48x48.png $(prefix_fp)/share/icons/hicolor/48x48/apps/$(XDG_NAME).png
+	$(COPY) dat/tiles/stone_soup_icon-512x512.png $(prefix_fp)/share/icons/hicolor/512x512/apps/$(XDG_NAME).png
+	$(COPY) dat/tiles/stone_soup_icon.svg $(prefix_fp)/share/icons/hicolor/scalable/apps/$(XDG_NAME).svg
+
 install: all install-data
 	[ -d $(prefix_fp)/$(bin_prefix) ] || mkdir -p $(prefix_fp)/$(bin_prefix)
 	$(COPY) $(GAME) $(prefix_fp)/$(bin_prefix)/
@@ -1521,7 +1653,7 @@ ifeq ($(USE_DGAMELAUNCH),)
 endif
 
 clean: clean-rltiles clean-webserver clean-android clean-monster clean-catch2 \
-       clean-plug-and-play-tests clean-coverage-full
+       clean-plug-and-play-tests clean-coverage-full clean-mac clean-appimage
 	+$(MAKE) -C $(UTIL) clean
 	$(RM) $(GAME) $(GAME).exe $(GENERATED_FILES) $(EXTRA_OBJECTS) libw32c.o\
 	    libunix.o $(ALL_OBJECTS) $(ALL_OBJECTS:.o=.d) *.ixx  \
@@ -1632,6 +1764,21 @@ ifdef PCH
 CC_DEP := AppHdr.h.gch
 endif
 
+#
+# Header build rule: order before regular .o rule for backwards compatibility
+# with gnu make <3.82.
+#
+
+%.h.o: %.h | $(GENERATED_HEADERS)
+ifdef NO_INLINE_DEPGEN
+	$(QUIET_DEPEND)$(or $(DEPCXX),$(CXX)) -MM $(STDFLAG) $(ALL_CFLAGS) -MT $*.o $< > $*.d
+endif
+	$(QUIET_CXX)$(CXX) $(STDFLAG) $(ALL_CFLAGS) $(INLINE_DEPGEN_CFLAGS) -x c++-header -c $< -o $@
+ifndef NO_INLINE_DEPGEN
+	@if [ -f $(@:%.o=%.d) ]; then touch -r $@ $(@:%.o=%.d); fi
+endif
+
+
 # Plain old compilation
 #
 
@@ -1660,11 +1807,18 @@ ifndef NO_INLINE_DEPGEN
 	@if [ -f $(@:%.o=%.d) ]; then touch -r $@ $(@:%.o=%.d); fi
 endif
 
-icon.o: util/crawl.rc util/crawl.ico .cflags
+icon.o: util/crawl.rc dat/tiles/stone_soup_icon.ico .cflags
 	$(QUIET_WINDRES)$(WINDRES) util/crawl.rc icon.o
 
 config.h: util/configure .cflags
 	${QUIET_GEN}util/configure "$(CXX)" $(STDFLAG) $(ALL_CFLAGS)
+
+#
+# Header build tests.
+#
+
+.PHONY: header-build-tests
+header-build-tests: $(HEADER_OBJECTS)
 
 #
 # Contribs
@@ -1814,6 +1968,28 @@ removeold:
 	if [ -f ../../$(SRC_PKG_ZIP) ]; then $(RM) ../../$(SRC_PKG_ZIP); fi
 
 #############################################################################
+# Linux AppImage
+#
+
+ifdef LINUXDEPLOY
+endif
+
+appimage: install install-xdg-data
+ifeq ($(LINUXDEPLOY),)
+	@echo Please define LINUXDEPLOY path to use this build.
+	@exit 1
+endif
+	$(LINUXDEPLOY) --appdir appimage\
+	               --desktop-file appimage/usr/share/applications/$(XDG_NAME).desktop \
+	               --icon-file appimage/usr/share/icons/hicolor/scalable/apps/$(XDG_NAME).svg \
+	               --output appimage
+	ln -sf "stone_soup-$(SRC_VERSION)-linux-$(appimage_build).$(uname_M).AppImage" "stone_soup-latest-linux-$(appimage_build).$(uname_M).AppImage"
+
+clean-appimage:
+	$(RM) stone_soup-*.AppImage
+	$(RM) -r appimage
+
+#############################################################################
 # Building the unified Windows package.
 #
 
@@ -1868,6 +2044,42 @@ package-windows-zips: package-windows-tiles package-windows-console
 #############################################################################
 # Building Mac app bundles
 #
+# apple silicon universal builds: just brute-force this with submake commands.
+# I couldn't see a cleaner way to do this within the Makefile structure,
+# relative to my current knowledge of how this can be done: it requires
+# building binaries for each target and then merging them with the `lipo`
+# utility.
+
+# Note: cross-compiling tiles on mac requires pkg-config and libpng to be
+# installed, e.g. via homebrew
+
+# XX parameterise these in some less dumb way
+# these two targets rely heavily on passing flags to submakes
+crawl-x86_64-apple-macos10.7:
+ifeq ($(MAC_TARGET),)
+	+$(MAKE) MAC_TARGET=x86_64-apple-macos10.7
+endif
+
+crawl-arm64-apple-macos11:
+ifeq ($(MAC_TARGET),)
+	+$(MAKE) MAC_TARGET=arm64-apple-macos11
+endif
+
+crawl-universal:
+	# do these via submake so that -jn doesn't create havoc
+	+$(MAKE) crawl-arm64-apple-macos11
+	+$(MAKE) crawl-x86_64-apple-macos10.7
+	lipo -create -output crawl-universal crawl-arm64-apple-macos11 crawl-x86_64-apple-macos10.7
+
+clean-mac:
+	$(RM) crawl-universal crawl-arm64-apple-macos11 crawl-x86_64-apple-macos10.7
+
+# XX is there a way to make these just respect TILES=y and have only 2 targets?
+mac-app-tiles-universal: crawl-universal
+	+$(MAKE) -j1 -C mac -f Makefile.app-bundle tiles BUILD_UNIVERSAL=y
+
+mac-app-console-universal: crawl-universal
+	+$(MAKE) -j1 -C mac -f Makefile.app-bundle BUILD_UNIVERSAL=y
 
 mac-app-tiles: all
 	+$(MAKE) -j1 -C mac -f Makefile.app-bundle tiles

@@ -14,6 +14,7 @@
 #include <sstream>
 
 #include "chardump.h"
+#include "colour.h"
 #include "database.h"
 #include "describe.h"
 #include "env.h"
@@ -26,6 +27,7 @@
 #include "lookup-help.h"
 #include "macro.h"
 #include "message.h"
+#include "options.h"
 #include "prompt.h"
 #include "scroller.h"
 #include "showsymb.h"
@@ -90,11 +92,7 @@ static string _get_version_information()
 static string _get_version_features()
 {
     string result;
-    if (crawl_state.need_save
-#ifdef DGAMELAUNCH
-        && (you.wizard || crawl_state.type == GAME_TYPE_CUSTOM_SEED)
-#endif
-       )
+    if (crawl_state.seed_is_known())
     {
         if (you.fully_seeded)
         {
@@ -103,7 +101,7 @@ static string _get_version_features()
                 result += " (seed may be affected by game upgrades)";
         }
         else
-            result += "Game is not seeded.";
+            result += "Game is non-seeded.";
         result += "\n\n";
     }
     if (Version::history_size() > 1)
@@ -210,7 +208,7 @@ static void _print_version()
     auto title_hbox = make_shared<Box>(Widget::HORZ);
 #ifdef USE_TILE
     auto icon = make_shared<Image>();
-    icon->set_tile(tile_def(TILEG_STARTUP_STONESOUP, TEX_GUI));
+    icon->set_tile(tile_def(TILEG_STARTUP_STONESOUP));
     title_hbox->add_child(move(icon));
 #endif
 
@@ -267,11 +265,10 @@ void list_armour()
                  (i == EQ_GLOVES)      ? "Gloves " :
                  (i == EQ_SHIELD)      ? "Shield " :
                  (i == EQ_BODY_ARMOUR) ? "Armour " :
-                 (i == EQ_BOOTS) ?
-                 ((you.species == SP_CENTAUR
-                   || you.species == SP_NAGA) ? "Barding"
-                                              : "Boots  ")
-                                 : "unknown")
+                 (i == EQ_BOOTS)       ?
+                   (you.wear_barding() ? "Barding"
+                                       : "Boots  ")
+                                       : "unknown")
              << " : ";
 
         if (you_can_wear(i) == MB_FALSE)
@@ -300,7 +297,7 @@ void list_jewellery()
 {
     string jstr;
     int cols = get_number_of_cols() - 1;
-    bool split = you.species == SP_OCTOPODE && cols > 84;
+    bool split = species::arm_count(you.species) > 2 && cols > 84;
 
     for (int j = EQ_LEFT_RING; j < NUM_EQUIP; j++)
     {
@@ -347,11 +344,9 @@ void list_jewellery()
                            split && i > EQ_AMULET ? (cols - 1) / 2 : cols);
         item = colour_string(item, colour);
 
-        if (i == EQ_RING_SEVEN && you.species == SP_OCTOPODE &&
-                you.get_mutation_level(MUT_MISSING_HAND))
-        {
+        // doesn't handle arbitrary arm counts
+        if (i == EQ_RING_SEVEN && you.arm_count() == 7)
             mprf(MSGCH_EQUIPMENT, "%s", item.c_str());
-        }
         else if (split && i > EQ_AMULET && (i - EQ_AMULET) % 2)
             jstr = item + " ";
         else
@@ -362,14 +357,15 @@ void list_jewellery()
 static const char *targeting_help_1 =
     "<h>Examine surroundings ('<w>x</w><h>' in main):\n"
     "<w>Esc</w> : cancel (also <w>Space</w>, <w>x</w>)\n"
+    "<w>Ctrl-X</w> : list all things in view\n"
     "<w>Dir.</w>: move cursor in that direction\n"
     "<w>.</w> : move to cursor (also <w>Enter</w>, <w>Del</w>)\n"
     "<w>g</w> : pick up item at cursor\n"
     "<w>v</w> : describe monster under cursor\n"
     "<w>+</w> : cycle monsters forward (also <w>=</w>)\n"
     "<w>-</w> : cycle monsters backward\n"
-    "<w>*</w> : cycle objects forward (also <w>'</w>)\n"
-    "<w>/</w> : cycle objects backward (also <w>;</w>)\n"
+    "<w>'</w> : cycle objects forward (also <w>*</w>)\n"
+    "<w>;</w> : cycle objects backward (also <w>/</w>)\n"
     "<w>^</w> : cycle through traps\n"
     "<w>_</w> : cycle through altars\n"
     "<w><<</w>/<w>></w> : cycle through up/down stairs\n"
@@ -396,7 +392,7 @@ static const char *targeting_help_wiz =
     "<w>\"</w>: get debugging information about a portal\n"
     "<w>~</w>: polymorph monster to specific type\n"
     "<w>,</w>: bring down the monster to 1 hp\n"
-    "<w>(</w>: place a mimic\n"
+    "<w>Ctrl-(</w>: place a mimic\n"
     "<w>Ctrl-B</w>: banish monster\n"
     "<w>Ctrl-K</w>: kill monster\n"
 ;
@@ -405,7 +401,8 @@ static const char *targeting_help_wiz =
 static const char *targeting_help_2 =
     "<h>Targeting (zap wands, cast spells, etc.):\n"
     "Most keys from examine surroundings work.\n"
-    "Some keys fire at the target. By default,\n"
+    "Some keys fire at the target. <w>Ctrl-X</w> only\n"
+    "lists eligible targets. By default,\n"
     "range is respected and beams don't stop.\n"
     "<w>Enter</w> : fire (<w>Space</w>, <w>Del</w>)\n"
     "<w>.</w> : fire, stop at target\n"
@@ -414,11 +411,12 @@ static const char *targeting_help_2 =
     "<w>p</w> : fire at Previous target (also <w>f</w>)\n"
     "<w>:</w> : show/hide beam path\n"
     "<w>Shift-Dir.</w> : fire straight-line beam\n"
+    "             (also <w>/ Dir.</w>)\n"
     "\n"
-    "<h>Firing or throwing a missile:\n"
-    "<w>(</w> : cycle to next suitable missile.\n"
-    "<w>)</w> : cycle to previous suitable missile.\n"
-    "<w>i</w> : choose from Inventory.\n"
+    "<h>Firing mode ('<w>f</w><h>' in main):\n"
+    "<w>Q</w> : choose fire action.\n"
+    "<w>(</w> : cycle to previous suitable action\n"
+    "<w>)</w> : cycle to next suitable action.\n"
 ;
 
 struct help_file
@@ -432,7 +430,7 @@ static help_file help_files[] =
 {
     { "crawl_manual.txt",  '*', true },
     { "aptitudes.txt",     '%', false },
-    { "quickstart.txt",    '^', false },
+    { "quickstart.txt",     '^', false },
     { "macros_guide.txt",  '~', false },
     { "options_guide.txt", '&', false },
 #ifdef USE_TILE_LOCAL
@@ -508,14 +506,29 @@ int show_keyhelp_menu(const vector<formatted_string> &lines)
     return cmd_help.get_lastch();
 }
 
+void show_specific_helps(const vector<string> keys)
+{
+    // a fancier version of this might toggle between tabs, but this just
+    // concatenates
+    vector<formatted_string> formatted_lines;
+    size_t i = 0;
+    for (const auto &key : keys)
+    {
+        string help = getHelpString(key);
+        trim_string_right(help);
+        for (const string &line : split_string("\n", help, false, true))
+            formatted_lines.push_back(formatted_string::parse_string(line));
+
+        i++;
+        if (i < keys.size())
+            formatted_lines.emplace_back("");
+    }
+    show_keyhelp_menu(formatted_lines);
+}
+
 void show_specific_help(const string &key)
 {
-    string help = getHelpString(key);
-    trim_string_right(help);
-    vector<formatted_string> formatted_lines;
-    for (const string &line : split_string("\n", help, false, true))
-        formatted_lines.push_back(formatted_string::parse_string(line));
-    show_keyhelp_menu(formatted_lines);
+    show_specific_helps({ key });
 }
 
 void show_levelmap_help()
@@ -549,14 +562,14 @@ void show_interlevel_travel_altar_help()
     show_specific_help("interlevel-travel.altar.prompt");
 }
 
+void show_annotate_help()
+{
+    show_specific_help("annotate.prompt");
+}
+
 void show_stash_search_help()
 {
     show_specific_help("stash-search.prompt");
-}
-
-void show_butchering_help()
-{
-    show_specific_help("butchering");
 }
 
 void show_skill_menu_help()
@@ -624,6 +637,151 @@ static void _add_insert_commands(column_composer &cols, const int column,
     cols.add_formatted(column, desc.c_str(), false);
 }
 
+static int _color_name_width(int c)
+{
+    // name width to use when printing palettes of paired regular+light color
+    // combos; the largest of the two names
+    static vector<int> widths = vector<int>(8, 0);
+    static bool widths_setup = false;
+    if (!widths_setup)
+    {
+        for (int fg = 0; fg < NUM_TERM_COLOURS; fg++)
+        {
+            widths[fg % 8] = max(widths[fg % 8],
+                             static_cast<int>(colour_to_str(fg).size()));
+        }
+        widths_setup = true;
+    }
+    return widths[c % 8];
+}
+
+static string _palette_with_bg(int bg)
+{
+    const string bg_name = colour_to_str(bg);
+    string s = make_stringf("<bg:%s>", bg_name.c_str());
+    // always show 16 foreground colors even with compat options on -- they may
+    // still be distinguished with bold.
+    for (int fg = 0; fg < NUM_TERM_COLOURS; fg++)
+    {
+        const string fg_name = colour_to_str(fg);
+        s += make_stringf("<%s>%-*s</%s>%s",
+                    fg_name.c_str(),
+                    _color_name_width(fg),
+                    fg_name.c_str(),
+                    fg_name.c_str(),
+                    fg == 7 ? "\n" : "");
+    }
+    s += make_stringf("</bg:%s>\n", bg_name.c_str());
+    return s;
+}
+
+static void _display_diag()
+{
+    string s;
+    const lib_display_info info;
+
+    // on webtiles we suppress some info that will just be confusing / not
+    // useful.
+    const bool webtiles_client
+#ifdef USE_TILE_WEB
+        = tiles.is_controlled_from_web();
+#else
+        = false;
+#endif
+
+    // if true, mostly just display the palettes.
+    const bool suppress_unix_stuff =
+#if defined(USE_TILE_LOCAL) || defined(TARGET_OS_WINDOWS)
+        true;
+#else
+        webtiles_client;
+#endif
+
+    s += make_stringf("Display type: <w>%s</w>\n", info.type.c_str());
+    if (!suppress_unix_stuff)
+    {
+        s += make_stringf("Terminal type (`TERM`): <w>%s</w>\n",
+                                                        info.term.c_str());
+    }
+    s += make_stringf("Terminal colours: %d foreground, %d background\n\n",
+        info.fg_colors, info.bg_colors);
+
+    if (webtiles_client)
+        s+= "The webtiles client will display 16 colors.\n\n";
+
+    // TODO: should any of this be shown ever in webtiles?
+    if (!suppress_unix_stuff && (info.fg_colors < 16
+            || info.bg_colors < 16
+            || info.term == "xterm")) // hack for putty. Maybe should set a compat flag in the lib?
+    {
+        s += "Your terminal is in <red>compatibility mode</red> and may not display full colours.\n";
+        // hint for the putty users:
+        if (info.term == "xterm")
+            s += "For full 16-colour-mode, try setting a better TERM value than `xterm`, e.g. `xterm-256color` (most terminals) or `putty-256color` (for PuTTY).\n";
+
+        // XX is there really value in showing all of these? In 2021 in 99% of
+        // scenarios, I think people shouldn't mess with anything except the
+        // first, and that's only for cosmetic purposes, not compat purposes
+        s += make_stringf(
+            "\nCurrent terminal options (see the Options Guide for details):\n"
+            "    `<w>allow_extended_colours</w>`: %d%s\n"
+            "    `<w>bold_brightens_foreground</w>`: %d"
+            "        `<w>blink_brightens_background</w>`: %d\n"
+            "    `<w>best_effort_brighten_foreground</w>`: %d"
+            "  `<w>best_effort_brighten_background</w>`: %d\n\n",
+            (int) Options.allow_extended_colours,
+            Options.allow_extended_colours ? " (overridden by TERM)" : "",
+            Options.bold_brightens_foreground == MB_FALSE ? 0 : 1,
+            (int) Options.blink_brightens_background,
+            (int) Options.best_effort_brighten_foreground,
+            (int) Options.best_effort_brighten_background);
+        if (info.bg_colors >= 16)
+        {
+            // these diagnostics are targeted at putty with bold_brightens_background.
+            // I have no freaking clue why they don't work, but this is here
+            // so that the player knows they are misconfigured.
+            s += "These two blocks should have the same background:"
+                 "    <bg:darkgrey><darkgrey>Block 1</darkgrey></bg:darkgrey>"
+                 "    <bg:darkgrey>Block 2</bg:darkgrey>\n"
+                 "The following two spans should have continuous shading between 1 and 2:\n"
+                 "    <bg:darkgrey><darkgrey>1          2</darkgrey></bg:darkgrey>\n"
+                 "    <bg:darkgrey><darkgrey>1               2</darkgrey></bg:darkgrey>\n";
+            // intentional missing \n here so that the key things still fit in
+            // 80x25 when these diagnostics are shown
+        }
+    }
+    else if (!suppress_unix_stuff && Options.bold_brightens_foreground == MB_TRUE)
+        s += "Option `bold_brightens_foreground`: force\n\n";
+
+#ifndef USE_TILE_LOCAL
+    // no need to show this twice on local tiles
+    s += "Foreground palette:\n";
+
+    // XX should black on black -> blue be explained?
+    s += _palette_with_bg(BLACK);
+    if (!webtiles_client && info.fg_colors < 16)
+        s += "    (Because of compatibility mode, <darkgrey>darkgrey on black renders as blue</darkgrey>.)\n";
+
+    if (!webtiles_client)
+    {
+        // webtiles and local tiles uses their own hover implementations,
+        // ANSI color is irrelevant
+        s += "\nPalette with menu highlight:\n";
+        s += _palette_with_bg(default_hover_colour());
+    }
+#endif
+
+    s += "\nFull palette:\n";
+    const int bgs_to_show = webtiles_client ? NUM_TERM_COLOURS : info.bg_colors;
+    for (int bg = 0; bg < bgs_to_show; bg++)
+        s += _palette_with_bg(bg);
+
+    formatted_scroller fs(FS_EASY_EXIT);
+    fs.set_more();
+    fs.add_text(s);
+    fs.show();
+}
+
 static void _add_formatted_help_menu(column_composer &cols)
 {
     cols.add_formatted(
@@ -647,6 +805,7 @@ static void _add_formatted_help_menu(column_composer &cols)
         "<w>T</w>: Tiles key help\n"
 #endif
         "<w>V</w>: Version information\n"
+        "<w>!</w>: Display diagnostics\n"
         "<w>Home</w>: This screen\n");
 
     // TODO: generate this from the manual somehow
@@ -728,10 +887,11 @@ static void _add_formatted_keyhelp(column_composer &cols)
     cols.add_formatted(
             0,
             "<h>Autofight:\n"
-            "<w>Tab</w>       : attack nearest monster,\n"
-            "            moving if necessary\n"
-            "<w>Shift-Tab</w> : attack nearest monster\n"
-            "            without moving\n");
+            "<w>Tab</w>          : attack nearest monster,\n"
+            "               moving if necessary\n"
+            "<w>Shift-Tab</w>, <w>p</w> : trigger quivered action;\n"
+            "               if targeted, aims at\n"
+            "               nearest monster\n");
 
     cols.add_formatted(
             0,
@@ -745,9 +905,6 @@ static void _add_formatted_keyhelp(column_composer &cols)
                            CMD_CYCLE_QUIVER_BACKWARD });
     _add_insert_commands(cols, 0, "<cyan>[</cyan> : armour (<w>%</w>ear and <w>%</w>ake off)",
                          { CMD_WEAR_ARMOUR, CMD_REMOVE_ARMOUR });
-    _add_insert_commands(cols, 0, "<brown>percent</brown> : corpses and food "
-                                  "(<w>%</w>hop up and <w>%</w>at)",
-                         { CMD_BUTCHER, CMD_EAT });
     _add_insert_commands(cols, 0, "<w>?</w> : scrolls (<w>%</w>ead)",
                          { CMD_READ });
     _add_insert_commands(cols, 0, "<magenta>!</magenta> : potions (<w>%</w>uaff)",
@@ -767,8 +924,8 @@ static void _add_formatted_keyhelp(column_composer &cols)
     _add_insert_commands(cols, 0, item_types,
                          { CMD_MEMORISE_SPELL, CMD_CAST_SPELL,
                            CMD_FORCE_CAST_SPELL });
-    _add_insert_commands(cols, 0, "<brown>\\</brown> : staves (<w>%</w>ield and e<w>%</w>oke)",
-                         { CMD_WIELD_WEAPON, CMD_EVOKE_WIELDED });
+    _add_insert_commands(cols, 0, "<brown>|</brown> : staves (<w>%</w>ield)",
+                         { CMD_WIELD_WEAPON});
     _add_insert_commands(cols, 0, "<lightgreen>}</lightgreen> : miscellaneous items (e<w>%</w>oke)",
                          { CMD_EVOKE });
     _add_insert_commands(cols, 0, "<yellow>$</yellow> : gold (<w>%</w> counts gold)",
@@ -802,15 +959,17 @@ static void _add_formatted_keyhelp(column_composer &cols)
             0,
             "<h>Non-Gameplay Commands / Info\n");
 
+    _add_command(cols, 0, CMD_GAME_MENU, "game menu", 2);
     _add_command(cols, 0, CMD_REPLAY_MESSAGES, "show Previous messages");
     _add_command(cols, 0, CMD_REDRAW_SCREEN, "Redraw screen");
     _add_command(cols, 0, CMD_CLEAR_MAP, "Clear main and level maps");
+    _add_command(cols, 0, CMD_MACRO_ADD, "quick add macro");
+    _add_command(cols, 0, CMD_MACRO_MENU, "edit macros");
     _add_command(cols, 0, CMD_ANNOTATE_LEVEL, "annotate the dungeon level", 2);
     _add_command(cols, 0, CMD_CHARACTER_DUMP, "dump character to file", 2);
     _add_insert_commands(cols, 0, 2, CMD_MAKE_NOTE,
                          "add note (use <w>%:</w> to read notes)",
                          { CMD_DISPLAY_COMMANDS });
-    _add_command(cols, 0, CMD_MACRO_ADD, "add macro (also <w>Ctrl-D</w>)", 2);
     _add_command(cols, 0, CMD_ADJUST_INVENTORY, "reassign inventory/spell letters", 2);
 #ifdef USE_TILE_LOCAL
     _add_command(cols, 0, CMD_EDIT_PLAYER_TILE, "edit player doll", 2);
@@ -908,20 +1067,19 @@ static void _add_formatted_keyhelp(column_composer &cols)
             "<h>Item Interaction:\n");
 
     _add_command(cols, 1, CMD_INSCRIBE_ITEM, "inscribe item", 2);
-    _add_command(cols, 1, CMD_BUTCHER, "Chop up a corpse on floor", 2);
-    _add_command(cols, 1, CMD_EAT, "Eat food (tries floor first) \n", 2);
-    _add_command(cols, 1, CMD_FIRE, "Fire next appropriate item", 2);
-    _add_command(cols, 1, CMD_THROW_ITEM_NO_QUIVER, "select an item and Fire it", 2);
-    _add_command(cols, 1, CMD_QUIVER_ITEM, "select item slot to be Quivered", 2);
+    _add_command(cols, 1, CMD_FIRE, "Fire the currently quivered action", 2);
+    _add_command(cols, 1, CMD_FIRE_ITEM_NO_QUIVER, "select an item and Fire it", 2);
+    _add_command(cols, 1, CMD_QUIVER_ITEM, "select action to be Quivered", 2);
+    _add_command(cols, 1, CMD_SWAP_QUIVER_RECENT, "swap between most recent quiver actions", 2);
     _add_command(cols, 1, CMD_QUAFF, "Quaff a potion", 2);
-    _add_command(cols, 1, CMD_READ, "Read a scroll (or book on floor)", 2);
+    _add_command(cols, 1, CMD_READ, "Read a scroll", 2);
     _add_command(cols, 1, CMD_WIELD_WEAPON, "Wield an item (<w>-</w> for none)", 2);
     _add_command(cols, 1, CMD_WEAPON_SWAP, "wield item a, or switch to b", 2);
 
     _add_insert_commands(cols, 1, "    (use <w>%</w> to assign slots)",
                          { CMD_ADJUST_INVENTORY });
 
-    _add_command(cols, 1, CMD_EVOKE_WIELDED, "eVoke power of wielded item", 2);
+    _add_command(cols, 1, CMD_PRIMARY_ATTACK, "attack with wielded item", 2);
     _add_command(cols, 1, CMD_EVOKE, "eVoke wand and miscellaneous item", 2);
 
     _add_insert_commands(cols, 1, "<w>%</w>/<w>%</w> : Wear or Take off armour",
@@ -1035,10 +1193,6 @@ static void _add_formatted_hints_help(column_composer &cols)
                          "armour (<w>%</w>ear and <w>%</w>ake off)",
                          { CMD_WEAR_ARMOUR, CMD_REMOVE_ARMOUR });
     _add_insert_commands(cols, 1,
-                         "<console><brown>percent</brown> : </console>"
-                         "corpses and food (<w>%</w>hop up and <w>%</w>at)",
-                         { CMD_BUTCHER, CMD_EAT });
-    _add_insert_commands(cols, 1,
                          "<console><w>?</w> : </console>"
                          "scrolls (<w>%</w>ead)",
                          { CMD_READ });
@@ -1075,9 +1229,9 @@ static void _add_formatted_hints_help(column_composer &cols)
     item_types += stringize_glyph(get_item_symbol(SHOW_ITEM_STAFF));
     item_types +=
         "</brown> : </console>"
-        "staves (<w>%</w>ield and e<w>%</w>oke)";
+        "staves (<w>%</w>ield)";
     _add_insert_commands(cols, 1, item_types,
-                         { CMD_WIELD_WEAPON, CMD_EVOKE_WIELDED });
+                         { CMD_WIELD_WEAPON });
 
     cols.add_formatted(1, " ", false);
     _add_command(cols, 1, CMD_DISPLAY_INVENTORY, "inventory (select item to view)", 2);
@@ -1212,7 +1366,7 @@ private:
         formatted_string header_text, help_text;
         switch (key)
         {
-            case CK_ESCAPE: case ':': case '#': case '/': case 'q': case 'v':
+            case CK_ESCAPE: case ':': case '#': case '/': case 'q': case 'v': case '!':
                 return false;
             default:
                 if (!(page = _get_help_section(key, header_text, help_text, scroll)))
@@ -1248,13 +1402,16 @@ static bool _show_help_special(int key)
                 display_char_dump();
             return true;
         case '/':
-            keyhelp_query_descriptions();
+            keyhelp_query_descriptions(CMD_DISPLAY_COMMANDS);
             return true;
         case 'q':
             _handle_FAQ();
             return true;
         case 'v':
             _print_version();
+            return true;
+        case '!':
+            _display_diag();
             return true;
         default:
             return false;

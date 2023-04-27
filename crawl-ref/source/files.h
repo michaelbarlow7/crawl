@@ -11,6 +11,8 @@
 #include <string>
 #include <vector>
 
+#include "maybe-bool.h"
+
 struct player_save_info;
 
 enum load_mode_type
@@ -18,6 +20,7 @@ enum load_mode_type
     LOAD_START_GAME,            // game has just begun
     LOAD_RESTART_GAME,          // loaded savefile
     LOAD_ENTER_LEVEL,           // entered a level normally
+    LOAD_ENTER_LEVEL_FAST,      // entered a level through new stairs/etc
     LOAD_VISITOR,               // Visitor pattern to see all levels
 };
 
@@ -49,6 +52,7 @@ vector<string> get_dir_files_recursive(const string &dirname,
                                        int recursion_depth = -1,
                                        bool include_directories = false);
 
+maybe_bool validate_data_dir(const string &d);
 void validate_basedirs();
 string datafile_path(string basename, bool croak_on_fail = true,
                      bool test_base_path = false,
@@ -90,6 +94,7 @@ bool pregen_dungeon(const level_id &stopping_point);
 bool load_level(dungeon_feature_type stair_taken, load_mode_type load_mode,
                 const level_id& old_level);
 void delete_level(const level_id &level);
+void save_level(const level_id& lid);
 
 void save_game(bool leave_game, const char *bye = nullptr);
 

@@ -4,10 +4,14 @@
 #ifdef USE_FT
 
 #include <map>
+#include <vector>
+
 #include <ft2build.h>
 #include FT_FREETYPE_H
 
 #include "tilefont.h"
+
+using std::vector;
 
 struct HiDPIState;
 extern HiDPIState display_density;
@@ -52,6 +56,9 @@ public:
     virtual void store(FontBuffer &buf, float &x, float &y,
                        const string &s, const VColour &c) override;
     virtual void store(FontBuffer &buf, float &x, float &y,
+                       const string &s,
+                       const VColour &fg, const VColour &bg) override;
+    virtual void store(FontBuffer &buf, float &x, float &y,
                        const formatted_string &fs) override;
     virtual void store(FontBuffer &buf, float &x, float &y, char32_t c,
                        const VColour &col) override;
@@ -80,6 +87,9 @@ protected:
     // to the virtuals.
     void store(FontBuffer &buf, float &x, float &y,
                const string &s, const VColour &c, float orig_x);
+    void store(FontBuffer &buf, float &x, float &y,
+               const string &s, const VColour &fg, const VColour &bg,
+               float orig_x);
     void store(FontBuffer &buf, float &x, float &y, const formatted_string &fs,
                float orig_x);
 

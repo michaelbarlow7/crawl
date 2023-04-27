@@ -13,6 +13,7 @@
 #include <cstring>
 
 #include "branch.h"
+#include "command.h"
 #include "describe.h"
 #include "env.h"
 #include "feature.h"
@@ -21,14 +22,33 @@
 #include "macro.h"
 #include "menu.h"
 #include "message.h"
+#include "options.h"
 #include "prompt.h"
 #include "religion.h"
 #include "scroller.h"
 #include "stairs.h"
+#include "store.h" //for level_id()
 #include "stringutil.h"
+#include "tag-version.h"
 #include "terrain.h"
 #include "travel.h"
 #include "unicode.h"
+#include "zot.h"
+
+enum annotation_menu_commands
+{
+    // Annotate one level up
+    ID_UP       = -99,
+
+    // Annotate the dungeon floor the player character is currently on
+    ID_HERE     = -100,
+
+    // Annotate one level down
+    ID_DOWN     = -101,
+
+    // Cancel the whole thing
+    ID_CANCEL   = -102,
+};
 
 typedef map<branch_type, set<level_id> > stair_map_type;
 typedef map<level_pos, shop_type> shop_map_type;
@@ -87,8 +107,11 @@ void seen_notable_thing(dungeon_feature_type which_thing, const coord_def& pos)
     const god_type god = feat_altar_god(which_thing);
     if (god != GOD_NO_GOD)
         _seen_altar(god, pos);
-    else if (feat_is_branch_entrance(which_thing))
+    else if (which_thing != DNGN_ENTER_HELL
+             && feat_is_branch_entrance(which_thing))
+    {
         _seen_staircase(pos);
+    }
     else if (which_thing == DNGN_ENTER_SHOP)
         _seen_shop(pos);
     else if (feat_is_gate(which_thing)) // overinclusive
@@ -100,9 +123,9 @@ bool move_notable_thing(const coord_def& orig, const coord_def& dest)
     ASSERT_IN_BOUNDS(orig);
     ASSERT_IN_BOUNDS(dest);
     ASSERT(orig != dest);
-    ASSERT(!is_notable_terrain(grd(dest)));
+    ASSERT(!is_notable_terrain(env.grid(dest)));
 
-    if (!is_notable_terrain(grd(orig)))
+    if (!is_notable_terrain(env.grid(orig)))
         return false;
 
     level_pos pos1(level_id::current(), orig);
@@ -141,9 +164,7 @@ static string shoptype_to_string(shop_type s)
     case SHOP_GENERAL:         return "<w>*</w>";
     case SHOP_GENERAL_ANTIQUE: return "<yellow>*</yellow>";
     case SHOP_JEWELLERY:       return "<w>=</w>";
-    case SHOP_EVOKABLES:       return "<w>}</w>";
     case SHOP_BOOK:            return "<w>:</w>";
-    case SHOP_FOOD:            return "<w>%</w>";
     case SHOP_DISTILLERY:      return "<w>!</w>";
     case SHOP_SCROLL:          return "<w>?</w>";
     default:                   return "<w>x</w>";
@@ -224,23 +245,33 @@ string overview_description_string(bool display)
     return disp.substr(0, disp.find_last_not_of('\n')+1);
 }
 
+// XX unify with other pad code
+static string _pad_cs(string colour_string, size_t width)
+{
+    const size_t buf_size
+            = formatted_string::parse_string(colour_string).tostring().size();
+    const int spaces = buf_size > width ? 0 : width - buf_size;
+
+    return colour_string + string(spaces, ' ');
+}
+
 // iterate through every dungeon branch, listing the ones which have been found
 static string _get_seen_branches(bool display)
 {
-    // Each branch entry takes up 26 spaces + 38 for tags.
-    const int width = 64;
-
-    int num_printed_branches = 0;
-    char buffer[100];
     string disp;
 
     disp += "\n<green>Branches:</green>";
     if (display)
     {
         disp += " (press <white>G</white> to reach them and "
-                "<white>?/B</white> for more information)";
+                "<white>?/b</white> for more information)";
     }
     disp += "\n";
+
+    const bool in_death_range = zot_clock_fatal();
+
+    bool zot_clock_shown = false;
+    vector<string> cells;
 
     for (branch_iterator it; it; ++it)
     {
@@ -256,43 +287,83 @@ static string _get_seen_branches(bool display)
             // that no longer has any stairs.
             level_id lid(branch, 0);
             lid = find_deepest_explored(lid);
+            const int bzot = bezotting_level_in(branch);
+            const bool show_zot = lid.depth > 0 && !zot_immune()
+                            && (Options.always_show_zot
+                                || you.has_mutation(MUT_SHORT_LIFESPAN)
+                                || bzot > 0); // 1000 turns for non-Meteorae
 
             string entry_desc;
             for (auto lvl : stair_level[branch])
                 entry_desc += " " + lvl.describe(false, true);
 
-            // "D" is a little too short here.
-            const char *brname = (branch == BRANCH_DUNGEON
-                                  ? it->shortname
-                                  : it->abbrevname);
+            // "D" is a little too short here
+            // XX "Gauntlet" is too long
+            const char *brname = branch == BRANCH_DUNGEON
+                ? it->shortname : it->abbrevname;
 
             if (entry_desc.size() == 0 && branch != BRANCH_DUNGEON
                 && you.where_are_you != branch)
             {
                 // previously visited portal branches
-                snprintf(buffer, sizeof buffer,
+                cells.push_back(make_stringf(
                     "<yellow>%7s</yellow> <darkgrey>(visited)</darkgrey>",
-                    brname);
+                    brname));
             }
             else
             {
-                snprintf(buffer, sizeof buffer,
+                string zclock_desc;
+                if (show_zot)
+                {
+                    const int zturns = turns_until_zot_in(branch);
+                    zot_clock_shown = true;
+                    // bzot > 0 is not urgent enough for meteorae. (Should this
+                    // be even higher? They still get the overall warning on
+                    // this popup if they could die.)
+                    const bool urgent = in_death_range
+                                            && (bzot > 0 || zturns < 600);
+                    const char *zcol =
+                            urgent ? (bzot <= 2 ? "red" : "lightmagenta")
+                            // 3k is somewhat arbitrary, but looks better to
+                            // mostly gray this out for non-meteorae chars
+                            // with always_show_zot on:
+                          : bzot == 0 && zturns > 3000 ? "darkgrey"
+                          : bzot == 0 ? "lightgray"
+                          : bzot <= 1 ? "yellow"
+                          : bzot == 2 ? "red"
+                          : "lightmagenta";
+                    zclock_desc = make_stringf(" Zot: <%s>%d%s</%s>",
+                                    zcol, zturns,
+                                    urgent ? "!" : "",
+                                    zcol);
+                }
+
+                const string main_desc = make_stringf(
                     "<yellow>%*s</yellow> <darkgrey>(%d/%d)</darkgrey>%s",
-                    branch == root_branch ? -7 : 7,
-                    brname, lid.depth, brdepth[branch], entry_desc.c_str());
+                    7,
+                    brname, lid.depth, brdepth[branch],
+                    entry_desc.c_str());
+                cells.push_back(_pad_cs(main_desc, 22) + zclock_desc);
             }
-
-            disp += buffer;
-            num_printed_branches++;
-
-            disp += (num_printed_branches % 3) == 0
-                    ? "\n"
-                    : string(max<int>(width - strlen(buffer), 0), ' ');
         }
     }
 
-    if (num_printed_branches % 3 != 0)
+    // is it too confusing to have two columnizations? But try as I might, the
+    // zot clock info just can't be crammed into 3 cols.
+    const int cols = zot_clock_shown ? 2 : 3;
+    const size_t width = 79 / cols;
+    int num_printed_branches = 0;
+    for (auto &cell : cells)
+    {
+        // how do we not yet have generic code for doing this
+        num_printed_branches++;
+        disp += _pad_cs(cell, width);
+        if (num_printed_branches % cols == 0)
+            disp += "\n";
+    }
+    if (num_printed_branches % cols != 0)
         disp += "\n";
+
     return disp;
 }
 
@@ -363,14 +434,20 @@ static string _get_unseen_branches()
 
 static string _get_branches(bool display)
 {
-    return _get_seen_branches(display) + _get_unseen_branches();
+    string r = _get_seen_branches(display) + _get_unseen_branches();
+
+    // XX does it make sense to show this unconditionally? Maybe for
+    // non-meteorans, should require a bezotting level of 1 or higher somewhere?
+    if (zot_clock_fatal())
+        r += "\n<red>You are so drained that the power of Zot will kill you!</red>\n";
+    return r;
 }
 
 // iterate through every god and display their altar's discovery state by colour
 static string _get_altars(bool display)
 {
     // Just wastes space for demigods.
-    if (you.species == SP_DEMIGOD)
+    if (you.has_mutation(MUT_FORLORN))
         return "";
 
     string disp;
@@ -379,7 +456,7 @@ static string _get_altars(bool display)
     if (display)
     {
         disp += " (press <white>_</white> to reach them and "
-                "<white>?/G</white> for information about gods)";
+                "<white>?/g</white> for information about gods)";
     }
     disp += "\n";
     disp += _print_altars_for_gods(temple_god_list(), true, display);
@@ -400,6 +477,9 @@ static string _print_altars_for_gods(const vector<god_type>& gods,
 
     for (const god_type god : gods)
     {
+        if (!player_can_join_god(god, false))
+            continue;
+
         // for each god, look through the notable altars list for a match
         bool has_altar_been_seen = false;
         for (const auto &entry : altars_present)
@@ -560,7 +640,7 @@ static string _get_notes(bool display)
         return disp;
 
     if (display)
-        return "\n<green>Annotations:</green> (press <white>!</white> to annotate current level)\n" + disp;
+        return "\n<green>Annotations:</green> (press <white>!</white> to add a new annotation)\n" + disp;
     return "\n<green>Annotations:</green>\n" + disp;
 }
 
@@ -593,8 +673,8 @@ static bool _unnotice_shop(const level_pos &pos)
 
 static bool _unnotice_stair(const level_pos &pos)
 {
-    const dungeon_feature_type feat = grd(pos.pos);
-    if (!feat_is_branch_entrance(feat))
+    const dungeon_feature_type feat = env.grid(pos.pos);
+    if (feat == DNGN_ENTER_HELL || !feat_is_branch_entrance(feat))
         return false;
 
     for (branch_iterator it; it; ++it)
@@ -671,7 +751,7 @@ static void _process_command(const char keypress)
                 mpr("Sorry, you haven't seen any shop yet.");
             return;
         case '!':
-            annotate_level();
+            do_annotate();
             return;
         default:
             return;
@@ -713,7 +793,7 @@ static void _seen_portal(dungeon_feature_type which_thing, const coord_def& pos)
     if (feat_is_portal_entrance(which_thing)
         || which_thing == DNGN_ENTER_ABYSS
         || which_thing == DNGN_ENTER_PANDEMONIUM
-        || which_thing == DNGN_ENTER_HELL && !player_in_hell())
+        || which_thing == DNGN_ENTER_HELL)
     {
         level_pos where(level_id::current(), pos);
         portals_present[where] = stair_destination(pos).branch;
@@ -777,9 +857,11 @@ static void _update_tracked_feature_annot(dungeon_feature_type feat,
     else if (new_num == 0)
     {
         level_annotations[li] = replace_all(level_annotations[li],
-                                            ", " + old_string, "");
+                                            old_string + ", ", "");
         level_annotations[li] = replace_all(level_annotations[li],
                                             old_string, "");
+        trim_string(level_annotations[li]);
+        strip_suffix(level_annotations[li], ",");
     }
 }
 
@@ -889,8 +971,8 @@ void set_unique_annotation(monster* mons, const level_id level)
         && mons->type != MONS_PLAYER_GHOST
         || testbits(mons->flags, MF_SPECTRALISED)
         || mons->is_illusion()
-        || mons->props.exists("no_annotate")
-            && mons->props["no_annotate"].get_bool())
+        || mons->props.exists(NO_ANNOTATE_KEY)
+            && mons->props[NO_ANNOTATE_KEY].get_bool())
 
     {
         return;
@@ -986,54 +1068,6 @@ bool level_annotation_has(string find, level_id li)
     return str.find(find) != string::npos;
 }
 
-void annotate_level()
-{
-    level_id li  = level_id::current();
-    level_id li2 = level_id::current();
-
-    if (feat_is_stair(grd(you.pos())))
-    {
-        li2 = level_id::get_next_level_id(you.pos());
-
-        if (li2.depth <= 0)
-            li2 = level_id::current();
-    }
-
-    if (li2 != level_id::current())
-    {
-        if (yesno("Annotate level on other end of current stairs?", true, 'n'))
-            li = li2;
-    }
-
-    do_annotate(li);
-}
-
-void do_annotate(level_id& li)
-{
-    string old = get_level_annotation(li, true, true);
-    if (!old.empty())
-    {
-        mprf(MSGCH_PROMPT, "Current level annotation: <lightgrey>%s</lightgrey>",
-             old.c_str());
-    }
-
-    const string prompt = "New annotation for " + li.describe()
-                          + " (include '!' for warning): ";
-
-    char buf[77];
-    if (msgwin_get_line_autohist(prompt, buf, sizeof(buf), old))
-        canned_msg(MSG_OK);
-    else if (old == buf)
-        canned_msg(MSG_OK);
-    else if (*buf)
-        level_annotations[li] = buf;
-    else
-    {
-        mpr("Cleared annotation.");
-        level_annotations.erase(li);
-    }
-}
-
 void clear_level_annotations(level_id li)
 {
     level_annotations.erase(li);
@@ -1093,4 +1127,165 @@ bool connected_branch_can_exist(branch_type br)
     }
 
     return true;
+}
+
+/**
+ * Make the little overview
+ * (D) Dungeon        (T) Temple         (L) Lair           etc.
+ * at most 4 branches on 1 line
+*/
+static void _show_dungeon_overview(vector<branch_type> brs)
+{
+    clear_messages();
+    int linec = 0;
+    string line;
+    for (branch_type br : brs)
+    {
+        if (linec == 4)
+        {
+            linec = 0;
+            mpr(line);
+            line = "";
+        }
+        line += make_stringf("(%c) %-14s ",
+                             branches[br].travel_shortcut,
+                             branches[br].shortname);
+        ++linec;
+    }
+    if (!line.empty())
+        mpr(line);
+    flush_prev_message();
+    return;
+}
+
+static int _prompt_annotate_branch(level_id lid)
+{
+    // these 3 lines make a vector containing all shown branches.
+    vector<branch_type> brs;
+    for (branch_iterator it; it; ++it)
+        if (is_known_branch_id(it->id))
+            brs.push_back(it->id);
+
+    mprf(MSGCH_PROMPT, "Annotate which branch? (. - %s, ? - help, ! - show branch list)",
+        lid.describe(false, true).c_str());
+
+    while (true)
+    {
+        int keyin = get_ch();
+        switch (keyin)
+        {
+        CASE_ESCAPE
+            return ID_CANCEL;
+        case '?':
+            show_annotate_help();
+            break;
+        case '!':
+            _show_dungeon_overview(brs);
+            break;
+        case '\n': case '\r': case '.':
+            return ID_HERE;
+        case '<':
+            return ID_UP;
+        case '>':
+            return ID_DOWN;
+        case CONTROL('P'):
+            {
+                const branch_type parent = parent_branch(lid.branch);
+                if (parent < NUM_BRANCHES)
+                    return parent;
+            }
+            break;
+        default:
+            // Is this a branch hotkey?
+            for (branch_type br : brs)
+            {
+                if (toupper_safe(keyin) == branches[br].travel_shortcut)
+                    return br;
+            }
+            // Otherwise cancel
+            return ID_CANCEL;
+        }
+    }
+}
+
+void do_annotate()
+{
+    const level_id lid  = level_id::current();
+    const int branch = _prompt_annotate_branch(lid);
+
+    if (branch < 0)
+    {
+        ASSERT(ID_CANCEL <= branch && branch <= ID_UP);
+        annotation_menu_commands a = static_cast<annotation_menu_commands>(branch);
+        switch (a)
+        {
+        case ID_CANCEL:
+            canned_msg(MSG_OK);
+            return;
+        case ID_HERE:
+            annotate_level(lid);
+            return;
+        case ID_UP:
+            // level_id() is the error vallue of find_up_level(lid)
+            if (find_up_level(lid) == level_id())
+                mpr("There is no level above you.");
+            else
+                annotate_level(find_up_level(lid));
+            return;
+        case ID_DOWN:
+            if (find_down_level(lid) == lid)
+                mpr("There is no level below you in this branch.");
+            else
+                annotate_level(find_down_level(lid));
+            return;
+        }
+    }
+    else
+    {
+    int depth;
+    const int max_depth = branches[branch].numlevels;
+    // Handle one-level branches by not prompting.
+    if (max_depth == 1)
+        depth = 1;
+    else
+    {
+        clear_messages();
+        const string prompt = make_stringf ("What level of %s? ",
+                    branches[branch].longname);
+        depth = prompt_for_int(prompt.c_str(), true);
+    }
+    if (depth > 0 && depth <= max_depth)
+    {
+        const branch_type br = branch_type(branch);
+        annotate_level(level_id(br, depth));
+    }
+    else
+        mpr("That's not a valid depth.");
+    }
+}
+
+void annotate_level(level_id li)
+{
+    const string old = get_level_annotation(li, true, true);
+    if (!old.empty())
+    {
+        mprf(MSGCH_PROMPT, "Current level annotation: <lightgrey>%s</lightgrey>",
+             old.c_str());
+    }
+
+    const string prompt = "New annotation for " + li.describe()
+                          + " (include '!' for warning): ";
+
+    char buf[77];
+    if (msgwin_get_line_autohist(prompt, buf, sizeof(buf), old))
+        canned_msg(MSG_OK);
+    else if (old == buf)
+        canned_msg(MSG_OK);
+    else if (*buf)
+        level_annotations[li] = string(buf);
+    else
+    {
+        mpr("Cleared annotation.");
+        level_annotations.erase(li);
+    }
 }

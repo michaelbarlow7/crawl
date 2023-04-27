@@ -3,14 +3,28 @@ define(["jquery", "comm", "client", "./ui", "./enums", "./cell_renderer",
 function ($, comm, client, ui, enums, cr, util, scroller, main, gui, player) {
     "use strict";
 
+    var describe_scale = 2.0;
+
     function fmt_body_txt(txt)
     {
         return txt
+            // preserve all leading spaces
+            .split("\n")
+            .map(function (s) { return s.replace(/^\s+/, function (m)
+                    {
+                        // TODO: or mark as preformatted? something else?
+                        return m.replace(/\s/g, "&nbsp;");
+                    }).trim();
+                })
+            .join("\n")
+            // convert double linebreaks into paragraph markers
             .split("\n\n")
-            .map(function (s) { return "<p>"+s.trim()+"</p>"; })
+            .map(function (s) { return "<p>" + s + "</p>"; })
             .filter(function (s) { return s !== "<p></p>"; })
             .join("")
-            .split("\n").join("<br>");
+            // replace single linebreaks with manual linebreaks
+            .split("\n")
+            .join("<br>");
     }
 
     function _fmt_spellset_html(desc)
@@ -25,6 +39,13 @@ function ($, comm, client, ui, enums, cr, util, scroller, main, gui, player) {
     function _fmt_spells_list(root, spellset, colour)
     {
         var $container = root.find("#spellset_placeholder");
+        // XX this container only seems to be added if there are spells, do
+        // we actually need to remove it again?
+        if ($container.length === 0 && spellset.length !== 0)
+        {
+            root.prepend("<div class='fg4'>Buggy spellset!</div>");
+            return;
+        }
         $container.attr("id", "").addClass("menu_contents spellset");
         if (spellset.length === 0)
         {
@@ -49,10 +70,10 @@ function ($, comm, client, ui, enums, cr, util, scroller, main, gui, player) {
                 var label = " " + letter + " - "+spell.title;
                 $item.append("<span>" + label + "</span>");
 
-                if (spell.hex_chance !== undefined)
-                    $item.append("<span>("+spell.hex_chance+") </span>");
+                if (spell.effect !== undefined)
+                    $item.append("<span>" + util.formatted_string_to_html(spell.effect) + " </span>");
                 if (spell.range_string !== undefined)
-                    $item.append("<span>" + util.formatted_string_to_html(spell.range_string) +" </span>");
+                    $item.append("<span>" + util.formatted_string_to_html(spell.range_string) + " </span>");
 
                 $list.append($item);
                 if (colour)
@@ -116,9 +137,12 @@ function ($, comm, client, ui, enums, cr, util, scroller, main, gui, player) {
         if (desc.tile)
         {
             var renderer = new cr.DungeonCellRenderer();
-            util.init_canvas(canvas[0], renderer.cell_width, renderer.cell_height);
+            util.init_canvas(canvas[0],
+                renderer.cell_width * describe_scale,
+                renderer.cell_height * describe_scale);
             renderer.init(canvas[0]);
-            renderer.draw_from_texture(desc.tile.t, 0, 0, desc.tile.tex, 0, 0, desc.tile.ymax, false);
+            renderer.draw_from_texture(desc.tile.t, 0, 0, desc.tile.tex, 0, 0,
+                desc.tile.ymax, false, describe_scale);
         }
         else
             canvas.remove();
@@ -138,23 +162,79 @@ function ($, comm, client, ui, enums, cr, util, scroller, main, gui, player) {
                 var text = feat.body;
                 if (feat.quote)
                      text += "\n\n" + feat.quote;
-                $feat.find(".body").html(text);
+                $feat.find(".body").html(util.formatted_string_to_html(text));
             }
             else
                 $feat.find(".body").remove();
 
             var canvas = $feat.find(".header > canvas");
             var renderer = new cr.DungeonCellRenderer();
-            util.init_canvas(canvas[0], renderer.cell_width, renderer.cell_height);
+            util.init_canvas(canvas[0],
+                renderer.cell_width * describe_scale,
+                renderer.cell_height * describe_scale);
             renderer.init(canvas[0]);
-            renderer.draw_from_texture(feat.tile.t, 0, 0, feat.tile.tex, 0, 0, feat.tile.ymax, false);
+            renderer.draw_from_texture(feat.tile.t, 0, 0, feat.tile.tex, 0, 0,
+                feat.tile.ymax, false, describe_scale);
             $popup.append($feat);
         });
+        if (desc.actions)
+        {
+            $popup.append("<div class=actions></div>");
+            $popup.find(".actions").html(clickify_actions(desc.actions));
+        }
+
         var s = scroller($popup[0]);
         $popup.on("keydown keypress", function (event) {
-            scroller_handle_key(s, event);
+            var key = String.fromCharCode(event.which);
+            if (key != "<" && key != ">") // XX not always
+                scroller_handle_key(s, event);
         });
         return $popup;
+    }
+
+    // Given some string like "e(v)oke", produce a span with the `data-hotkey`
+    // attribute set on that span. This auto-enables clicking. This will
+    // handle both a final period, and a sequence of prefix words that do not
+    // have a hotkey marked in them.
+    // TODO: it might be more robust to produce structured info on the server
+    // side...
+    function clickify_action(action_text)
+    {
+        var suffix = "";
+        var prefix = "";
+        // makes some assumptions about how this is joined...see describe.cc
+        // _actions_desc.
+        if (action_text.endsWith(".")) // could be more elegant...
+        {
+            suffix = ".";
+            action_text = action_text.slice(0, -1);
+        }
+        if (action_text.startsWith("or "))
+        {
+            prefix = "or ";
+            action_text = action_text.substr(3);
+        }
+        var hotkeys = action_text.match(/\(.\)/); // very inclusive for the key name
+        var data_attr = ""
+        if (hotkeys)
+            data_attr = " data-hotkey='" + hotkeys[0][1] + "'";
+        return prefix
+            + "<span" + data_attr + ">" + action_text + "</span>"
+            + suffix;
+    }
+
+    // Turn a list of actions like that found in the describe item popup into
+    // clickable links.
+    function clickify_actions(actions_text)
+    {
+        // assumes that the list is joined via ", ", including the final
+        // element. (I.e. this will break without the Oxford comma.)
+        var words = actions_text.split(", ");
+        var linkized = [];
+        words.forEach(function(w) {
+            linkized.push(clickify_action(w));
+        });
+        return linkized.join(", ");
     }
 
     function describe_item(desc)
@@ -168,18 +248,21 @@ function ($, comm, client, ui, enums, cr, util, scroller, main, gui, player) {
         $popup.on("keydown keypress", function (event) {
             scroller_handle_key(s, event);
         });
-        if (desc.actions !== "")
-            $popup.find(".actions").html(desc.actions);
+        if (desc.actions)
+            $popup.find(".actions").html(clickify_actions(desc.actions));
         else
             $popup.find(".actions").remove();
 
         var canvas = $popup.find(".header > canvas");
         var renderer = new cr.DungeonCellRenderer();
-        util.init_canvas(canvas[0], renderer.cell_width, renderer.cell_height);
+        util.init_canvas(canvas[0],
+            renderer.cell_width * describe_scale,
+            renderer.cell_height * describe_scale);
         renderer.init(canvas[0]);
 
         desc.tiles.forEach(function (tile) {
-            renderer.draw_from_texture(tile.t, 0, 0, tile.tex, 0, 0, tile.ymax, false);
+            renderer.draw_from_texture(tile.t, 0, 0, tile.tex, 0, 0, tile.ymax,
+                false, describe_scale);
         });
 
         return $popup;
@@ -208,9 +291,12 @@ function ($, comm, client, ui, enums, cr, util, scroller, main, gui, player) {
 
         var canvas = $popup.find(".header > canvas");
         var renderer = new cr.DungeonCellRenderer();
-        util.init_canvas(canvas[0], renderer.cell_width, renderer.cell_height);
+        util.init_canvas(canvas[0],
+            renderer.cell_width * describe_scale,
+            renderer.cell_height * describe_scale);
         renderer.init(canvas[0]);
-        renderer.draw_from_texture(desc.tile.t, 0, 0, desc.tile.tex, 0, 0, desc.tile.ymax, false);
+        renderer.draw_from_texture(desc.tile.t, 0, 0, desc.tile.tex, 0, 0,
+            desc.tile.ymax, false, describe_scale);
 
         return $popup;
     }
@@ -227,9 +313,12 @@ function ($, comm, client, ui, enums, cr, util, scroller, main, gui, player) {
 
             var canvas = $card.find(".header > canvas");
             var renderer = new cr.DungeonCellRenderer();
-            util.init_canvas(canvas[0], renderer.cell_width, renderer.cell_height);
+            util.init_canvas(canvas[0],
+                renderer.cell_width * describe_scale,
+                renderer.cell_height * describe_scale);
             renderer.init(canvas[0]);
-            renderer.draw_from_texture(t, 0, 0, tex, 0, 0, 0, false);
+            renderer.draw_from_texture(t, 0, 0, tex, 0, 0, 0, false,
+                describe_scale);
             $popup.append($card);
         });
         var s = scroller($popup[0]);
@@ -252,11 +341,11 @@ function ($, comm, client, ui, enums, cr, util, scroller, main, gui, player) {
         });
         paneset_cycle($body);
 
-        if (desc.vampire !== undefined)
+        if (desc.vampire_alive !== undefined)
         {
             var css = ".vamp-attrs th:nth-child(%d) { background: #111; }";
             css += " .vamp-attrs td:nth-child(%d) { color: white; background: #111; }";
-            css = css.replace(/%d/g, desc.vampire + 1);
+            css = css.replace(/%d/g, desc.vampire_alive ? 2 : 3);
             $vamp.children("style").html(css);
             var vs = scroller($vamp[0]);
             $popup.on("keydown keypress", function (event) {
@@ -305,10 +394,13 @@ function ($, comm, client, ui, enums, cr, util, scroller, main, gui, player) {
 
         var canvas = $popup.find(".header > canvas")[0];
         var renderer = new cr.DungeonCellRenderer();
-        util.init_canvas(canvas, renderer.cell_width, renderer.cell_height);
+        util.init_canvas(canvas,
+            renderer.cell_width * describe_scale,
+            renderer.cell_height * describe_scale);
         renderer.init(canvas);
         renderer.draw_from_texture(desc.tile.t, 0, 0,
-                                   desc.tile.tex, 0, 0, 0, false);
+                                   desc.tile.tex, 0, 0, 0, false,
+                                   describe_scale);
 
         var $body = $popup.children(".body");
         var $footer = $popup.find(".footer > .paneset");
@@ -324,13 +416,6 @@ function ($, comm, client, ui, enums, cr, util, scroller, main, gui, player) {
                     .addClass("fg"+desc.colour).html(desc.title);
         $panes.eq(0).find(".god-favour td.favour")
                     .addClass("fg"+desc.colour).html(desc.favour);
-        if (desc.bondage)
-        {
-            $panes.eq(0).find(".god-favour")
-                .after("<div class=tbl>"
-                        + util.formatted_string_to_html(desc.bondage)
-                        + "</div>");
-        }
         var powers_list = desc.powers_list.split("\n").slice(3, -1);
         var $powers = $panes.eq(0).find(".god-powers");
         var re = /^(<[a-z]*>)?(.*\.) *( \(.*\))?$/;
@@ -425,7 +510,9 @@ function ($, comm, client, ui, enums, cr, util, scroller, main, gui, player) {
 
         var $canvas = $popup.find(".header > canvas");
         var renderer = new cr.DungeonCellRenderer();
-        util.init_canvas($canvas[0], renderer.cell_width, renderer.cell_height);
+        util.init_canvas($canvas[0],
+            renderer.cell_width * describe_scale,
+            renderer.cell_height * describe_scale);
         renderer.init($canvas[0]);
 
         if ((desc.fg_idx >= main.MAIN_MAX) && desc.doll)
@@ -446,7 +533,7 @@ function ($, comm, client, ui, enums, cr, util, scroller, main, gui, player) {
                     yofs += desc.mcache[mind][2];
                 }
                 renderer.draw_player(doll_part[0],
-                        0, 0, xofs, yofs, doll_part[1]);
+                        0, 0, xofs, yofs, doll_part[1], describe_scale);
             });
         }
 
@@ -456,21 +543,23 @@ function ($, comm, client, ui, enums, cr, util, scroller, main, gui, player) {
                 if (mcache_part) {
                     var yofs = Math.max(0, player.get_tile_info(mcache_part[0]).h - 32);
                     renderer.draw_player(mcache_part[0],
-                            0, 0, mcache_part[1], mcache_part[2]+yofs);
+                            0, 0, mcache_part[1], mcache_part[2]+yofs,
+                            undefined, describe_scale);
                 }
             });
         }
         else if (desc.fg_idx > 0 && desc.fg_idx <= main.MAIN_MAX)
         {
             renderer.draw_foreground(0, 0, { t: {
-                fg: { value: desc.fg_idx }, bg: 0,
-            }});
+                fg: { value: desc.fg_idx }, bg: 0, icons: [],
+            }}, describe_scale);
         }
 
         renderer.draw_foreground(0, 0, { t: {
             fg: enums.prepare_fg_flags(desc.flag),
             bg: 0,
-        }});
+            icons: desc.icons,
+        }}, describe_scale);
 
         for (var i = 0; i < $panes.length; i++)
             scroller($panes.eq(i)[0]);
@@ -522,9 +611,12 @@ function ($, comm, client, ui, enums, cr, util, scroller, main, gui, player) {
         var t = gui.STARTUP_STONESOUP, tex = enums.texture.GUI;
         var $canvas = $popup.find(".header > canvas");
         var renderer = new cr.DungeonCellRenderer();
-        util.init_canvas($canvas[0], renderer.cell_width, renderer.cell_height);
+        util.init_canvas($canvas[0],
+            renderer.cell_width * describe_scale,
+            renderer.cell_height * describe_scale);
         renderer.init($canvas[0]);
-        renderer.draw_from_texture(t, 0, 0, tex, 0, 0, 0, false);
+        renderer.draw_from_texture(t, 0, 0, tex, 0, 0, 0, false,
+            describe_scale);
 
         return $popup;
     }
@@ -600,10 +692,14 @@ function ($, comm, client, ui, enums, cr, util, scroller, main, gui, player) {
 
     function scroller_scroll_page(scroller, dir)
     {
-        // var line_height = scroller_line_height(scroller);
+        var line_height = scroller_line_height(scroller);
         var contents = $(scroller.scrollElement);
-        var page_shift = contents[0].getBoundingClientRect().height;
-        // page_shift = Math.floor(page_shift / line_height) * line_height;
+        // XX this is a bit weird, maybe context[0] is the wrong thing to use?
+        // The -24 is to compensate for the top/bottom shades. In practice, the
+        // top line ends up a bit in the shade in long docs, possibly it should
+        // be adjusted for.
+        var page_shift = contents[0].getBoundingClientRect().height - 24;
+        page_shift = Math.floor(page_shift / line_height) * line_height;
         contents[0].scrollTop += page_shift * dir;
         update_server_scroll();
     }
@@ -783,9 +879,14 @@ function ($, comm, client, ui, enums, cr, util, scroller, main, gui, player) {
                     $button.append($canvas);
                 }
                 $.each(button.labels || [button.label], function (i, label) {
+                    // TODO: this has somewhat weird behavior if multiple spans
+                    // are produced from the formatted string...should they
+                    // really have a flex-grow property?
                     var $lbl = $(util.formatted_string_to_html(label)).css("flex-grow", "1");
                     $button.append($lbl);
                 });
+                // at least remove empty spans because of the above issue:
+                $button.find("span:empty").remove();
                 $button.attr("style", "grid-row:"+(button.y+1)+"; grid-column:"+(button.x+1)+";");
                 $descriptions.append("<span class='pane'> " + button.description + "</span>");
                 $button.attr("data-description-index", $descriptions.children().length - 1);
@@ -907,8 +1008,18 @@ function ($, comm, client, ui, enums, cr, util, scroller, main, gui, player) {
 
     function recv_ui_push(msg)
     {
+        var popup = null
         var handler = ui_handlers[msg.type];
-        var popup = handler ? handler(msg) : $("<div>Unhandled UI type "+msg.type+"</div>");
+        try
+        {
+            popup = handler
+                ? handler(msg)
+                : $("<div>Unhandled UI type " + msg.type + "</div>");
+        }
+        catch (err)
+        {
+            popup = $("<div>Buggy UI of type " + msg.type + "</div>");
+        }
         ui.show_popup(popup, msg["ui-centred"], msg.generation_id);
     }
 

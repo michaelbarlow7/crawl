@@ -2,6 +2,8 @@
 
 #include "attack.h"
 
+const int PPROJ_TO_HIT_DIV = 8;
+
 class ranged_attack : public attack
 {
 // Public Properties
@@ -14,10 +16,10 @@ public:
     ranged_attack(actor *attacker, actor *defender, item_def *projectile,
                   bool teleport, actor *blame = 0);
 
-    int calc_to_hit(bool random) override;
-
     // Applies attack damage and other effects.
     bool attack();
+    int post_roll_to_hit_modifiers(int mhit, bool random,
+                                   bool /*aux*/ = false) override;
 
 private:
     /* Attack Phases */
@@ -38,6 +40,8 @@ private:
     bool dart_check(special_missile_type type);
     int dart_duration_roll(special_missile_type type);
     bool apply_missile_brand();
+    bool throwing() const;
+    bool clumsy_throwing() const;
 
     /* Weapon Effects */
     bool check_unrand_effects() override;
@@ -55,6 +59,6 @@ private:
     const item_def *projectile;
     bool teleport;
     int orig_to_hit;
-    bool should_alert_defender;
-    launch_retval launch_type;
 };
+
+ranged_attack build_attack_for(actor &act, const item_def *weapon);

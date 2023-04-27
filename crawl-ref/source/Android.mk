@@ -95,7 +95,6 @@ CRAWLSRC = ability.cc \
 	bloodspatter.cc \
 	branch.cc \
 	branch-data-json.cc \
-	butcher.cc \
 	chardump.cc \
 	cio.cc \
 	cloud.cc \
@@ -106,6 +105,7 @@ CRAWLSRC = ability.cc \
 	coord.cc \
 	coord-circle.cc \
 	coordit.cc \
+	corpse.cc \
 	crash.cc \
 	ctest.cc \
 	dactions.cc \
@@ -145,7 +145,6 @@ CRAWLSRC = ability.cc \
 	files.cc \
 	fineff.cc \
 	fontwrapper-ft.cc \
-	food.cc \
 	format.cc \
 	fprop.cc \
 	game-options.cc \
@@ -188,7 +187,6 @@ CRAWLSRC = ability.cc \
 	l-dgntil.cc \
 	l-feat.cc \
 	l-file.cc \
-	l-food.cc \
 	l-global.cc \
 	l-item.cc \
 	l-los.cc \
@@ -234,6 +232,7 @@ CRAWLSRC = ability.cc \
 	mon-clone.cc \
 	mon-death.cc \
 	mon-ench.cc \
+	mon-explode.cc \
 	mon-gear.cc \
 	mon-grow.cc \
 	mon-info.cc \
@@ -285,7 +284,6 @@ CRAWLSRC = ability.cc \
 	ranged-attack.cc \
 	ray.cc \
 	religion.cc \
-	rot.cc \
 	scroller.cc \
 	shopping.cc \
 	shout.cc \
@@ -303,12 +301,11 @@ CRAWLSRC = ability.cc \
 	spl-miscast.cc \
 	spl-monench.cc \
 	spl-other.cc \
-	spl-pick.cc \
 	spl-selfench.cc \
 	spl-summoning.cc \
-	spl-tornado.cc \
 	spl-transloc.cc \
 	spl-util.cc \
+	spl-vortex.cc \
 	spl-wpnench.cc \
 	spl-zap.cc \
 	sprint.cc \
@@ -359,6 +356,7 @@ CRAWLSRC = ability.cc \
 	wiz-you.cc \
 	worley.cc \
 	xom.cc \
+	zot.cc \
 	dgn-irregular-box.cc \
 \
 $(RLTILES_DIR)/tiledef-dngn.cc  $(RLTILES_DIR)/tiledef-feat.cc  $(RLTILES_DIR)/tiledef-floor.cc  \
