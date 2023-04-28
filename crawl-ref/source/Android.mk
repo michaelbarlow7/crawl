@@ -18,6 +18,7 @@ LUA_DIR := contrib/lua/src
 LOCAL_ARM_MODE  := arm
 LOCAL_MODULE    := lua
 LOCAL_C_INCLUDES := $(LOCAL_PATH)/$(LUA_DIR)
+LOCAL_CFLAGS := -O3 -U_FORTIFY_SOURCE
 LOCAL_SRC_FILES := $(LUA_DIR)/lapi.c \
 	$(LUA_DIR)/lauxlib.c \
 	$(LUA_DIR)/lbaselib.c \
