@@ -167,8 +167,10 @@ void Java_com_crawlmb_NativeWrapper_initGame( JNIEnv* env, jobject object , jstr
 	strcpy(macroDirectory,constCrawlDirectory);
 	strcat(macroDirectory, settingsSubDir);
 
-	int argc = 5;
-	const char *argv[] = {"","-dir", constCrawlDirectory, "-macro", macroDirectory};
+	int argc = 7;
+	const char *argv[] = {"","-dir", constCrawlDirectory,
+                          "-macro", macroDirectory,
+                          "-extra-opt-first", "char_set=ascii"};
 	main (argc, argv);
 }
 
