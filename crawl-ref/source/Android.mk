@@ -73,7 +73,7 @@ LOCAL_STATIC_LIBRARIES:=libsqlite3 liblua
 LOCAL_LDLIBS := -lz -llog
 
 # These flags are on by default in the original Makefile (-fsigned-char needed to guard against segfaults)
-LOCAL_CFLAGS += -DCLUA_BINDINGS -DWIZARD -DASSERTS -fsigned-char
+LOCAL_CFLAGS += -DCLUA_BINDINGS -DWIZARD -DASSERTS -fsigned-char -frtti -std=c++11 -fexceptions
 
 # This is basically all the .cc files in the 'source' folder
 CRAWLSRC = ability.cc \

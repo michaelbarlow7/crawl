@@ -41,6 +41,8 @@
 #include <time.h>
 #include <jni.h>
 #include <android/log.h>
+// Log template is as follows:
+// __android_log_write(ANDROID_LOG_ERROR, "Tag", "Error here");//Or ANDROID_LOG_INFO, ...
 #include <setjmp.h>
 
 
@@ -381,6 +383,9 @@ void addChar(wchar_t c)
  		// On a newline character, clear to the end of the line and
  		// advance a row
  		clear_to_end_of_line();
+         do {
+             advance();
+         } while (x > 0);
  		return;
  	}
 
@@ -507,10 +512,18 @@ void clear_to_end_of_line(void)
 {
     textcolour(LIGHTGREY);
     textbackground(BLACK);
+
+    int curX = x;
+    int curY = y;
     do
     {
 		addChar(' ');
 	} while (x > 0);
+
+    // Probably should use a temporary cursor rather than doing it this way?
+    // Reset cursor back to where it was
+    x = curX;
+    y = curY;
 }
 
 int get_number_of_lines(void)
