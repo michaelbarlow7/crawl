@@ -132,9 +132,14 @@ void advance()
 		}
 }
 
+TerminalChar * getTerminalCharAt(int py, int px)
+{
+	return &terminalWindow[py][px];
+}
+
 TerminalChar * getCurrentTerminalChar()
 {
-	return &terminalWindow[y][x];
+	return getTerminalCharAt(y, x);
 }
 
 void init_java_methods( JNIEnv* env1, jobject object )
@@ -542,6 +547,8 @@ void clrscr_sys()
 {
     textcolour(LIGHTGREY);
     textbackground(BLACK);
+	int origX = x;
+	int origY = y;
     x = 0;
     y = 0;
     for (int i = 0; i < LINES; ++i)
@@ -551,8 +558,8 @@ void clrscr_sys()
 			addChar(' ');
 		}
 	}
-	x = 0;
-	y = 0;
+	x = origX;
+	y = origY;
 }
 
 void set_cursor_enabled(bool enabled)
@@ -623,8 +630,7 @@ inline void write_char_at(int py, int px, int ch)
 
 void fakecursorxy(int px, int py)
 {
-	gotoxy_sys(px, py);
-	TerminalChar * flippingChar = getCurrentTerminalChar();
+	TerminalChar * flippingChar = getTerminalCharAt(py - 1, px - 1);
 	int tempcolour = flippingChar->foregroundColour;
 	flippingChar->foregroundColour = flippingChar->backgroundColour;
 	flippingChar->backgroundColour = tempcolour;
