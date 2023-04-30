@@ -35,6 +35,7 @@ util/gen-apt.pl ../docs/aptitudes.txt ../docs/template/apt-tmpl.txt species-data
 # aptitudes-wide
 util/gen-apt.pl ../docs/aptitudes-wide.txt ../docs/template/apt-tmpl-wide.txt species-data.h aptitudes.h
 # python species-gen
+echo "Running python script..."
 python util/species-gen.py dat/species/ util/species-gen/ species-data.h aptitudes.h species-groups.h species-type.h
 
 util/gen_ver.pl build.h
@@ -64,4 +65,4 @@ echo ""
 cd rltiles
 make STDFLAG=-std=c++11
 
-echo "Setup complete. Make sure the NDK is installed via the SKD Manager and build the project from within Android Studio"
+echo "Setup complete. Make sure the NDK is installed via the SDK Manager and build the project from within Android Studio"
