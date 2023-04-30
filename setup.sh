@@ -64,4 +64,4 @@ echo ""
 cd rltiles
 make STDFLAG=-std=c++11
 
-echo "Setup complete. Run your NDK build tool (ndk-build) from within the project directory to build the project"
+echo "Setup complete. Make sure the NDK is installed via the SKD Manager and build the project from within Android Studio"
